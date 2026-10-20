@@ -200,6 +200,9 @@
   }
 </style>
   <link rel="stylesheet" href="/static/katex/katex.min.css">
+  <!-- 代码高亮主题：两套用 media 开关切换（见 applyTheme），跟随编辑器明暗 -->
+  <link id="hljsDark" rel="stylesheet" href="/static/highlight/styles/github-dark.css">
+  <link id="hljsLight" rel="stylesheet" href="/static/highlight/styles/github.css" media="not all">
   <style id="ts-ui">
     #tsOverlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99;display:flex;align-items:center;justify-content:center;}
     #tsOverlay[hidden]{display:none !important;}
@@ -809,7 +812,7 @@ function parseMarkdown(src, fx){
         else if(lang==='vega'||lang==='vega-lite'||lang==='vegalite')kind='vega';
         html+='<div class="diagram" data-diagram="'+kind+'"'+(fW?' style="width:'+fW+'%"':'')+' data-code="'+encodeURIComponent(code)+'"><div class="diagram-pending">图表渲染中…</div></div>';
       }else{
-        html+='<pre><code'+(rawLang?' class="lang-'+rawLang+'"':'')+'>'+escapeHtml(code).replace(/</g,'&lt;')+'</code></pre>';
+        html+='<pre><code'+(rawLang?' class="lang-'+rawLang+'"':'')+' data-lang="'+escAttr(fl.lang)+'">'+escapeHtml(code).replace(/</g,'&lt;')+'</code></pre>';
       }
       olSeq=0;
       continue;
@@ -1093,8 +1096,8 @@ function parseMarkdown(src, fx){
      vega/vega-lite    → /static/vega/ 三件套链式加载（vega 6.4 + vega-lite 6.5 + embed 7.3，严格 JSON spec）
      四引擎共用 .diagram 容器（源码存 data-code），按 kind 分流；mermaid securityLevel strict 防 XSS；
      wavedrom/vega 源码只做 JSON.parse（不 eval，fail-closed），失败降级显示源码 + 错误。 */
-  var diagState={mermaid:{ready:false,loading:false,queue:[]},dot:{ready:false,loading:false,queue:[]},wavedrom:{ready:false,loading:false,queue:[]},vega:{ready:false,loading:false,queue:[]}};
-  var diagUrl={mermaid:['/static/mermaid/mermaid.min.js'],dot:['/static/viz/viz-standalone.js'],wavedrom:['/static/wavedrom/skins/default.js','/static/wavedrom/skins/dark.js','/static/wavedrom/wavedrom.min.js'],vega:['/static/vega/vega.min.js','/static/vega/vega-lite.min.js','/static/vega/vega-embed.min.js']};
+  var diagState={mermaid:{ready:false,loading:false,queue:[]},dot:{ready:false,loading:false,queue:[]},wavedrom:{ready:false,loading:false,queue:[]},vega:{ready:false,loading:false,queue:[]},highlight:{ready:false,loading:false,queue:[]}};
+  var diagUrl={mermaid:['/static/mermaid/mermaid.min.js'],dot:['/static/viz/viz-standalone.js'],wavedrom:['/static/wavedrom/skins/default.js','/static/wavedrom/skins/dark.js','/static/wavedrom/wavedrom.min.js'],vega:['/static/vega/vega.min.js','/static/vega/vega-lite.min.js','/static/vega/vega-embed.min.js'],highlight:['/static/highlight/highlight.min.js']};
   var vizInstance=null;
   function mermaidThemeName(){ return document.body.classList.contains('light')?'default':'dark'; }
   function chainScripts(urls,i,ok,err){
@@ -1215,6 +1218,39 @@ function parseMarkdown(src, fx){
     mountDiagrams(preview);
   }
 
+  /* 代码语法高亮：highlight.js 懒加载（首次遇到代码块才载入 vendor）。
+     图表围栏不走本函数——它们渲染为 .diagram 容器，根本不是 pre code。
+     语言取 data-lang（围栏解析出的干净语言名，已剥掉 {N} 宽度参数）；
+     未指定语言时自动探测，探测为 plaintext/no-highlight 则保持原样
+     （中文散文常被误判成某种语言，宁可不着色也不要乱涂）。 */
+  function highlightCode(root){
+    if(!root||!root.querySelectorAll)return;
+    var codes=root.querySelectorAll('pre code:not([data-hl])');
+    if(!codes.length)return;
+    loadVendor('highlight',function(){
+      if(!window.hljs)return;
+      for(var i=0;i<codes.length;i++){
+        var el=codes[i];
+        if(el.getAttribute('data-hl'))continue;
+        el.setAttribute('data-hl','1');
+        try{
+          var lang=(el.getAttribute('data-lang')||'').toLowerCase();
+          var out=null;
+          /* 只按围栏声明的语言着色，**不做自动探测**：实测 highlightAuto 会把
+             "plain text no lang" 判成 css 并着色——写作工具里 ASCII 图/日志/配置
+             被乱涂是负体验。未写语言的围栏保持纯文本（要着色就写 ```python）。 */
+          if(lang&&hljs.getLanguage(lang)){
+            out=hljs.highlight(el.textContent,{language:lang});
+          }
+          if(out){
+            el.innerHTML=out.value;
+            el.classList.add('hljs');
+            if(out.language)el.classList.add('language-'+out.language);
+          }
+        }catch(e){ /* 着色失败保持原文，绝不阻断渲染 */ }
+      }
+    });
+  }
   var frontMeta=null;   /* 文档 front matter 元数据（导出标题等用途） */
   function render(){
     buildMirrorMap();   /* 镜像测量表只依赖编辑器内容与排版，任何内容变化必经此处 */
@@ -1258,6 +1294,7 @@ function parseMarkdown(src, fx){
       div.innerHTML=parseMarkdown(q.blocks[bi], q.fx);
       restoreMath(div); fixLocalImages(div);
       mountDiagrams(div);
+      highlightCode(div);
       if(fresh){
         var next=q.existing[bi+1];
         preview.insertBefore(div, next||null);
@@ -1557,6 +1594,10 @@ function parseMarkdown(src, fx){
     if(t==='light')document.body.classList.add('light');else document.body.classList.remove('light');
     document.getElementById('btnTheme').textContent=(t==='light'?'亮色':'暗色');
     try{localStorage.setItem(THEME_KEY,t);}catch(e){}
+    /* 代码高亮主题跟随编辑器明暗：两套 <link> 用 media 开关切换 */
+    var hd=document.getElementById('hljsDark'), hl=document.getElementById('hljsLight');
+    if(hd)hd.media=(t==='light')?'not all':'all';
+    if(hl)hl.media=(t==='light')?'all':'not all';
     rerenderMermaidForTheme();
   }
   document.getElementById('btnTheme').addEventListener('click',function(){

@@ -37,6 +37,11 @@ PROBE = r"""
       var pv = document.querySelector('#preview');
       var refs = pv.querySelectorAll('.fn-ref');
       var fnblk = pv.querySelector('.fnblk');
+      var codes = pv.querySelectorAll('pre code');
+      var plain = null;
+      for (var i = 0; i < codes.length; i++) {
+        if (!codes[i].getAttribute('data-lang') && !codes[i].classList.contains('hljs')) plain = false;
+      }
       resolve({
         text: pv.textContent || '',
         html: pv.innerHTML || '',
@@ -46,7 +51,17 @@ PROBE = r"""
         fnblk: !!fnblk,
         fnItems: fnblk ? fnblk.querySelectorAll('.footnotes li').length : 0,
         fnText: fnblk ? fnblk.textContent : '',
-        isLast: !!(fnblk && pv.lastElementChild === fnblk)
+        isLast: !!(fnblk && pv.lastElementChild === fnblk),
+        noteCallout: !!pv.querySelector('.callout.callout-note'),
+        noteTitle: (pv.querySelector('.callout-note .callout-title') || {}).textContent || '',
+        warnTitle: (pv.querySelector('.callout-warning .callout-title') || {}).textContent || '',
+        calloutCount: pv.querySelectorAll('.callout').length,
+        quoteCount: pv.querySelectorAll('blockquote').length,
+        hlKeywords: pv.querySelectorAll('pre code .hljs-keyword').length,
+        hlClass: (function(){ var c = pv.querySelector('pre code'); return c ? c.className : ''; })(),
+        hlLang: (function(){ var c = pv.querySelector('pre code'); return c ? c.getAttribute('data-lang') : ''; })(),
+        preCodeCount: codes.length,
+        plainHl: plain
       });
     }, 1600);
   });
@@ -100,8 +115,51 @@ tags:
     check("front matter：正文照常渲染", "正文内容" in txt and "正文标题" in txt, txt[:120])
 
 
+def test_callout():
+    res = probe("""> [!NOTE]
+> 提示内容
+
+> [!WARNING] 自定义警示
+> 第二类
+
+> 普通引用不受影响
+""")
+    check("Callout：NOTE 容器", res.get("noteCallout") is True, str(res.get("html"))[:200])
+    check("Callout：默认标题为类型名", res.get("noteTitle") == "NOTE", res.get("noteTitle"))
+    check("Callout：自定义标题", res.get("warnTitle") == "自定义警示", res.get("warnTitle"))
+    check("Callout：普通引用仍是 blockquote",
+          res.get("quoteCount") == 1 and res.get("calloutCount") == 2,
+          "quote=%r callout=%r" % (res.get("quoteCount"), res.get("calloutCount")))
+
+
+def test_highlight():
+    res = probe("""```python
+def f(x):
+    return x**2
+```
+
+```mermaid
+graph TD
+A-->B
+```
+
+```
+plain text no lang
+```
+""")
+    check("高亮：生成 hljs-keyword", (res.get("hlKeywords") or 0) >= 1, str(res.get("hlKeywords")))
+    check("高亮：code 元素带 hljs 类", "hljs" in (res.get("hlClass") or ""), res.get("hlClass"))
+    check("高亮：data-lang 为围栏语言", res.get("hlLang") == "python", res.get("hlLang"))
+    check("高亮：图表围栏不产生 pre code",
+          res.get("preCodeCount") == 2, "preCode=%r" % (res.get("preCodeCount"),))
+    check("高亮：无语言围栏不着色（不自动探测）",
+          res.get("plainHl") is False, "plainHl=%r" % (res.get("plainHl"),))
+
+
 if __name__ == "__main__":
     test_footnote()
     test_frontmatter()
+    test_callout()
+    test_highlight()
     print("\n%s" % ("ALL PASS" if not fails else "FAILED: %s" % fails))
     sys.exit(1 if fails else 0)
