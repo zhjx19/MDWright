@@ -563,6 +563,11 @@ function parseInline(text, fx){
   text=text.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/__([^_]+)__/g,'<strong>$1</strong>');
   text=text.replace(/\*([^*]+)\*/g,'<em>$1</em>').replace(/_([^_]+)_/g,'<em>$1</em>');
   text=text.replace(/~~([^~]+)~~/g,'<del>$1</del>');
+  /* 行内扩展（顺序敏感）：删除线必须先于下标，否则 ~~x~~ 会被拆成两个下标；
+     上下标内容不含空白与自身定界符（与 Word 语义一致：上下标内不排空格） */
+  text=text.replace(/==([^=]+)==/g,'<mark>$1</mark>');
+  text=text.replace(/\^([^\s^]+)\^/g,'<sup>$1</sup>');
+  text=text.replace(/~([^\s~]+)~/g,'<sub>$1</sub>');
   text=text.replace(/@@C([0-9]+)@@/g,function(m,i){return '<code>'+escapeHtml(codes[+i])+'</code>';});
   text=text.replace(/\x00T(\d+)\x00/g,function(m,i){return toks[+i];});
   /* 转义还原放最后：逐字符 escapeHtml（如 \< → &lt;），只作用于还原出的单个字符，
