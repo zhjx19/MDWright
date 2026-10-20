@@ -673,6 +673,23 @@ function parseTable(lines,start,fx){
   }).join('')+'</tr></thead>';
   return ['<table>'+thead+'<tbody>'+body+'</tbody></table>',i];
 }
+/* 定义列表：术语行 + 后续以 ": " 开头的定义行（可多条）；定义的续行缩进 4 空格。
+   渲染为 <dl><dt><dd>；无定义行时返回 null，交回段落分支处理。 */
+function parseDefList(lines,start,fx){
+  var term=lines[start].trim(), defs=[], i=start+1;
+  while(i<lines.length && /^[ ]*:[ ]+/.test(lines[i])){
+    var buf=[lines[i].replace(/^[ ]*:[ ]+/,'')];
+    i++;
+    while(i<lines.length && /^[ ]{4,}\S/.test(lines[i]) && !/^[ ]*:[ ]+/.test(lines[i])){
+      buf.push(lines[i].replace(/^[ ]{4}/,'')); i++;
+    }
+    defs.push(buf.join('\n'));
+  }
+  if(!defs.length)return null;
+  var html='<dl><dt>'+parseInline(term,fx)+'</dt>'+
+    defs.map(function(d){return '<dd>'+parseInline(d,fx)+'</dd>';}).join('')+'</dl>';
+  return {html:html, next:i};
+}
 /* 围栏语言行解析：```lang {N} —— N=版面百分比，与图片 {N} 同一规矩（空白可选、>100 钳 100）。
    非法形态（{0}/非数字/多余词）→ 整体视为 lang 原样返回、width=0（fail-closed：字面可见不吞错）。 */
 function parseFenceLang(raw){
@@ -750,8 +767,15 @@ function parseMarkdown(src, fx){
       var lst=parseList(lines,i,ind,olSeq,fx);
       html+=lst[0];i=lst[1];olSeq=lst[2];continue;
     }
-    var para=[];
-    while(i<lines.length && !/^[ ]*$/.test(lines[i]) && !/^```/.test(lines[i]) && !/^(#{1,6})[ ]+/.test(lines[i]) && !/^[ ]*>/.test(lines[i]) && !/^[ ]*([-+]|[0-9]+\.)[ ]+/.test(lines[i]) && !(lines[i].indexOf('|')>=0 && i+1<lines.length && /^[ ]*\|?[-|: ]+\|?[ ]*$/.test(lines[i+1]) && lines[i+1].indexOf('-')>=0)){
+    /* 定义列表：当前行是术语、下一行是 ": " 定义（比段落分支先判，否则术语行会把定义吞成段落） */
+    if(i+1<lines.length && /^[ ]*:[ ]+/.test(lines[i+1])){
+      var dl=parseDefList(lines,i,fx);
+      if(dl){ html+=dl.html; i=dl.next; olSeq=0; continue; }
+    }
+    var para=[lines[i]]; i++;   /* 首行无条件吃下：本分支只在其他块语法都不匹配时到达，
+                                   且下面的续行条件含 ": " 终止——若首行恰是 ": x"，
+                                   不先吃掉就会一行不推进而无限循环 */
+    while(i<lines.length && !/^[ ]*$/.test(lines[i]) && !/^```/.test(lines[i]) && !/^(#{1,6})[ ]+/.test(lines[i]) && !/^[ ]*>/.test(lines[i]) && !/^[ ]*([-+]|[0-9]+\.)[ ]+/.test(lines[i]) && !(lines[i].indexOf('|')>=0 && i+1<lines.length && /^[ ]*\|?[-|: ]+\|?[ ]*$/.test(lines[i+1]) && lines[i+1].indexOf('-')>=0) && !/^[ ]*:[ ]+/.test(lines[i])){
       para.push(lines[i]);i++;
     }
     html+='<p>'+parseInline(para.join('\n'), fx).replace(/\n/g,'<br>')+'</p>';
