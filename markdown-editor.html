@@ -189,6 +189,15 @@
   .markdown-body .footnotes li{margin:.3em 0;}
   .markdown-body .fn-back{text-decoration:none;margin-left:.3em;}
   .markdown-body .fn-sep{border-top:1px solid var(--border);}
+  /* 代码块复制按钮：默认淡出，悬停代码块时出现（不干扰阅读） */
+  .markdown-body .code-wrap{position:relative;}
+  .markdown-body .copy-btn{
+    position:absolute;top:6px;right:8px;z-index:2;
+    font-size:11px;line-height:1;padding:4px 8px;border-radius:5px;cursor:pointer;
+    background:var(--panel,#2b3242);color:var(--muted,#aab2c4);
+    border:1px solid var(--border,#3a4358);opacity:0;transition:opacity .12s;
+  }
+  .markdown-body .code-wrap:hover .copy-btn{opacity:1;}
 
   @media print{
     #toolbar,#status,#outline,#editorPane{display:none !important;}
@@ -812,7 +821,8 @@ function parseMarkdown(src, fx){
         else if(lang==='vega'||lang==='vega-lite'||lang==='vegalite')kind='vega';
         html+='<div class="diagram" data-diagram="'+kind+'"'+(fW?' style="width:'+fW+'%"':'')+' data-code="'+encodeURIComponent(code)+'"><div class="diagram-pending">图表渲染中…</div></div>';
       }else{
-        html+='<pre><code'+(rawLang?' class="lang-'+rawLang+'"':'')+' data-lang="'+escAttr(fl.lang)+'">'+escapeHtml(code).replace(/</g,'&lt;')+'</code></pre>';
+        html+='<div class="code-wrap"><pre><code'+(rawLang?' class="lang-'+rawLang+'"':'')+' data-lang="'+escAttr(fl.lang)+'">'+escapeHtml(code).replace(/</g,'&lt;')+'</code></pre>'+
+              '<button type="button" class="copy-btn" title="复制代码">复制</button></div>';
       }
       olSeq=0;
       continue;
@@ -1709,6 +1719,36 @@ function parseMarkdown(src, fx){
 
   var katexCssText='';
   try{fetch('/static/katex/katex.min.css').then(function(r){return r.text();}).then(function(t){katexCssText=t.replace(/url\((['\"]?)fonts\//g,'url($1/static/katex/fonts/');}).catch(function(){});}catch(e){}
+  /* 代码块复制：事件委托到预览容器（内容增量渲染，按钮随块重建）。
+     clipboard API 在本地 http 是安全上下文可直接用；失败（旧内核/权限）回退 execCommand。 */
+  function legacyCopy(text){
+    try{
+      var ta=document.createElement('textarea');
+      ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      showToast('代码已复制');
+      return true;
+    }catch(e){ showToast('复制失败',true); return false; }
+  }
+  function copyText(text){
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(
+        function(){ showToast('代码已复制'); },
+        function(){ legacyCopy(text); }
+      );
+      return;
+    }
+    legacyCopy(text);
+  }
+  preview.addEventListener('click',function(e){
+    var b=(e.target&&e.target.closest)?e.target.closest('.copy-btn'):null;
+    if(!b)return;
+    var wrap=b.parentNode;
+    var code=wrap?wrap.querySelector('code'):null;
+    copyText(code?code.textContent:'');
+  });
   function showToast(msg, isErr, opts){
     /* 非阻塞提示：绝不用 alert（alert 同步阻塞 JS 线程 → 整个窗口"未响应"） */
     var s = String(msg == null ? '' : msg);

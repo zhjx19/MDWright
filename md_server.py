@@ -1821,6 +1821,16 @@ def _strip_tags(s):
     return re.sub(r"<[^>]+>", "", s)
 
 
+# 导出时剥离仅供编辑期交互的节点（代码块复制按钮）：
+# 独立 HTML 里 clipboard 在 file:// 下不可靠，按钮对读者也无意义。
+# 在服务端统一剥离，两条导出出口（独立 HTML / 分页）都经过这里。
+_EXPORT_ARTIFACT_RE = re.compile(r'<button[^>]*class="copy-btn"[^>]*>.*?</button>', re.S)
+
+
+def _strip_export_artifacts(html):
+    return _EXPORT_ARTIFACT_RE.sub("", html)
+
+
 
 
 # R1 新语法样式（导出用固定色值：导出文档内未定义 CSS 变量；
@@ -1861,6 +1871,7 @@ def build_standalone_html(md_path, body_html, ts_css, doc_title=""):
         p = urllib.parse.unquote(m.group(1)).replace("\\", "/")
         return 'src="file:///' + p + '"'
     body = re.sub(r'src="/img\?path=([^"]+)"', _proxy, body_html)
+    body = _strip_export_artifacts(body)
     if md_path:
         mdir = os.path.dirname(md_path).replace("\\", "/")
         body = re.sub(r'src="(?!https?:|file:|/|#)([^"]+)"',
@@ -1954,6 +1965,8 @@ def build_paged_html(md_path, body_html, ts_css, page_cfg, doc_title=""):
 
     # TOC + 锚点
     heads = []
+
+    body_html = _strip_export_artifacts(body_html)   # 复制按钮不进导出（见 _strip_export_artifacts）
 
     def _head(m):
         lvl = int(m.group(1))
