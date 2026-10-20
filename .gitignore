@@ -1,0 +1,25 @@
+__pycache__/
+*.pyc
+document.html
+document.paged.html
+.playwright-cli/
+
+# 运行缓存（WebView2 运行时/日志，首次运行自动生成，不入版本库）
+# 注意：必须锚定到本目录根（前导 /），否则会误伤
+# python/Lib/site-packages/pythonnet/runtime/ 下 pythonnet 的原生桥接 DLL，
+# 导致内嵌窗口因缺失 Python.Runtime.dll 而无法启动。
+/runtime/
+
+# 开发临时产物
+_tmp_*
+
+# 长图切片缓存（分页导出时生成，内容哈希命名，可随时重建）
+/_slice/
+
+# 开发机私货（分发清单·六：运行时自动生成/开发工具，不入库）
+.codeartsdoer/
+.playwright-cli/
+
+# 安装包构建产物（installer/ 源码入库；staging 与 Setup.exe 产物不入库，仅挂 Release）
+/_setup_staging/
+/_setup_out/
