@@ -14,6 +14,13 @@ import re
 import subprocess
 import sys
 
+# Windows 控制台默认 GBK，失败详情里可能含 GBK 外字符（如脚注回链 ↩）；
+# 统一 stdout 为 UTF-8 + replace，避免「打印」把测试搞崩。
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 HTML = os.path.join(HERE, "markdown-editor.html")
 JS = os.path.join(HERE, "_tmp_inline_ext.js")
@@ -44,7 +51,12 @@ var CASES = [
   ["代码段内尖号与等号不生效", "`a^b^ ==c==`", "<code>a^b^ ==c==</code>"],
   ["URL 内波浪号不被当下标", "[l](http://a.com/~x/~y)", 'href="http://a.com/~x/~y"'],
   ["单个波浪号不成对时保持字面", "a ~ b", "a ~ b"],
-  ["单个尖号不成对时保持字面", "a ^ b", "a ^ b"]
+  ["单个尖号不成对时保持字面", "a ^ b", "a ^ b"],
+  /* I6：裸 URL（非 markdown 链接）里的两个 ~ 不得被当成下标 */
+  ["裸 URL 内波浪号不被当下标", "see https://example.com/~user/~bob here",
+   "https://example.com/~user/~bob"],
+  ["裸 URL 内下划线不被当斜体", "see https://example.com/~a_b_c here",
+   "https://example.com/~a_b_c"]
 ];
 var fails = 0;
 for (var i=0;i<CASES.length;i++){

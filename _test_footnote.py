@@ -15,6 +15,13 @@ import re
 import subprocess
 import sys
 
+# Windows 控制台默认 GBK，失败详情里可能含 GBK 外字符（如脚注回链 ↩）；
+# 统一 stdout 为 UTF-8 + replace，避免「打印」把测试搞崩。
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 HTML = os.path.join(HERE, "markdown-editor.html")
 JS = os.path.join(HERE, "_tmp_footnote.js")
@@ -79,6 +86,21 @@ report('重复引用共用编号', nums.length===2 && nums[0]===nums[1], nums.jo
 /* 8 无脚注的文档不产生脚注区（不得凭空插入空 section） */
 r = doc("只有正文");
 report('无脚注不生成脚注区', r.sec === '', r.sec);
+
+/* I4：剥离定义行必须保持行数不变（行号是分屏联动的锚点基准） */
+var src9 = "正文[^a]\n\n[^a]: 说明\n    续行\n\n后文";
+var fx9 = extractFootnotes(src9);
+report('剥离后行数不变(I4)', fx9.src.split('\n').length === src9.split('\n').length,
+       'in=' + src9.split('\n').length + ' out=' + fx9.src.split('\n').length);
+
+/* M5：代码块里的 [^a] 不算引用——不得因此生成一条没人引用的脚注 */
+var r9 = doc("```\n[^a]\n```\n\n[^a]: 定义");
+report('代码块内引用不产生脚注条目(M5)', r9.fx.order.length === 0,
+       'order=' + JSON.stringify(r9.fx.order));
+
+/* M3：脚注正文的续行保留换行 */
+var r10 = doc("正文[^a]\n\n[^a]: 第一行\n    第二行");
+report('脚注续行保留换行(M3)', r10.sec.indexOf('第一行<br>第二行') >= 0, r10.sec);
 
 process.exit(fails ? 1 : 0);
 """

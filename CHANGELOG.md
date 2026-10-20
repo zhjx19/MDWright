@@ -22,7 +22,7 @@
 - **行内高亮与上下标**：`==高亮==`→`<mark>`、`^上标^`→`<sup>`、`~下标~`→`<sub>`。顺序敏感——删除线 `~~x~~` 必须先于下标匹配，否则会被拆成两个下标；行内代码段与链接 URL 内的同名字符不生效（代码段优先、链接先占位）。验证——`_test_inline_ext.py` 11/11 PASS。
 - **定义列表**：`术语` + 后续 `: 定义` 行渲染为 `<dl><dt><dd>`，一条术语可带多条定义，定义续行缩进 4 空格。修法——段落分支之前先判定义列表，并给段落续行加 `: ` 终止条件；同时把段落分支改为「首行无条件吃下」，否则以 `: ` 开头的行会一行都吃不到、`i` 不推进导致死循环（实现期实测踩中）。验证——`_test_deflist.py` 7/7 PASS。
 - **YAML front matter**：文档首行 `---` 起的元数据块剥离出正文（不进预览），支持极简子集（嵌套 map / 列表 / 标量，含去引号、数字、布尔、null）。解析失败（未闭合 / 非法 / 不在首行 / 重复键）一律**原样返回整篇**按普通段落渲染，一字不丢（fail-closed）；导出的 HTML 标题优先取 `title`。验证——`_test_frontmatter.py` 12/12 PASS；`_test_syntax_ui.py` 断言 YAML 与分隔线不出现在预览。
-- **代码语法高亮**：highlight.js 11.11.1 common 构建（37 语言，**含 R**）就地 vendor 分发，懒加载（文档无代码则零加载），主题跟随编辑器明暗。**只按围栏声明的语言着色，不做自动探测**——实测 `highlightAuto` 会把 `plain text no lang` 判成 css 并着色，写作工具里 ASCII 图/日志/配置被乱涂是负体验。着色结果留在 DOM，导出只注入主题 CSS，独立 HTML 仍是可分发的单文件。验证——`_test_highlight.py` 11/11（vendor/语言集/许可/文档登记）；`_test_syntax_ui.py` 断言 `hljs-keyword` span 真实生成、无语言围栏不着色。
+- **代码语法高亮**：highlight.js 11.11.1 common 构建（36 语言，**含 R**）就地 vendor 分发，懒加载（文档无代码则零加载），主题跟随编辑器明暗。**只按围栏声明的语言着色，不做自动探测**——实测 `highlightAuto` 会把 `plain text no lang` 判成 css 并着色，写作工具里 ASCII 图/日志/配置被乱涂是负体验。着色结果留在 DOM，导出只注入主题 CSS，独立 HTML 仍是可分发的单文件。验证——`_test_highlight.py` 11/11（vendor/语言集/许可/文档登记）；`_test_syntax_ui.py` 断言 `hljs-keyword` span 真实生成、无语言围栏不着色。
 - **代码块复制按钮**：代码块右上角「复制」（悬停出现），点击把该块代码写入剪贴板（clipboard API 失败回退 `execCommand`）。导出时由**服务端**统一剥离（`_strip_export_artifacts`，两条导出出口共用），独立 HTML 里 clipboard 在 file:// 下不可靠且按钮对读者无意义。验证——`_test_copy_btn.py` 6/6 PASS（按钮数、逐块复制内容、按钮文本不污染代码、两条导出产物均无按钮）。
 
 **变更**

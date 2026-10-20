@@ -14,6 +14,13 @@ import re
 import subprocess
 import sys
 
+# Windows 控制台默认 GBK，失败详情里可能含 GBK 外字符（如脚注回链 ↩）；
+# 统一 stdout 为 UTF-8 + replace，避免「打印」把测试搞崩。
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 HTML = os.path.join(HERE, "markdown-editor.html")
 JS = os.path.join(HERE, "_tmp_deflist.js")
@@ -58,6 +65,15 @@ report('定义内行内解析', o.indexOf('<strong>粗</strong>') >= 0, o);
 
 o = parseMarkdown("术语\n: 定义\n\n下一段");
 report('空行后的段落独立', o.indexOf('<p>下一段</p>') >= 0, o);
+
+/* I3：前置句 + 术语 + 定义（无空行）——不得产出字面 ": " 段落 */
+o = parseMarkdown("引导句\n术语\n: 定义");
+report('前置句+术语+定义 不产生字面冒号', o.indexOf('<p>: ') < 0, o);
+report('前置句+术语 合成定义列表', o.indexOf('<dl>') >= 0, o);
+
+/* M3：多行定义的续行要保留换行（<br>），不能挤成一格 */
+o = parseMarkdown("术语\n: 第一行\n    第二行");
+report('多行定义保留换行', o.indexOf('第一行<br>第二行') >= 0, o);
 
 process.exit(fails ? 1 : 0);
 """

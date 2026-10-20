@@ -565,7 +565,11 @@ function extractFrontMatter(src){
   var meta=null;
   try{ meta=parseYamlLite(lines.slice(1,end).join('\n')); }catch(e){ meta=null; }
   if(meta===null)return {src:src, meta:null};    /* 非法 YAML → 整块保留，不吞内容 */
-  return {src:lines.slice(end+1).join('\n'), meta:meta};
+  /* 剥离但**不删行**：把元数据行替换成空行，行号结构保持不变——
+     分屏联动的镜像行号表是按原文行号建的，删行会让所有锚点整体错位。见评审 I4。 */
+  var out=lines.slice();
+  for(var k=0;k<=end;k++)out[k]='';
+  return {src:out.join('\n'), meta:meta};
 }
 /* ── 脚注（文档级）────────────────────────────────────────────────
    语法：正文 [^label] 引用；文档任意处 [^label]: 说明 定义。
@@ -579,7 +583,7 @@ function extractFootnotes(src){
     if(/^\s*(```|~~~)/.test(ln))fence=!fence;
     var m=(!fence)?ln.match(/^\[\^([^\]\s]+)\]:[ ]?(.*)$/):null;
     if(m){
-      var label=m[1], body=m[2], buf=[];
+      var label=m[1], body=m[2], buf=[], dstart=i;
       i++;
       while(i<lines.length){
         var nx=lines[i];
@@ -589,24 +593,33 @@ function extractFootnotes(src){
       }
       if(body)buf.unshift(body);
       if(!(label in defs))defs[label]={text:buf.join('\n')};
-      continue;                                       /* 定义行不进正文 */
+      /* 定义行同样**不删行**而是换成空行：行号结构必须与原文一致（分屏联动基准），见评审 I4 */
+      for(var dk=dstart;dk<i;dk++)kept.push('');
+      continue;
     }
     kept.push(ln); i++;
   }
-  var clean=kept.join('\n'), nums={}, order=[], re=/\[\^([^\]\s]+)\]/g, mm;
-  while((mm=re.exec(clean))!==null){
-    var lb=mm[1];
-    if(!(lb in defs))continue;                        /* 无定义 → 字面保留 */
-    if(!(lb in nums)){nums[lb]=order.length+1;order.push(lb);}
+  /* 编号：按引用首次出现顺序；代码围栏内的 [^x] 不算引用（否则会凭空造出无人引用的脚注） */
+  var nums={}, order=[], fence2=false, cl=kept.join('\n').split('\n');
+  for(var li=0;li<cl.length;li++){
+    var l2=cl[li];
+    if(/^\s*(```|~~~)/.test(l2)){fence2=!fence2;continue;}
+    if(fence2)continue;
+    var re=/\[\^([^\]\s]+)\]/g, mm;
+    while((mm=re.exec(l2))!==null){
+      var lb=mm[1];
+      if(!(lb in defs))continue;                      /* 无定义 → 字面保留 */
+      if(!(lb in nums)){nums[lb]=order.length+1;order.push(lb);}
+    }
   }
-  return {src:clean, defs:defs, nums:nums, order:order};
+  return {src:kept.join('\n'), defs:defs, nums:nums, order:order};
 }
 function buildFootnoteSection(fx){
   if(!fx||!fx.order.length)return '';
   var items=[];
   for(var i=0;i<fx.order.length;i++){
     var lb=fx.order[i], n=fx.nums[lb];
-    items.push('<li id="fn-'+n+'">'+parseInline(fx.defs[lb].text)+
+    items.push('<li id="fn-'+n+'">'+parseInline(fx.defs[lb].text).replace(/\n/g,'<br>')+
       ' <a href="#fnref-'+n+'" class="fn-back" title="返回正文">↩</a></li>');
   }
   return '<section class="footnotes"><hr class="fn-sep"><ol>'+items.join('')+'</ol></section>';
@@ -649,6 +662,12 @@ function parseInline(text, fx){
     toks.push('<a href="'+escAttr(sanitizeUrl(href))+'"'+(title?' title="'+escAttr(title)+'"':'')+' target="_blank" rel="noopener">');
     return '\x00T'+(toks.length-1)+'\x00'+txt+'</a>';
   });
+  /* 裸 URL 保护：上面已把 markdown 链接/图片占位，此处的 http(s):// 是纯文本 URL。
+     不保护的话，URL 里的 ~ 会被当上下标、_ 会被当斜体，显示出来就被改花了。 */
+  var bareUrls=[];
+  text=text.replace(/\bhttps?:\/\/[^\s<>"'。，、；：？！）】」』]+/g,function(m){
+    bareUrls.push(m); return '\x00U'+(bareUrls.length-1)+'\x00';
+  });
   /* 脚注引用（文档级上下文 fx 提供 label→编号）；无定义则保持字面 */
   if(fx&&fx.nums){
     text=text.replace(/\[\^([^\]\s]+)\]/g,function(m,lb){
@@ -668,6 +687,7 @@ function parseInline(text, fx){
   text=text.replace(/~([^\s~]+)~/g,'<sub>$1</sub>');
   text=text.replace(/@@C([0-9]+)@@/g,function(m,i){return '<code>'+escapeHtml(codes[+i])+'</code>';});
   text=text.replace(/\x00T(\d+)\x00/g,function(m,i){return toks[+i];});
+  text=text.replace(/\x00U(\d+)\x00/g,function(m,i){return bareUrls[+i];});
   /* 转义还原放最后：逐字符 escapeHtml（如 \< → &lt;），只作用于还原出的单个字符，
      不触碰 toks 已注入的标签。 */
   text=text.replace(/\x00E([0-9]+)\x00/g,function(m,i){return escapeHtml(escs[+i]);});
@@ -773,20 +793,20 @@ function parseTable(lines,start,fx){
 }
 /* 定义列表：术语行 + 后续以 ": " 开头的定义行（可多条）；定义的续行缩进 4 空格。
    渲染为 <dl><dt><dd>；无定义行时返回 null，交回段落分支处理。 */
-function parseDefList(lines,start,fx){
-  var term=lines[start].trim(), defs=[], i=start+1;
+/* 定义项：从 ": " 行开始收集 <dd>（术语由调用方给出——整段即术语，与 pandoc 口径一致）。
+   定义的续行缩进 4 空格并入同一条定义；返回 null 表示不是定义行。 */
+function parseDefItems(lines,start,fx){
+  var items=[], i=start;
   while(i<lines.length && /^[ ]*:[ ]+/.test(lines[i])){
     var buf=[lines[i].replace(/^[ ]*:[ ]+/,'')];
     i++;
     while(i<lines.length && /^[ ]{4,}\S/.test(lines[i]) && !/^[ ]*:[ ]+/.test(lines[i])){
       buf.push(lines[i].replace(/^[ ]{4}/,'')); i++;
     }
-    defs.push(buf.join('\n'));
+    items.push('<dd>'+parseInline(buf.join('\n'),fx).replace(/\n/g,'<br>')+'</dd>');
   }
-  if(!defs.length)return null;
-  var html='<dl><dt>'+parseInline(term,fx)+'</dt>'+
-    defs.map(function(d){return '<dd>'+parseInline(d,fx)+'</dd>';}).join('')+'</dl>';
-  return {html:html, next:i};
+  if(!items.length)return null;
+  return {html:items.join(''), next:i};
 }
 /* 围栏语言行解析：```lang {N} —— N=版面百分比，与图片 {N} 同一规矩（空白可选、>100 钳 100）。
    非法形态（{0}/非数字/多余词）→ 整体视为 lang 原样返回、width=0（fail-closed：字面可见不吞错）。 */
@@ -821,7 +841,7 @@ function parseMarkdown(src, fx){
         else if(lang==='vega'||lang==='vega-lite'||lang==='vegalite')kind='vega';
         html+='<div class="diagram" data-diagram="'+kind+'"'+(fW?' style="width:'+fW+'%"':'')+' data-code="'+encodeURIComponent(code)+'"><div class="diagram-pending">图表渲染中…</div></div>';
       }else{
-        html+='<div class="code-wrap"><pre><code'+(rawLang?' class="lang-'+rawLang+'"':'')+' data-lang="'+escAttr(fl.lang)+'">'+escapeHtml(code).replace(/</g,'&lt;')+'</code></pre>'+
+        html+='<div class="code-wrap"><pre><code'+(rawLang?' class="lang-'+escAttr(rawLang)+'"':'')+' data-lang="'+escAttr(fl.lang)+'">'+escapeHtml(code).replace(/</g,'&lt;')+'</code></pre>'+
               '<button type="button" class="copy-btn" title="复制代码">复制</button></div>';
       }
       olSeq=0;
@@ -866,16 +886,19 @@ function parseMarkdown(src, fx){
       var lst=parseList(lines,i,ind,olSeq,fx);
       html+=lst[0];i=lst[1];olSeq=lst[2];continue;
     }
-    /* 定义列表：当前行是术语、下一行是 ": " 定义（比段落分支先判，否则术语行会把定义吞成段落） */
-    if(i+1<lines.length && /^[ ]*:[ ]+/.test(lines[i+1])){
-      var dl=parseDefList(lines,i,fx);
-      if(dl){ html+=dl.html; i=dl.next; olSeq=0; continue; }
-    }
+    /* 定义列表：段落分支之后统一判定（段落整体作术语），此处不再单判 */
     var para=[lines[i]]; i++;   /* 首行无条件吃下：本分支只在其他块语法都不匹配时到达，
                                    且下面的续行条件含 ": " 终止——若首行恰是 ": x"，
                                    不先吃掉就会一行不推进而无限循环 */
     while(i<lines.length && !/^[ ]*$/.test(lines[i]) && !/^```/.test(lines[i]) && !/^(#{1,6})[ ]+/.test(lines[i]) && !/^[ ]*>/.test(lines[i]) && !/^[ ]*([-+]|[0-9]+\.)[ ]+/.test(lines[i]) && !(lines[i].indexOf('|')>=0 && i+1<lines.length && /^[ ]*\|?[-|: ]+\|?[ ]*$/.test(lines[i+1]) && lines[i+1].indexOf('-')>=0) && !/^[ ]*:[ ]+/.test(lines[i])){
       para.push(lines[i]);i++;
+    }
+    /* 定义列表：段落整体当术语（与 pandoc 口径一致），紧随其后的 ": " 行是定义。
+       放在段落收集之后判：这样「引导句 + 术语 + 定义」不会把 ": 定义" 渲染成字面段落。 */
+    var di=(i<lines.length && /^[ ]*:[ ]+/.test(lines[i]))?parseDefItems(lines,i,fx):null;
+    if(di){
+      html+='<dl><dt>'+parseInline(para.join('\n'),fx).replace(/\n/g,'<br>')+'</dt>'+di.html+'</dl>';
+      i=di.next; olSeq=0; continue;
     }
     html+='<p>'+parseInline(para.join('\n'), fx).replace(/\n/g,'<br>')+'</p>';
     olSeq=0;
@@ -1318,11 +1341,15 @@ function parseMarkdown(src, fx){
     var html=buildFootnoteSection(fx);
     var el=preview.querySelector('.fnblk');
     if(!html){ if(el)el.parentNode.removeChild(el); return; }
-    if(!el){ el=document.createElement('div'); el.className='fnblk'; preview.appendChild(el); }
+    if(!el){ el=document.createElement('div'); el.className='fnblk'; }
     el.setAttribute('data-h','fn:'+blkHash(html));
     el.innerHTML=html;
     restoreMath(el);
     fixLocalImages(el);
+    /* 已挂载节点再 appendChild = 移动到末尾。必须每次重挂：
+       增量渲染新增的块是 append 到 preview 尾部的，不重挂脚注区就会被挤到
+       文档中间（预览与导出同步错位）。见评审 C2。 */
+    preview.appendChild(el);
   }
   /* 标题锚点打标：块内 h1-h4 元素盖源行标（fence 内 # 不算），供分屏联动做像素插值锚。
      源标题行与 DOM heading 顺序一一对应（ATX 行首 # 才算，与 splitBlocks 口径一致） */

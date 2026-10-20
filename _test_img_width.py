@@ -11,6 +11,13 @@ import os
 import re
 import subprocess
 import sys
+
+# Windows 控制台默认 GBK，失败详情里可能含 GBK 外字符（如脚注回链 ↩）；
+# 统一 stdout 为 UTF-8 + replace，避免「打印」把测试搞崩。
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -96,6 +103,10 @@ else { console.log('FAIL md python {30} -> ' + md3.slice(0, 160)); ffails++; }
 const md4 = parseMarkdown('```mermaid {0}\ngraph TD\nA-->B\n```\n');
 if (/class="lang-mermaid \{0\}"/.test(md4)) console.log('PASS md mermaid {0} falls back');
 else { console.log('FAIL md mermaid {0} -> ' + md4.slice(0, 160)); ffails++; }
+/* I5：围栏信息串是用户输入，必须转义后才能进 class 属性（否则可注入事件属性） */
+const md5 = parseMarkdown('```py" onmouseover="alert(1)\nx=1\n```\n');
+if (md5.indexOf('onmouseover="alert(1)"') < 0 && md5.indexOf('&quot;') >= 0) console.log('PASS fence lang escaped');
+else { console.log('FAIL fence lang escaped -> ' + md5.slice(0, 200)); ffails++; }
 console.log('FENCE-FAILS=' + ffails);
 """
     tmp = os.path.join(HERE, "_tmp_img_width.js")

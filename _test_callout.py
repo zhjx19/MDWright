@@ -14,6 +14,13 @@ import re
 import subprocess
 import sys
 
+# Windows 控制台默认 GBK，失败详情里可能含 GBK 外字符（如脚注回链 ↩）；
+# 统一 stdout 为 UTF-8 + replace，避免「打印」把测试搞崩。
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 HTML = os.path.join(HERE, "markdown-editor.html")
 JS = os.path.join(HERE, "_tmp_callout.js")

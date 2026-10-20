@@ -1860,6 +1860,30 @@ SYNTAX_CSS = (
 )
 
 
+def _hljs_theme_css():
+    """导出内联 highlight.js 主题（亮色）。
+
+    导出用的 bodyHtml 来自预览 DOM，代码块里已经带着 `hljs-*` span；
+    不注入主题 CSS，导出的代码就全是黑字（预览正常、导出裸奔）。
+    独立 HTML 必须单文件可分，故内联而非 <link>。
+    """
+    p = os.path.join(HERE, "highlight", "styles", "github.css")
+    try:
+        return io.open(p, encoding="utf-8").read()
+    except Exception:
+        return ""
+
+
+def _doc_title_or_fallback(doc_title, fallback):
+    """front matter 的 title 只在**确实是字符串**时才算数。
+
+    YAML 里 `title: 2026` 会被解析成数字、`title:` 后跟列表会成数组，
+    直接 .strip() 会抛 AttributeError 让导出 500——元数据是尽力而为的，
+    拿不到就回退首个 <h1>，不该让整次导出失败。
+    """
+    return (doc_title if isinstance(doc_title, str) else "").strip() or fallback
+
+
 def build_standalone_html(md_path, body_html, ts_css, doc_title=""):
     """普通 .html 导出组装（py 全权：图片路径还原 + katex css + 排版样式）"""
     katex_css = ""
@@ -1880,7 +1904,7 @@ def build_standalone_html(md_path, body_html, ts_css, doc_title=""):
     title = re.sub(r"<[^>]+>", "", m1.group(1)).strip() if m1 else "未命名文档"
     # front matter 的 title 优先（前端 render() 已把 front matter 剥离出 bodyHtml，
     # 故只有在结构化数据里才拿得到，直接传进来）
-    title = (doc_title or "").strip() or title
+    title = _doc_title_or_fallback(doc_title, title)
     ts = ts_css.replace("#preview", ".markdown-body")
     html = ('<!DOCTYPE html>\n<html lang="zh-CN"><head><meta charset="UTF-8"><title>__TITLE__</title>'
         "<style>__KATEX__</style><style>div.md-math-block{overflow-x:auto;margin:.8em 0;}"
@@ -1896,7 +1920,7 @@ def build_standalone_html(md_path, body_html, ts_css, doc_title=""):
         'img{max-width:100%;}a{color:#4a6cf7;}</style></head><body class="markdown-body">__BODY__</body></html>')
     html = html.replace("__TITLE__", html_module.escape(title))
     html = html.replace("__KATEX__", katex_css)
-    html = html.replace("__SYNTAX__", SYNTAX_CSS)
+    html = html.replace("__SYNTAX__", SYNTAX_CSS + _hljs_theme_css())
     html = html.replace("__TS__", ts)
     html = html.replace("__BODY__", body)
     return html
@@ -2048,7 +2072,7 @@ def build_paged_html(md_path, body_html, ts_css, page_cfg, doc_title=""):
     m1 = re.search(r"<h1[^>]*>([\s\S]*?)</h1>", body)
     title = _strip_tags(m1.group(1)) if m1 else "未命名文档"
     title = title.strip() or "未命名文档"
-    title = (doc_title or "").strip() or title
+    title = _doc_title_or_fallback(doc_title, title)
 
     html = (
         '<!DOCTYPE html>\n<html lang="zh-CN"><head><meta charset="UTF-8"><title>%s</title>'
@@ -2062,7 +2086,7 @@ def build_paged_html(md_path, body_html, ts_css, page_cfg, doc_title=""):
         base_css,
         katex_css,
         toc_css,
-        SYNTAX_CSS,
+        SYNTAX_CSS + _hljs_theme_css(),
         ts_css,
         body,
         paged_js,

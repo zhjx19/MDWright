@@ -72,6 +72,21 @@ def main():
                             ("独立版 标题取 front matter", "<title>我的标题</title>")]:
             check(key, needle in html, "缺: " + needle)
 
+        # C1：导出必须内联 highlight.js 主题，否则带 hljs-* span 的代码在导出里全黑
+        post("/api/export-html", {"path": None, "tsCss": "", "docTitle": "",
+                                  "bodyHtml": '<pre><code><span class="hljs-keyword">def</span></code></pre>'})
+        with_hl = get("/static/document.html")
+        check("独立版 注入 hljs 主题（C1）", ".hljs-keyword" in with_hl, "缺 hljs 主题 CSS")
+        check("独立版 hljs span 保留", "hljs-keyword" in with_hl)
+
+        # I2：非字符串 docTitle（数字/列表）不得让导出 500
+        for bad in (123, ["a", "b"]):
+            j = post("/api/export-html", {"path": None, "bodyHtml": "<h1>回退标题</h1>",
+                                          "tsCss": "", "docTitle": bad})
+            ok = j.get("ok") is True
+            check("独立版 非法 docTitle %r 不 500（I2）" % (bad,), ok, str(j))
+        check("独立版 非法 docTitle 回退首个 h1", "<title>回退标题</title>" in get("/static/document.html"))
+
         post("/api/export-paged", {"path": None, "bodyHtml": BODY, "tsCss": "",
                                    "docTitle": "我的标题", "cfg": {}})
         paged = get("/static/document.paged.html")
@@ -80,6 +95,11 @@ def main():
                             ("分页版 脚注区样式", ".markdown-body .footnotes"),
                             ("分页版 标题取 front matter", "<title>我的标题</title>")]:
             check(key, needle in paged, "缺: " + needle)
+
+        post("/api/export-paged", {"path": None, "tsCss": "", "docTitle": "",
+                                   "bodyHtml": '<pre><code><span class="hljs-keyword">def</span></code></pre>',
+                                   "cfg": {}})
+        check("分页版 注入 hljs 主题（C1）", ".hljs-keyword" in get("/static/document.paged.html"))
     finally:
         httpd.shutdown()
         httpd.server_close()

@@ -34,15 +34,19 @@ FILES = ["md_launch.pyw", "_md_run.py", "md_server.py",
 for f in FILES:
     shutil.copy2(os.path.join(SRC, f), os.path.join(DIST, f))
 for d in ["python", "katex", "pagedjs", "docs", "LICENSES",
-          "mermaid", "viz", "wavedrom", "vega"]:
+          "mermaid", "viz", "wavedrom", "vega", "highlight"]:
     subprocess.run(["cmd", "/c", "mklink", "/J",
                     os.path.join(DIST, d), os.path.join(SRC, d)],
                    capture_output=True, creationflags=NO_WINDOW)
-check("dist assembled (16 files + 9 junctions)",
+check("dist assembled (16 files + 10 junctions)",
       all(os.path.exists(os.path.join(DIST, f)) for f in FILES)
       and all(os.path.isdir(os.path.join(DIST, d))
               for d in ["python", "katex", "pagedjs", "docs", "LICENSES",
-                        "mermaid", "viz", "wavedrom", "vega"]))
+                        "mermaid", "viz", "wavedrom", "vega", "highlight"]))
+# I1：代码高亮 vendor 必须真的进包（漏了 = 装完代码永不着色，且无任何报错）
+check("highlight vendor in dist",
+      os.path.isfile(os.path.join(DIST, "highlight", "highlight.min.js"))
+      and os.path.isfile(os.path.join(DIST, "highlight", "styles", "github.css")))
 check("no runtime/ pycache/ in dist",
       not os.path.exists(os.path.join(DIST, "runtime"))
       and not os.path.exists(os.path.join(DIST, "__pycache__")))

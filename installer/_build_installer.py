@@ -27,7 +27,7 @@ SMOKE_REPORT = os.path.join(tempfile.gettempdir(), "md_setup_smoke_report.txt")
 
 # dist checklist minimum set (sections 1+2+3+4). Keep in sync with docs checklist.
 DIST_DIRS = ["python", "katex", "pagedjs", "LICENSES",
-             "mermaid", "viz", "wavedrom", "vega"]
+             "mermaid", "viz", "wavedrom", "vega", "highlight"]
 DIST_DOCS_FILES = ["MDEditor 使用指南.md", "版权与开源组件声明.md"]
 DIST_DOCS_DIRS = ["MDEditor 使用指南.assets"]
 DIST_FILES = ["md_launch.pyw", "_md_run.py", "md_server.py", "markdown-editor.html",

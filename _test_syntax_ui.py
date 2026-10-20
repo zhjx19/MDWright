@@ -156,10 +156,41 @@ plain text no lang
           res.get("plainHl") is False, "plainHl=%r" % (res.get("plainHl"),))
 
 
+def test_footnote_incremental():
+    """C2 回归：先渲染带脚注的文档，再在末尾追加新章节——脚注区必须仍在末尾。
+    旧实现只在创建时 append，后续块 appendChild 到 preview 尾部会把脚注区挤到中间。"""
+    res = run_expr(r"""
+    (function(){
+      var ed=document.getElementById('editor');
+      ed.textContent='# 第一章\n\n正文[^a]\n\n[^a]: 说明\n';
+      ed.dispatchEvent(new Event('input',{bubbles:true}));
+      return new Promise(function(resolve){
+        setTimeout(function(){
+          var pv=document.querySelector('#preview');
+          var firstLast = pv.lastElementChild && pv.lastElementChild.className;
+          ed.textContent = ed.textContent + '\n## 第二章\n\n后来的内容\n';
+          ed.dispatchEvent(new Event('input',{bubbles:true}));
+          setTimeout(function(){
+            var kids=[].map.call(pv.children, function(e){return e.className;});
+            resolve({firstLast:firstLast, kids:kids,
+                     lastIsFn: !!(pv.lastElementChild&&pv.lastElementChild.classList.contains('fnblk')),
+                     fnCount: pv.querySelectorAll('.fnblk').length});
+          },1400);
+        },1400);
+      });
+    })()
+    """)
+    check("脚注增量：首渲脚注区在末尾", "fnblk" in (res.get("firstLast") or ""), str(res.get("kids")))
+    check("脚注增量：追加章节后脚注区仍在末尾",
+          res.get("lastIsFn") is True, str(res.get("kids")))
+    check("脚注增量：脚注区只有一个", res.get("fnCount") == 1, str(res.get("fnCount")))
+
+
 if __name__ == "__main__":
     test_footnote()
     test_frontmatter()
     test_callout()
     test_highlight()
+    test_footnote_incremental()
     print("\n%s" % ("ALL PASS" if not fails else "FAILED: %s" % fails))
     sys.exit(1 if fails else 0)

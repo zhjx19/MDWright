@@ -13,6 +13,13 @@ import re
 import subprocess
 import sys
 
+# Windows 控制台默认 GBK，失败详情里可能含 GBK 外字符（如脚注回链 ↩）；
+# 统一 stdout 为 UTF-8 + replace，避免「打印」把测试搞崩。
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 HTML = os.path.join(HERE, "markdown-editor.html")
 JS = os.path.join(HERE, "_tmp_frontmatter.js")
@@ -72,6 +79,12 @@ rep('重复键降级', r.meta === null && r.src.indexOf('正文') >= 0, JSON.str
 /* 9 以 ... 结束同样有效 */
 r = extractFrontMatter("---\ntitle: t\n...\n正文");
 rep('以 ... 结束', r.meta && r.meta.title === 't' && r.src.indexOf('正文') >= 0, JSON.stringify(r));
+
+/* 10 I4：剥离 front matter 必须保持行数不变（行号是分屏联动锚点基准） */
+var s10 = "---\ntitle: t\nauthor: a\n---\n\n正文\n";
+var r10 = extractFrontMatter(s10);
+rep('剥离后行数不变(I4)', r10.src.split('\n').length === s10.split('\n').length,
+    'in=' + s10.split('\n').length + ' out=' + r10.src.split('\n').length);
 
 process.exit(fails ? 1 : 0);
 """
