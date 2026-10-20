@@ -723,7 +723,16 @@ function parseMarkdown(src, fx){
     if(/^[ ]*>/.test(line)){
       var quote=[];
       while(i<lines.length && /^[ ]*>/.test(lines[i])){quote.push(lines[i].replace(/^[ ]*>[ ]?/,''));i++;}
-      html+='<blockquote>'+parseMarkdown(quote.join('\n'), fx)+'</blockquote>';
+      /* Callout：引用块首行形如 [!NOTE]（可带标题）→ 提示块容器；
+         pandoc 通道不认该语法，Word 导出时由后端预处理成 `> **NOTE**` 引用块 */
+      var cm=(quote[0]||'').match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ ]*(.*)$/);
+      if(cm){
+        var kind=cm[1].toLowerCase(), ctitle=cm[2]||cm[1];
+        html+='<div class="callout callout-'+kind+'"><p class="callout-title">'+parseInline(ctitle, fx)+'</p>'+
+              parseMarkdown(quote.slice(1).join('\n'), fx)+'</div>';
+      } else {
+        html+='<blockquote>'+parseMarkdown(quote.join('\n'), fx)+'</blockquote>';
+      }
       olSeq=0;
       continue;
     }
