@@ -19,6 +19,14 @@ import threading
 import time
 import urllib.request
 
+# Windows 控制台默认 GBK，DOM 里可能含 GBK 外字符（如脚注回链 ↩）。
+# 统一把 stdout 改成 UTF-8 + replace，避免测试因「打印」而失败。
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 PORT = 18777
 

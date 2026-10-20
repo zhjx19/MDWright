@@ -469,6 +469,50 @@
 <script defer src="/static/katex/katex.min.js"></script>
 <script>
 /*PARSER_START*/
+/* ── 脚注（文档级）────────────────────────────────────────────────
+   语法：正文 [^label] 引用；文档任意处 [^label]: 说明 定义。
+   编号：按【引用首次出现顺序】（用户 2026-10-21 决定）；无定义的引用保持字面。
+   定义行剥离出正文（不进预览正文），文末由 buildFootnoteSection 生成脚注区。
+   只在文档级调用一次：分块渲染时同一份 fx 需传给每个块，否则编号会各自从 1 起。 */
+function extractFootnotes(src){
+  var lines=src.split('\n'), kept=[], defs={}, i=0, fence=false;
+  while(i<lines.length){
+    var ln=lines[i];
+    if(/^\s*(```|~~~)/.test(ln))fence=!fence;
+    var m=(!fence)?ln.match(/^\[\^([^\]\s]+)\]:[ ]?(.*)$/):null;
+    if(m){
+      var label=m[1], body=m[2], buf=[];
+      i++;
+      while(i<lines.length){
+        var nx=lines[i];
+        if(/^[ ]*$/.test(nx))break;                    /* 空行终止该定义 */
+        if(/^ {4}\S/.test(nx)){buf.push(nx.replace(/^ {4}/,''));i++;continue;}
+        break;
+      }
+      if(body)buf.unshift(body);
+      if(!(label in defs))defs[label]={text:buf.join('\n')};
+      continue;                                       /* 定义行不进正文 */
+    }
+    kept.push(ln); i++;
+  }
+  var clean=kept.join('\n'), nums={}, order=[], re=/\[\^([^\]\s]+)\]/g, mm;
+  while((mm=re.exec(clean))!==null){
+    var lb=mm[1];
+    if(!(lb in defs))continue;                        /* 无定义 → 字面保留 */
+    if(!(lb in nums)){nums[lb]=order.length+1;order.push(lb);}
+  }
+  return {src:clean, defs:defs, nums:nums, order:order};
+}
+function buildFootnoteSection(fx){
+  if(!fx||!fx.order.length)return '';
+  var items=[];
+  for(var i=0;i<fx.order.length;i++){
+    var lb=fx.order[i], n=fx.nums[lb];
+    items.push('<li id="fn-'+n+'">'+parseInline(fx.defs[lb].text)+
+      ' <a href="#fnref-'+n+'" class="fn-back" title="返回正文">↩</a></li>');
+  }
+  return '<section class="footnotes"><hr class="fn-sep"><ol>'+items.join('')+'</ol></section>';
+}
 function escapeHtml(s){
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
@@ -481,7 +525,7 @@ function sanitizeUrl(u){
   if(/^data:/.test(t) && !/^data:image\//i.test(t)) return '#';
   return t;
 }
-function parseInline(text){
+function parseInline(text, fx){
   var codes=[];
   text=text.replace(/`([^`]+)`/g,function(m,c){codes.push(c);return '@@C'+(codes.length-1)+'@@';});
   /* 反斜杠转义（CommonMark 口径）：\X（X 为 ASCII 标点）→ 占位符，行内语法全部
@@ -507,6 +551,15 @@ function parseInline(text){
     toks.push('<a href="'+escAttr(sanitizeUrl(href))+'"'+(title?' title="'+escAttr(title)+'"':'')+' target="_blank" rel="noopener">');
     return '\x00T'+(toks.length-1)+'\x00'+txt+'</a>';
   });
+  /* 脚注引用（文档级上下文 fx 提供 label→编号）；无定义则保持字面 */
+  if(fx&&fx.nums){
+    text=text.replace(/\[\^([^\]\s]+)\]/g,function(m,lb){
+      var n=fx.nums[lb];
+      if(!n)return m;
+      toks.push('<sup class="fn-ref"><a href="#fn-'+n+'" id="fnref-'+n+'">'+n+'</a></sup>');
+      return '\x00T'+(toks.length-1)+'\x00';
+    });
+  }
   text=text.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/__([^_]+)__/g,'<strong>$1</strong>');
   text=text.replace(/\*([^*]+)\*/g,'<em>$1</em>').replace(/_([^_]+)_/g,'<em>$1</em>');
   text=text.replace(/~~([^~]+)~~/g,'<del>$1</del>');
@@ -517,7 +570,7 @@ function parseInline(text){
   text=text.replace(/\x00E([0-9]+)\x00/g,function(m,i){return escapeHtml(escs[+i]);});
   return text;
 }
- function parseList(lines,start,indent,seq){
+ function parseList(lines,start,indent,seq,fx){
   /* seq：本编号区域内已出现的有序项数（跨列表接力，由外层块循环维护）。
      显示编号完全由渲染器决定——区域内第 N 个有序项显示 N，输入的
      数字仅是语法标记不参与显示；无序项不占编号；空行/其他块打断
@@ -534,7 +587,7 @@ function parseInline(text){
     if(li<indent){break;}
     if(li>indent){
       if(cur!==null){
-        var r=parseList(lines,i,li,0);
+        var r=parseList(lines,i,li,0,fx);
         cur.children+=r[0];
         i=r[1];
         continue;
@@ -567,11 +620,11 @@ function parseInline(text){
     var tm=it.raw.match(/^\[([ xX])\][ ]+(.*)$/);
     if(tm){
       var checked=tm[1].toLowerCase()==='x';
-      html+='<li class="task"><input type="checkbox" disabled'+(checked?' checked':'')+'> '+parseInline(tm[2])+it.children+'</li>';
+      html+='<li class="task"><input type="checkbox" disabled'+(checked?' checked':'')+'> '+parseInline(tm[2],fx)+it.children+'</li>';
     } else {
       /* 仅无序项带 marker 样式类（+ 实心 / - 空心）；有序项无 class */
       var icls=it.ordered?'':(it.mark==='-'?' class="u-hollow"':' class="u-solid"');
-      html+='<li'+icls+'>'+parseInline(it.raw)+it.children+'</li>';
+      html+='<li'+icls+'>'+parseInline(it.raw,fx)+it.children+'</li>';
     }
   }
   html+=listOrdered?'</ol>':'</ul>';
@@ -586,7 +639,7 @@ function splitRow(r){
   if(arr.length>0 && arr[arr.length-1]===''){arr.pop();}
   return arr;
 }
-function parseTable(lines,start){
+function parseTable(lines,start,fx){
   var head=splitRow(lines[start]);
   var sep=splitRow(lines[start+1]);
   var aligns=sep.map(function(c){
@@ -606,12 +659,12 @@ function parseTable(lines,start){
     }
     while(cells.length<head.length){cells.push('');}
     body+='<tr>'+cells.map(function(c,ci){
-      return '<td'+(aligns[ci]?' style="text-align:'+aligns[ci]+'"':'')+'>'+parseInline(c)+'</td>';
+      return '<td'+(aligns[ci]?' style="text-align:'+aligns[ci]+'"':'')+'>'+parseInline(c,fx)+'</td>';
     }).join('')+'</tr>';
     i++;
   }
   var thead='<thead><tr>'+head.map(function(c,ci){
-    return '<th'+(aligns[ci]?' style="text-align:'+aligns[ci]+'"':'')+'>'+parseInline(c)+'</th>';
+    return '<th'+(aligns[ci]?' style="text-align:'+aligns[ci]+'"':'')+'>'+parseInline(c,fx)+'</th>';
   }).join('')+'</tr></thead>';
   return ['<table>'+thead+'<tbody>'+body+'</tbody></table>',i];
 }
@@ -622,7 +675,7 @@ function parseFenceLang(raw){
   if(!m)return {lang:raw,width:0};
   return {lang:m[1], width:m[2]?Math.min(100,parseInt(m[2],10)):0};
 }
-function parseMarkdown(src){
+function parseMarkdown(src, fx){
   var lines=src.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');
   var html='';
   var i=0;
@@ -657,7 +710,7 @@ function parseMarkdown(src){
     var hm=line.match(/^(#{1,6})[ ]+(.*)$/);
     if(hm){
       var lvl=hm[1].length;
-      html+='<h'+lvl+'>'+parseInline(hm[2].trim())+'</h'+lvl+'>';
+      html+='<h'+lvl+'>'+parseInline(hm[2].trim(), fx)+'</h'+lvl+'>';
       i++;olSeq=0;continue;
     }
     var stripped=line.replace(/[ ]/g,'');
@@ -670,24 +723,24 @@ function parseMarkdown(src){
     if(/^[ ]*>/.test(line)){
       var quote=[];
       while(i<lines.length && /^[ ]*>/.test(lines[i])){quote.push(lines[i].replace(/^[ ]*>[ ]?/,''));i++;}
-      html+='<blockquote>'+parseMarkdown(quote.join('\n'))+'</blockquote>';
+      html+='<blockquote>'+parseMarkdown(quote.join('\n'), fx)+'</blockquote>';
       olSeq=0;
       continue;
     }
     if(line.indexOf('|')>=0 && i+1<lines.length && /^[ ]*\|?[-|: ]+\|?[ ]*$/.test(lines[i+1]) && lines[i+1].indexOf('-')>=0){
-      var t=parseTable(lines,i);
+      var t=parseTable(lines,i,fx);
       html+=t[0];i=t[1];olSeq=0;continue;
     }
     if(/^[ ]*([-+]|[0-9]+\.)[ ]+/.test(line)){
       var ind=/^([ ]*)([-+]|[0-9]+\.)/.exec(line)[1].length;
-      var lst=parseList(lines,i,ind,olSeq);
+      var lst=parseList(lines,i,ind,olSeq,fx);
       html+=lst[0];i=lst[1];olSeq=lst[2];continue;
     }
     var para=[];
     while(i<lines.length && !/^[ ]*$/.test(lines[i]) && !/^```/.test(lines[i]) && !/^(#{1,6})[ ]+/.test(lines[i]) && !/^[ ]*>/.test(lines[i]) && !/^[ ]*([-+]|[0-9]+\.)[ ]+/.test(lines[i]) && !(lines[i].indexOf('|')>=0 && i+1<lines.length && /^[ ]*\|?[-|: ]+\|?[ ]*$/.test(lines[i+1]) && lines[i+1].indexOf('-')>=0)){
       para.push(lines[i]);i++;
     }
-    html+='<p>'+parseInline(para.join('\n')).replace(/\n/g,'<br>')+'</p>';
+    html+='<p>'+parseInline(para.join('\n'), fx).replace(/\n/g,'<br>')+'</p>';
     olSeq=0;
   }
   return html;
@@ -1041,6 +1094,9 @@ function parseMarkdown(src){
   function render(){
     buildMirrorMap();   /* 镜像测量表只依赖编辑器内容与排版，任何内容变化必经此处 */
     var src=extractMath(getText());
+    var fx=extractFootnotes(src);        /* 脚注：定义剥离 + 引用序编号（文档级，一次） */
+    src=fx.src;
+    var fnSig=JSON.stringify(fx.nums);   /* 编号变化 → 含脚注引用的块必须重渲 */
     var blocks=splitBlocks(src);
     /* 源行打标：blocks 是 src 按行的精确分区，逐块累加得起始行号（供分屏滚动联动） */
     var startLines=[],acc=0;
@@ -1052,7 +1108,7 @@ function parseMarkdown(src){
       var node=existing[i];
       /* 行号即使内容未变也要刷新（前块增删行会推移本块起始行） */
       if(node) node.setAttribute('data-src-line', String(startLines[i]||0));
-      if(node && node.getAttribute('data-h')===blkHash(blocks[i])) continue;
+      if(node && node.getAttribute('data-h')===blkHash(blocks[i]+'\u0000'+fnSig)) continue;
       changed.push(i);
     }
     for(var j=blocks.length;j<existing.length;j++){
@@ -1060,19 +1116,19 @@ function parseMarkdown(src){
       dead.parentNode.removeChild(dead);
     }
     if(renderQueue){ clearTimeout(renderQueue.t); renderQueue=null; }
-    var q={changed:changed, blocks:blocks, existing:existing, idx:0, startLines:startLines};
+    var q={changed:changed, blocks:blocks, existing:existing, idx:0, startLines:startLines, fnSig:fnSig, fx:fx};
     renderQueue=q;
     q.t=setTimeout(function step(){
       if(!renderQueue || renderQueue!==q) return;
       var bi=q.changed[q.idx];
-      if(bi===undefined){ renderQueue=null; tagAnchorLines(q.blocks,q.startLines); buildOutline(); return; }
+      if(bi===undefined){ renderQueue=null; updateFootnoteBlock(q.fx); tagAnchorLines(q.blocks,q.startLines); buildOutline(); return; }
       q.idx++;
       var div=q.existing[bi];
       var fresh=false;
       if(!div){ div=document.createElement('div'); div.className='pblk'; fresh=true; }
-      div.setAttribute('data-h', blkHash(q.blocks[bi]));
+      div.setAttribute('data-h', blkHash(q.blocks[bi]+'\u0000'+q.fnSig));
       div.setAttribute('data-src-line', String(q.startLines[bi]||0));
-      div.innerHTML=parseMarkdown(q.blocks[bi]);
+      div.innerHTML=parseMarkdown(q.blocks[bi], q.fx);
       restoreMath(div); fixLocalImages(div);
       mountDiagrams(div);
       if(fresh){
@@ -1081,6 +1137,18 @@ function parseMarkdown(src){
       }
       renderQueue.t=setTimeout(step,0);
     },0);
+  }
+  /* 脚注区：独立于 .pblk 序列（增量渲染的块集合不含它），追加在预览末尾。
+     定义或编号变化时整体重绘；脚注正文里的公式占位符同样要还原。 */
+  function updateFootnoteBlock(fx){
+    var html=buildFootnoteSection(fx);
+    var el=preview.querySelector('.fnblk');
+    if(!html){ if(el)el.parentNode.removeChild(el); return; }
+    if(!el){ el=document.createElement('div'); el.className='fnblk'; preview.appendChild(el); }
+    el.setAttribute('data-h','fn:'+blkHash(html));
+    el.innerHTML=html;
+    restoreMath(el);
+    fixLocalImages(el);
   }
   /* 标题锚点打标：块内 h1-h4 元素盖源行标（fence 内 # 不算），供分屏联动做像素插值锚。
      源标题行与 DOM heading 顺序一一对应（ATX 行首 # 才算，与 splitBlocks 口径一致） */
