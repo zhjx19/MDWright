@@ -495,6 +495,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
                  "sessions": len(_LIVE_SESSIONS)},
                 ensure_ascii=False))
             return
+        if u.path == "/api/tools":
+            # 外部工具探测（pandoc / 浏览器 / R / quarto）：前端据 found 决定按钮置灰，
+            # 缺失时给安装指引而不是让导出中途炸掉。
+            try:
+                import md_tools
+                settings = _load_json(SETTINGS_PATH, {})
+                cfg = settings.get("tools") if isinstance(settings, dict) else {}
+                if not isinstance(cfg, dict):
+                    cfg = {}
+                self._send(200, json.dumps({"ok": True, "tools": md_tools.probe_all(cfg)},
+                                           ensure_ascii=False),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(500, json.dumps({"ok": False, "error": str(e)},
+                                           ensure_ascii=False))
+            return
         if u.path == "/api/ping":
             # 页面心跳：登记本会话存活（token 区分多窗口/多标签），并撤销待退出。
             # 注意：闲置（切标签页/最小化）绝不触发退出。
