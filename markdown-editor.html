@@ -469,6 +469,69 @@
 <script defer src="/static/katex/katex.min.js"></script>
 <script>
 /*PARSER_START*/
+/* ── YAML front matter（文档级）──────────────────────────────────
+   仅文档第一行是 --- 时生效，到下一个 --- 或 ... 为止。
+   支持极简子集：嵌套 map（缩进）、列表（- item）、标量。
+   解析失败 → meta=null 且**原样返回整篇 src**：调用方按普通段落处理，
+   不剥离、不吞内容（fail-closed）。 */
+function yamlScalar(v){
+  var s=String(v==null?'':v).trim();
+  if(s==='')return '';
+  if((s.charAt(0)==='"'&&s.charAt(s.length-1)==='"')||(s.charAt(0)==="'"&&s.charAt(s.length-1)==="'"))return s.slice(1,-1);
+  if(s==='true'||s==='True'||s==='TRUE')return true;
+  if(s==='false'||s==='False'||s==='FALSE')return false;
+  if(s==='null'||s==='Null'||s==='NULL'||s==='~')return null;
+  if(/^-?\d+$/.test(s))return parseInt(s,10);
+  if(/^-?\d*\.\d+$/.test(s))return parseFloat(s);
+  return s;
+}
+function parseYamlLite(text){
+  var root={}, stack=[{indent:-1,node:root}], lines=text.split('\n');
+  for(var i=0;i<lines.length;i++){
+    var raw=lines[i];
+    if(/^[ ]*$/.test(raw)||/^[ ]*#/.test(raw))continue;
+    var mm=raw.match(/^([ ]*)(.*)$/), indent=mm[1].length, body=mm[2];
+    if(/^-(\s|$)/.test(body)){
+      while(stack.length>1 && stack[stack.length-1].indent>=indent)stack.pop();
+      var arr=stack[stack.length-1].node;
+      if(!Array.isArray(arr))return null;
+      arr.push(yamlScalar(body.replace(/^-\s*/,'')));
+      continue;
+    }
+    var kv=body.match(/^([^:]+):[ ]*(.*)$/);
+    if(!kv)return null;
+    var key=kv[1].trim(), val=kv[2].trim();
+    while(stack.length>1 && stack[stack.length-1].indent>=indent)stack.pop();
+    var parent=stack[stack.length-1].node;
+    if(parent===root && Object.prototype.hasOwnProperty.call(parent,key))return null;  /* 重复键 → 非法 */
+    if(val===''){
+      var nx=lines[i+1]||'';
+      if(/^[ ]*-\s/.test(nx)||/^[ ]*-$/.test(nx)){
+        var na=[]; parent[key]=na; stack.push({indent:indent,node:na});
+      }else{
+        var no={}; parent[key]=no; stack.push({indent:indent,node:no});
+      }
+    }else{
+      parent[key]=yamlScalar(val);
+    }
+  }
+  return root;
+}
+function extractFrontMatter(src){
+  src=String(src==null?'':src).replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  var lines=src.split('\n');
+  if(!lines.length||lines[0].replace(/[ ]/g,'')!=='---')return {src:src, meta:null};
+  var end=-1;
+  for(var i=1;i<lines.length;i++){
+    var t=lines[i].replace(/[ ]/g,'');
+    if(t==='---'||t==='...'){end=i;break;}
+  }
+  if(end<0)return {src:src, meta:null};          /* 首行 --- 但未闭合 → 当普通内容 */
+  var meta=null;
+  try{ meta=parseYamlLite(lines.slice(1,end).join('\n')); }catch(e){ meta=null; }
+  if(meta===null)return {src:src, meta:null};    /* 非法 YAML → 整块保留，不吞内容 */
+  return {src:lines.slice(end+1).join('\n'), meta:meta};
+}
 /* ── 脚注（文档级）────────────────────────────────────────────────
    语法：正文 [^label] 引用；文档任意处 [^label]: 说明 定义。
    编号：按【引用首次出现顺序】（用户 2026-10-21 决定）；无定义的引用保持字面。
@@ -1129,9 +1192,12 @@ function parseMarkdown(src, fx){
     mountDiagrams(preview);
   }
 
+  var frontMeta=null;   /* 文档 front matter 元数据（导出标题等用途） */
   function render(){
     buildMirrorMap();   /* 镜像测量表只依赖编辑器内容与排版，任何内容变化必经此处 */
-    var src=extractMath(getText());
+    var fm=extractFrontMatter(getText());   /* front matter 剥离出正文（不进预览） */
+    frontMeta=fm.meta;
+    var src=extractMath(fm.src);
     var fx=extractFootnotes(src);        /* 脚注：定义剥离 + 引用序编号（文档级，一次） */
     src=fx.src;
     var fnSig=JSON.stringify(fx.nums);   /* 编号变化 → 含脚注引用的块必须重渲 */
