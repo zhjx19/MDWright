@@ -166,6 +166,29 @@
   .markdown-body th{background:var(--code-bg); font-weight:650;}
   .markdown-body img{max-width:100%; border-radius:var(--radius); margin:.5em 0;}
   .markdown-body .toc-anchor{color:var(--muted);}
+  /* ── R1 新语法样式（与 md_server.py 的 SYNTAX_CSS 一一对应）──────
+     两处必须同步：前端用 CSS 变量跟随主题，导出用固定色值（导出文档无变量）。 */
+  .markdown-body mark{background:#f5d76e;color:inherit;padding:.05em .25em;border-radius:3px;}
+  .markdown-body sup,.markdown-body sub{font-size:.72em;line-height:0;}
+  .markdown-body dl{margin:.9em 0;}
+  .markdown-body dt{font-weight:650;margin-top:.6em;}
+  .markdown-body dd{margin:.2em 0 .2em 1.6em;color:var(--text);}
+  .markdown-body .callout{margin:.9em 0;padding:.6em 1em;border-left:4px solid var(--accent);
+    border-radius:0 var(--radius) var(--radius) 0;background:var(--accent-soft);}
+  .markdown-body .callout-title{margin:0 0 .35em;font-weight:700;font-size:.92em;}
+  .markdown-body .callout-note{border-left-color:#4a6cf7;background:rgba(74,108,247,.10);}
+  .markdown-body .callout-tip{border-left-color:#2f9e5f;background:rgba(47,158,95,.10);}
+  .markdown-body .callout-important{border-left-color:#8a5cf5;background:rgba(138,92,245,.10);}
+  .markdown-body .callout-warning{border-left-color:#d99a4e;background:rgba(217,154,78,.12);}
+  .markdown-body .callout-caution{border-left-color:#d9534f;background:rgba(217,83,79,.10);}
+  .markdown-body .callout p{margin:.3em 0;}
+  .markdown-body .fn-ref{font-size:.72em;line-height:0;margin-left:.1em;}
+  .markdown-body .fn-ref a{text-decoration:none;}
+  .markdown-body .footnotes{margin-top:2em;font-size:.92em;color:var(--muted);}
+  .markdown-body .footnotes ol{margin:.3em 0;padding-left:1.4em;}
+  .markdown-body .footnotes li{margin:.3em 0;}
+  .markdown-body .fn-back{text-decoration:none;margin-left:.3em;}
+  .markdown-body .fn-sep{border-top:1px solid var(--border);}
 
   @media print{
     #toolbar,#status,#outline,#editorPane{display:none !important;}
@@ -1586,6 +1609,7 @@ function parseMarkdown(src, fx){
     fetch('/api/export-html',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({path:currentFile,
         bodyHtml:document.getElementById('preview').innerHTML,
+        docTitle:(frontMeta&&frontMeta.title)||'',
         tsCss:(document.getElementById('ts-style')||{textContent:''}).textContent})})
       .then(function(r){return r.json();})
       .then(function(j){
@@ -1610,6 +1634,7 @@ function parseMarkdown(src, fx){
       payload = JSON.stringify({
         path: currentFile,
         bodyHtml: bh,
+        docTitle: (frontMeta && frontMeta.title) || '',
         tsCss: (document.getElementById('ts-style')||{textContent:''}).textContent,
         cfg: (function(){try{return JSON.parse(localStorage.getItem('md-editor-typeset-v3')||'{}').page||{};}catch(e){return {};}})()
       });

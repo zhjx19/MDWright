@@ -1058,7 +1058,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 obj = json.loads(self.rfile.read(length).decode("utf-8"))
                 html = build_standalone_html(obj.get("path") or None,
                                              obj.get("bodyHtml", ""),
-                                             obj.get("tsCss", ""))
+                                             obj.get("tsCss", ""),
+                                             obj.get("docTitle") or "")
                 name = "document.html"
                 with open(os.path.join(HERE, name), "w", encoding="utf-8") as f:
                     f.write(html)
@@ -1076,7 +1077,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 body_html = obj.get("bodyHtml", "")
                 ts_css = obj.get("tsCss", "")
                 page_cfg = obj.get("cfg", {}) or {}
-                html = build_paged_html(md_path, body_html, ts_css, page_cfg)
+                html = build_paged_html(md_path, body_html, ts_css, page_cfg,
+                                        obj.get("docTitle") or "")
                 # /static/ 路由会把前缀剥掉后映射到工具目录（/static/x -> HERE/x），
                 # 因此文件写在 HERE 下、URL 用 /static/<name> 即可正确访问
                 name = "document.paged.html"
@@ -1821,7 +1823,34 @@ def _strip_tags(s):
 
 
 
-def build_standalone_html(md_path, body_html, ts_css):
+# R1 新语法样式（导出用固定色值：导出文档内未定义 CSS 变量；
+# 与 markdown-editor.html 主 <style> 中的同名规则一一对应，改一处必须同步改另一处）
+SYNTAX_CSS = (
+    ".markdown-body mark{background:#f5d76e;color:inherit;padding:.05em .25em;border-radius:3px;}"
+    ".markdown-body sup,.markdown-body sub{font-size:.72em;line-height:0;}"
+    ".markdown-body dl{margin:.9em 0;}"
+    ".markdown-body dt{font-weight:650;margin-top:.6em;}"
+    ".markdown-body dd{margin:.2em 0 .2em 1.6em;}"
+    ".markdown-body .callout{margin:.9em 0;padding:.6em 1em;border-left:4px solid #4a6cf7;"
+    "border-radius:0 6px 6px 0;background:#f5f7ff;}"
+    ".markdown-body .callout-title{margin:0 0 .35em;font-weight:700;font-size:.92em;}"
+    ".markdown-body .callout-note{border-left-color:#4a6cf7;background:#f5f7ff;}"
+    ".markdown-body .callout-tip{border-left-color:#2f9e5f;background:#eefaf2;}"
+    ".markdown-body .callout-important{border-left-color:#8a5cf5;background:#f3eefe;}"
+    ".markdown-body .callout-warning{border-left-color:#d99a4e;background:#fdf5e9;}"
+    ".markdown-body .callout-caution{border-left-color:#d9534f;background:#fdeceb;}"
+    ".markdown-body .callout p{margin:.3em 0;}"
+    ".markdown-body .fn-ref{font-size:.72em;line-height:0;margin-left:.1em;}"
+    ".markdown-body .fn-ref a{text-decoration:none;}"
+    ".markdown-body .footnotes{margin-top:2em;font-size:.92em;color:#666;}"
+    ".markdown-body .footnotes ol{margin:.3em 0;padding-left:1.4em;}"
+    ".markdown-body .footnotes li{margin:.3em 0;}"
+    ".markdown-body .fn-back{text-decoration:none;margin-left:.3em;}"
+    ".markdown-body .fn-sep{border-top:1px solid #ddd;}"
+)
+
+
+def build_standalone_html(md_path, body_html, ts_css, doc_title=""):
     """普通 .html 导出组装（py 全权：图片路径还原 + katex css + 排版样式）"""
     katex_css = ""
     kp = os.path.join(HERE, "katex", "katex.min.css")
@@ -1838,10 +1867,13 @@ def build_standalone_html(md_path, body_html, ts_css):
                       lambda m: 'src="file:///%s/%s"' % (mdir, m.group(1)), body)
     m1 = re.search(r"<h1[^>]*>([\s\S]*?)</h1>", body)
     title = re.sub(r"<[^>]+>", "", m1.group(1)).strip() if m1 else "未命名文档"
+    # front matter 的 title 优先（前端 render() 已把 front matter 剥离出 bodyHtml，
+    # 故只有在结构化数据里才拿得到，直接传进来）
+    title = (doc_title or "").strip() or title
     ts = ts_css.replace("#preview", ".markdown-body")
     html = ('<!DOCTYPE html>\n<html lang="zh-CN"><head><meta charset="UTF-8"><title>__TITLE__</title>'
         "<style>__KATEX__</style><style>div.md-math-block{overflow-x:auto;margin:.8em 0;}"
-        "span.md-math-inline{white-space:nowrap;}__TS__</style>"
+        "span.md-math-inline{white-space:nowrap;}__SYNTAX____TS__</style>"
         '<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",'
         '"Microsoft YaHei",sans-serif;max-width:820px;margin:40px auto;padding:0 20px;'
         'line-height:1.7;color:#222;}'
@@ -1853,11 +1885,12 @@ def build_standalone_html(md_path, body_html, ts_css):
         'img{max-width:100%;}a{color:#4a6cf7;}</style></head><body class="markdown-body">__BODY__</body></html>')
     html = html.replace("__TITLE__", html_module.escape(title))
     html = html.replace("__KATEX__", katex_css)
+    html = html.replace("__SYNTAX__", SYNTAX_CSS)
     html = html.replace("__TS__", ts)
     html = html.replace("__BODY__", body)
     return html
 
-def build_paged_html(md_path, body_html, ts_css, page_cfg):
+def build_paged_html(md_path, body_html, ts_css, page_cfg, doc_title=""):
     paper = page_cfg.get("paper", "A4")
     pw, ph = page_cfg.get("pw", ""), page_cfg.get("ph", "")
     if paper == "custom" and pw and ph:
@@ -2002,10 +2035,11 @@ def build_paged_html(md_path, body_html, ts_css, page_cfg):
     m1 = re.search(r"<h1[^>]*>([\s\S]*?)</h1>", body)
     title = _strip_tags(m1.group(1)) if m1 else "未命名文档"
     title = title.strip() or "未命名文档"
+    title = (doc_title or "").strip() or title
 
     html = (
         '<!DOCTYPE html>\n<html lang="zh-CN"><head><meta charset="UTF-8"><title>%s</title>'
-        "<style>%s</style><style>%s</style><style>%s%s%s</style>"
+        "<style>%s</style><style>%s</style><style>%s%s%s%s</style>"
         '</head><body class="markdown-body"><div id="paged-content" class="markdown-body">%s</div>'
         "<script>%s</script>"
         "<script>%s</script></body></html>"
@@ -2015,6 +2049,7 @@ def build_paged_html(md_path, body_html, ts_css, page_cfg):
         base_css,
         katex_css,
         toc_css,
+        SYNTAX_CSS,
         ts_css,
         body,
         paged_js,
