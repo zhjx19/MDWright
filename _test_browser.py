@@ -103,7 +103,7 @@ class Browser(object):
                 time.sleep(0.1)
         raise RuntimeError("devtools port %d never came up" % self.port)
 
-    def eval(self, expr, url="http://127.0.0.1:%d/" % PORT):
+    def eval(self, expr, url="http://127.0.0.1:%d/?file=" % PORT):
         with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
                                          encoding="utf-8") as f:
             f.write(expr)
@@ -134,8 +134,13 @@ class Browser(object):
                 pass
 
 
-def run_expr(expr, url="http://127.0.0.1:%d/" % PORT, port=PORT):
-    """一次性：起服务 + 浏览器 → 求值 → 关停。"""
+def run_expr(expr, url="http://127.0.0.1:%d/?file=" % PORT, port=PORT):
+    """一次性：起服务 + 浏览器 → 求值 → 关停。
+
+    URL 默认带 ?file=（空路径）：前端据此跳过「加载默认文档」，
+    否则测试会打开使用指南并因改内容触发批注剪枝 → 把作者的
+    annotations.json 清空写回磁盘（真实踩过一次）。
+    """
     httpd = start_server(port)
     b = Browser()
     try:

@@ -11,6 +11,40 @@
 
 ---
 
+## v2.1.0（2026-10-21）
+
+**本次改动：五类 Markdown 语法扩展 + 代码语法高亮 + 代码块复制按钮**
+
+**新增**
+
+- **脚注（文档级）**：正文 `[^label]` 引用、文档任意处 `[^label]: 说明` 定义；编号按**引用首次出现顺序**重排（与定义先后无关），同一标签多次引用共用编号；未定义的引用保持字面原文（fail-closed，不渲染成坏链接）；定义行剥离出正文，文末自动生成脚注区（带回跳锚点）。根因约束——编辑器按 H1/H2 分块增量渲染，脚注天然是文档级语义，故 `render()` 入口先全文提取 `fx`（定义表 + 引用序编号表）再分块渲染，脚注区独立于 `.pblk` 块序列追加在预览末尾，编号签名变化时含引用的块整批重渲。验证——`_test_footnote.py` 9/9 PASS（编号序、未定义字面、定义剥离、多行定义、代码块内不生效、重复引用共用编号、无脚注不生成空区）；`_test_syntax_ui.py` 7/7 浏览器级断言真实 DOM。
+- **Callout 提示块**：`> [!NOTE]` / `[!TIP]` / `[!IMPORTANT]` / `[!WARNING]` / `[!CAUTION]` 五型（可带标题 `> [!NOTE] 标题`），渲染为带类型色条的容器；普通引用块行为不变。修法——引用块分支识别首行 `[!TYPE]` 后改渲染 `.callout` 容器，正文仍走递归 `parseMarkdown`（列表/代码块等照常）。验证——`_test_callout.py` 10/10 PASS。
+- **行内高亮与上下标**：`==高亮==`→`<mark>`、`^上标^`→`<sup>`、`~下标~`→`<sub>`。顺序敏感——删除线 `~~x~~` 必须先于下标匹配，否则会被拆成两个下标；行内代码段与链接 URL 内的同名字符不生效（代码段优先、链接先占位）。验证——`_test_inline_ext.py` 11/11 PASS。
+- **定义列表**：`术语` + 后续 `: 定义` 行渲染为 `<dl><dt><dd>`，一条术语可带多条定义，定义续行缩进 4 空格。修法——段落分支之前先判定义列表，并给段落续行加 `: ` 终止条件；同时把段落分支改为「首行无条件吃下」，否则以 `: ` 开头的行会一行都吃不到、`i` 不推进导致死循环（实现期实测踩中）。验证——`_test_deflist.py` 7/7 PASS。
+- **YAML front matter**：文档首行 `---` 起的元数据块剥离出正文（不进预览），支持极简子集（嵌套 map / 列表 / 标量，含去引号、数字、布尔、null）。解析失败（未闭合 / 非法 / 不在首行 / 重复键）一律**原样返回整篇**按普通段落渲染，一字不丢（fail-closed）；导出的 HTML 标题优先取 `title`。验证——`_test_frontmatter.py` 12/12 PASS；`_test_syntax_ui.py` 断言 YAML 与分隔线不出现在预览。
+- **代码语法高亮**：highlight.js 11.11.1 common 构建（37 语言，**含 R**）就地 vendor 分发，懒加载（文档无代码则零加载），主题跟随编辑器明暗。**只按围栏声明的语言着色，不做自动探测**——实测 `highlightAuto` 会把 `plain text no lang` 判成 css 并着色，写作工具里 ASCII 图/日志/配置被乱涂是负体验。着色结果留在 DOM，导出只注入主题 CSS，独立 HTML 仍是可分发的单文件。验证——`_test_highlight.py` 11/11（vendor/语言集/许可/文档登记）；`_test_syntax_ui.py` 断言 `hljs-keyword` span 真实生成、无语言围栏不着色。
+- **代码块复制按钮**：代码块右上角「复制」（悬停出现），点击把该块代码写入剪贴板（clipboard API 失败回退 `execCommand`）。导出时由**服务端**统一剥离（`_strip_export_artifacts`，两条导出出口共用），独立 HTML 里 clipboard 在 file:// 下不可靠且按钮对读者无意义。验证——`_test_copy_btn.py` 6/6 PASS（按钮数、逐块复制内容、按钮文本不污染代码、两条导出产物均无按钮）。
+
+**变更**
+
+- **导出与预览样式同源**：新语法样式在预览（CSS 变量跟随主题）、独立 HTML 导出、分页导出（固定色值，导出文档无 CSS 变量）三处同步；分页导出的注入序为 katex → 目录 → 新语法 → 用户排版样式，保证用户 `!important` 规则仍覆盖。验证——`_test_export_css.py` 11/11 PASS；`_test_paged_e2e.py` 47/47 回归 PASS。
+- **新增 CDP 浏览器测试通道**：本机未安装 playwright，既有 `_test_list_ui.py` / `_test_outline_jump.py` 无法运行。新增 `_cdp.js`（Node 24 内置 `fetch`/`WebSocket` 直连本机 Chrome/Edge 调试端口，零安装）+ `_test_browser.py`（起服务 + headless 浏览器 + 页面内求值取 JSON），调试端口运行时探测空闲口，避免残留进程冲突。R2/R4 的浏览器级验证可复用。
+- **服务版本 54→55**：`MD_SERVER_VERSION` 自愈换代，旧页面自动刷新至带新语法的版本。
+
+**测试**
+
+- 新增 `_test_footnote.py` / `_test_callout.py` / `_test_inline_ext.py` / `_test_deflist.py` / `_test_frontmatter.py` / `_test_highlight.py` / `_test_export_css.py` / `_test_copy_btn.py` / `_test_syntax_ui.py`，以及测试基建 `_cdp.js` / `_test_browser.py`。
+- 回归：`_test_list_parse.py` 20/20、`_test_escape.py` 11/11、`_test_img_width.py` 6/6、`_test_table_split.py` 8/8、`_test_routes.py`、`_test_smd.py` 33/33、`_test_keepalive.py`、`_test_smd_ann.py`、`_test_paged_e2e.py` 47/47 全 PASS。
+- **未覆盖**：`_test_list_ui.py` / `_test_outline_jump.py` 依赖 playwright（本机未装），本轮未运行；R1 只改解析器与渲染管线，不触列表 UI 与大纲跳转逻辑。
+
+**说明**
+
+- 图表引擎本轮不扩容（mermaid / dot / wavedrom / vega 四套维持现状）。
+- highlight.js 许可为 **BSD-3-Clause**（非 MIT），无传染性，与本工具 AGPL-3.0-or-later 并存无冲突；已登记 `LICENSES/highlight.js-BSD-3-Clause.txt` 与分发清单、版权声明。
+- 分发体积 +约 132KB（`highlight.min.js` 127KB + 两套主题 CSS 共 4.3KB）。
+
+---
+
 ## v2.0.0（2026-10-20）
 
 **本次改动：四种本地图表引擎 + 预览滚动跟随开关 + 打开/另存为扩展名过滤 + 图表 vendor 两处缺陷修复**
