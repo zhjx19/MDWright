@@ -1121,6 +1121,30 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except Exception as e:
                 self._send(500, json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
             return
+        if u.path == "/api/export-docx":
+            # Word 导出：前端交 markdown **源文**（不是 bodyHtml）——pandoc 吃源文，
+            # 公式、脚注、定义列表由它原生落成 Word 结构（公式→OMML）。
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                obj = json.loads(self.rfile.read(length).decode("utf-8"))
+                md_path = (obj.get("path") or "").strip()
+                md_text = obj.get("markdown") or ""
+                if not md_path:
+                    self._send(400, json.dumps({"ok": False, "error": "请先保存文档再导出 Word"},
+                                               ensure_ascii=False))
+                    return
+                if not os.path.isfile(md_path):
+                    self._send(400, json.dumps({"ok": False,
+                        "error": "文档不存在：%s" % md_path}, ensure_ascii=False))
+                    return
+                stem = os.path.splitext(os.path.basename(md_path))[0]
+                out = os.path.join(os.path.dirname(os.path.abspath(md_path)), stem + ".docx")
+                import md_pandoc
+                md_pandoc.export_docx(md_text, md_path, out)
+                self._send(200, json.dumps({"ok": True, "path": out}, ensure_ascii=False))
+            except Exception as e:
+                self._send(500, json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
+            return
         if u.path == "/api/annotations":
             try:
                 length = int(self.headers.get("Content-Length", 0))
