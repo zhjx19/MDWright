@@ -1145,6 +1145,61 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except Exception as e:
                 self._send(500, json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
             return
+        if u.path == "/api/export-pdf":
+            # PDF 直出：复用分页 HTML，用 headless Chromium 打印成文件（不开打印对话框）。
+            # 依赖本机 Edge/Chrome；缺了就明确报错并引导用「打印」。
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                obj = json.loads(self.rfile.read(length).decode("utf-8"))
+                md_path = (obj.get("path") or "").strip()
+                if not md_path:
+                    self._send(400, json.dumps({"ok": False, "error": "请先保存文档再导出 PDF"},
+                                               ensure_ascii=False))
+                    return
+                if not os.path.isfile(md_path):
+                    self._send(400, json.dumps({"ok": False,
+                        "error": "文档不存在：%s" % md_path}, ensure_ascii=False))
+                    return
+                import md_tools
+                browser = md_tools.find_browser()
+                if not browser:
+                    self._send(400, json.dumps({"ok": False,
+                        "error": "未检测到 Chromium 内核浏览器（Edge/Chrome），无法直出 PDF；"
+                                 "可改用「打印」按钮"}, ensure_ascii=False))
+                    return
+                html = build_paged_html(md_path, obj.get("bodyHtml", ""),
+                                        obj.get("tsCss", ""), obj.get("cfg", {}) or {},
+                                        obj.get("docTitle") or "")
+                name = "document.paged.html"
+                with open(os.path.join(HERE, name), "w", encoding="utf-8") as f:
+                    f.write(html)
+                # 端口取真实监听端口：服务可能不在 18766（测试就起在 18777），
+                # 用模块常量会让浏览器去连别的服务，产出「看起来成功但内容不对」的文件。
+                port = self.server.server_address[1]
+                url = "http://127.0.0.1:%d/static/%s" % (port, name)
+                stem = os.path.splitext(os.path.basename(md_path))[0]
+                out = os.path.join(os.path.dirname(os.path.abspath(md_path)), stem + ".pdf")
+                import _cdp
+                # CDP 单会话：等页面写下 data-paged-done（页码脚本按"页数连续稳定"判定）
+                # 再 printToPDF。不能用「--dump-dom + --print-to-pdf」两趟——
+                # 那是两次独立加载，实测同一文档页数在 0/1/2/3 之间乱跳，必出半截 PDF。
+                want = _cdp.print_pdf(url, out, browser)
+                data = open(out, "rb").read()
+                got = len(re.findall(rb"/Type\s*/Page[^s]", data))
+                if not (want and want == got):
+                    try:
+                        os.remove(out)          # 半截文件绝不留下
+                    except Exception:
+                        pass
+                    self._send(500, json.dumps({"ok": False,
+                        "error": "分页校验不一致（DOM %d 页 / PDF %d 页），未生成文件；"
+                                 "请改用「打印」按钮" % (want, got)}, ensure_ascii=False))
+                    return
+                self._send(200, json.dumps({"ok": True, "path": out, "pages": got},
+                                           ensure_ascii=False))
+            except Exception as e:
+                self._send(500, json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
+            return
         if u.path == "/api/annotations":
             try:
                 length = int(self.headers.get("Content-Length", 0))
@@ -1810,14 +1865,20 @@ PAGED_FILLER_TMPL = """
     while(n && !(n.classList && n.classList.contains('pagedjs_page'))) n = n.parentNode;
     return n;
   }
-  var iv = setInterval(function(){
-    var pgs = document.querySelectorAll('.pagedjs_page');
-    var n = pgs.length;
-    if(!n) return;
+  var iv = null;
+  function startWatch(){
+    if(iv) return;
+    iv = setInterval(function(){
+      var pgs = document.querySelectorAll('.pagedjs_page');
+      var n = pgs.length;
+      if(!n) return;
     if(n !== lastN){ lastN = n; stable = 0; return; }
     stable++;
     if(stable < 3) return;
     clearInterval(iv); mo.disconnect(); done = true;
+    /* 分页完成标记：外部（headless 打印）据此判断"可以出 PDF 了"，
+       不必靠 virtual-time-budget 猜时机——猜不准就会打出半截文档。 */
+    document.documentElement.setAttribute('data-paged-done', '1');
     /* 页码映射：纯目录页不编号；正文页码 = 物理序 - 已跳过的目录页数 */
     var skip = [], shown = [], P = 0, c = 0, i;
     for(i=0;i<n;i++){ skip[i] = tocOnly(pgs[i]); if(!skip[i]) P++; }
@@ -1853,6 +1914,9 @@ PAGED_FILLER_TMPL = """
       links[i].appendChild(sp);
     }
   }, 300);
+  }
+  startWatch();   /* 立即开始判稳：字体事件在 headless 虚拟时间下可能永不就绪，
+                     等它就等于永不开始（实测会出现「完成标记永不出现」）。 */
 })();
 """
 
