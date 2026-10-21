@@ -174,11 +174,34 @@ def run_smoke(exe):
     return not fails
 
 
+def verify_staging():
+    """分发集必须含导出链路与代码高亮 vendor。
+
+    少了它们的症状是**静默失效**：装完 app 能开、页面能看，只是「Word/PDF」按钮
+    永远置灰、代码块永不着色，没有任何报错。所以在这里前置拦住。
+    """
+    need = [("md_tools.py", 1), ("md_pandoc.py", 1), ("_cdp.py", 1),
+            ("highlight/highlight.min.js", 100 * 1024),
+            ("highlight/styles/github.css", 500),
+            ("highlight/styles/github-dark.css", 500)]
+    fails = []
+    for rel, min_size in need:
+        p = os.path.join(STAGING, rel.replace("/", os.sep))
+        ok = os.path.isfile(p) and os.path.getsize(p) >= min_size
+        print("%s staging has %s%s" % ("PASS" if ok else "FAIL", rel,
+                                       "" if ok else "（缺失或过小）"))
+        if not ok:
+            fails.append(rel)
+    return not fails
+
+
 def main():
     smoke_mode = "--smoke" in sys.argv
     ver = detect_version()
     n = make_staging(ver)
     print("staging ready: %d files (v%s)" % (n, ver))
+    if not verify_staging():
+        raise SystemExit("FAIL staging 缺少必需文件（见上）")
     out_name = "_setup_smoke.exe" if smoke_mode else "MDEditor-Setup-v%s.exe" % ver
     exe, zsize = compile_installer(ver, out_name)
     print("BUILD OK: %s (%d KB, payload.zip %d KB)"
