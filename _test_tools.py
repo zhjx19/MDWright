@@ -84,6 +84,52 @@ def main():
     dt = _time.time() - t0
     check("整轮探测 < 5s", dt < 5.0, "%.2fs" % dt)
 
+    # ---- 配置归一与往返（R4） ----
+    n = md_tools.norm_tools_config({"pandoc_path": "  C:\\x\\pandoc.exe  ",
+                                    "rscript_path": 123, "bogus": "y"})
+    check("归一：字符串 strip", n["pandoc_path"] == "C:\\x\\pandoc.exe", str(n))
+    check("归一：非字符串归空", n["rscript_path"] == "", str(n))
+    check("归一：只保留四个键", set(n.keys()) == set(md_tools.TOOLS_KEYS), str(sorted(n.keys())))
+
+    import json as _json
+    import threading as _th
+    import urllib.request as _ur
+    sys.argv = ["md_server.py"]
+    import md_server
+    httpd = md_server.ReuseTCPServer(("127.0.0.1", 18777), md_server.Handler)
+    _th.Thread(target=httpd.serve_forever, daemon=True).start()
+    _time.sleep(0.4)
+
+    def _put(obj):
+        req = _ur.Request("http://127.0.0.1:18777/api/tools",
+                          data=_json.dumps(obj).encode("utf-8"),
+                          headers={"Content-Type": "application/json"}, method="PUT")
+        with _ur.urlopen(req, timeout=60) as r:
+            return _json.loads(r.read().decode("utf-8"))
+
+    try:
+        j = _put({"config": {"pandoc_path": "C:\\fake\\pandoc.exe",
+                             "rscript_path": "", "quarto_path": 5,
+                             "browser_path": "", "junk": "x"}})
+        check("PUT 返回 ok", j.get("ok") is True, str(j)[:160])
+        check("PUT 回传归一后的 configured",
+              j.get("configured", {}).get("pandoc_path") == "C:\\fake\\pandoc.exe"
+              and j.get("configured", {}).get("quarto_path") == "",
+              str(j.get("configured")))
+        with _ur.urlopen("http://127.0.0.1:18777/api/tools", timeout=60) as r:
+            g = _json.loads(r.read().decode("utf-8"))
+        check("GET 带回已保存的路径",
+              g.get("configured", {}).get("pandoc_path") == "C:\\fake\\pandoc.exe",
+              str(g.get("configured")))
+        # 假路径应回落自动探测（本机装了 pandoc，found 仍为 True）
+        check("假路径回落：pandoc 仍可用",
+              g.get("tools", {}).get("pandoc", {}).get("found") is True,
+              str(g.get("tools", {}).get("pandoc")))
+        _put({"config": {}})
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
     print("\n%s" % ("ALL PASS" if not fails else "FAILED: %s" % fails))
     sys.exit(1 if fails else 0)
 

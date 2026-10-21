@@ -150,6 +150,20 @@ def _cfg(configured, *names):
     return ""
 
 
+# 手工配置的四个键（规格 §7.2）；其余键一律丢弃，脏值归 ""
+TOOLS_KEYS = ("pandoc_path", "rscript_path", "quarto_path", "browser_path")
+
+
+def norm_tools_config(cfg):
+    """外部工具配置归一：只留四个已知键，值 strip，非字符串归空串。"""
+    out = {k: "" for k in TOOLS_KEYS}
+    if isinstance(cfg, dict):
+        for k in TOOLS_KEYS:
+            v = cfg.get(k)
+            out[k] = v.strip() if isinstance(v, str) else ""
+    return out
+
+
 def probe_all(configured=None):
     """一次性探测四个工具。configured 形如 {"pandoc_path": "...", ...}（规格 §7.2）。"""
     c = configured or {}

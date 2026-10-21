@@ -11,6 +11,28 @@
 
 ---
 
+## v2.5.0（2026-10-21）
+
+**本次改动：外部工具手工路径配置 + R 代码块可执行（就地出图）**
+
+**新增**
+
+- **R 代码块执行**：` ```r ` 围栏右上角出现「**▶ 运行**」，点一下就在本机跑这段 R，**stdout 与图形直接显示在代码块下方**（base plot 与 ggplot2 都支持；ggplot 对象即使没手动 `print()` 也会画出来）。执行的是用户自己的代码，UI 已明示。后端新增 `POST /api/run-r`：代码写独立 `.R` 文件、wrapper 用 `readLines + eval(parse(text=))`（**不做字符串插值**，中文/引号/注释原样），`sink()` 捕获 stdout、`sink(connection, type="message")` 捕获 stderr（stderr 的 sink 必须先开连接，传文件名会报错），png 设备出图，60s 超时。图落 `runtime/tmp/r/`，经既有 `/img` 代理显示，只保留最近 50 张。
+- **外部工具手工路径**：设置 →「外部工具」页不再是只读状态，四个工具（pandoc / 浏览器 / Rscript / quarto）各有输入框 +「保存路径」+「重新检测」。留空=自动探测；填了就用指定路径；**填错自动回落到自动探测**（不会把功能锁死）。新增 `PUT /api/tools`（归一后写入 `runtime/settings.json` 的 `tools` 段，存完立刻重探），`GET /api/tools` 增返 `configured` 供 UI 回填。为此 `Handler` 补了 `do_PUT`（转发给 `do_POST`；`BaseHTTPRequestHandler` 默认不给 PUT，会 501）。
+
+**变更**
+
+- **空白图判定**：png 设备即使一行图都没画也会生成文件（纯白），原先按「有没有文件」判断会渲染出一个空白图块。改为**按暗像素计数**判定（实测空白图 0 个暗像素、真图数千以上；PIL 缺失时退化为体积阈值）。设计上原打算用 R 的 `par("page")` 页计数，实测**不递增**，已弃用。
+- 服务版本 60→61：`MD_SERVER_VERSION` 自愈换代。
+
+**测试**
+
+- 新增 `_test_run_r.py`（11 项，真 Rscript）：stdout 中文捕获、base plot 出合法 PNG、ggplot 末值未 print 也出图、R 错误与语法错的原文回传、空代码拒绝、缺 R 明确报错、中间文件不残留。
+- `_test_tools.py` 扩至 21 项：配置归一（strip/非字符串/只留四键）、`PUT` 往返、`GET` 带回 `configured`、假路径回落。
+- `_test_menu_ui.py` 增 4 项浏览器级：R 围栏有运行按钮、输出区挂在代码块下方、点击后回显 stdout、按钮恢复可用。
+
+---
+
 ## v2.4.0（2026-10-21）
 
 **本次改动：DeepSeek 从「OpenAI 兼容里顺带能跑」升级为一等后端**

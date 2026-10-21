@@ -82,6 +82,26 @@
     color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .set-tool-val.ok{color:#5fae7a;}
   .set-tool-val.miss{color:#d99a4e;}
+  .set-tool-inp{width:190px; background:#1a1d24; color:#e8eaed; border:1px solid rgba(128,128,128,.35);
+    border-radius:6px; padding:4px 8px; font-size:12px; font-family:var(--mono);}
+  body.light .set-tool-inp{background:#f5f6f8; color:#222;}
+  /* R 代码块「▶ 运行」与输出区 */
+  .markdown-body .run-btn{
+    position:absolute; top:6px; right:62px; z-index:2;
+    font-size:11px; line-height:1; padding:4px 8px; border-radius:5px; cursor:pointer;
+    background:var(--panel,#2b3242); color:var(--muted,#aab2c4);
+    border:1px solid var(--border,#3a4358); opacity:0; transition:opacity .12s;
+  }
+  .markdown-body .code-wrap:hover .run-btn{opacity:1;}
+  .markdown-body .run-btn:disabled{opacity:.6; cursor:progress;}
+  .markdown-body .r-out{margin:.35em 0 1em; padding:8px 12px; border-left:3px solid var(--accent);
+    background:var(--accent-soft); border-radius:0 var(--radius) var(--radius) 0; font-size:.88em;}
+  .markdown-body .r-out-txt{margin:0; background:none; border:none; padding:0;
+    white-space:pre-wrap; font-family:var(--mono); font-size:.95em;}
+  .markdown-body .r-out-err{margin:0; background:none; border:none; padding:0; color:#d9534f;
+    white-space:pre-wrap; font-family:var(--mono); font-size:.95em;}
+  .markdown-body .r-out-img{max-width:100%; margin:.4em 0; border-radius:6px; background:#fff;}
+  .markdown-body .r-out-line{color:var(--muted); font-size:.95em;}
   #main{flex:1 1 auto; display:flex; min-height:0;}
   .pane{min-height:0; overflow:auto;}
   #outline{
@@ -470,13 +490,13 @@
         <div class="ts-row"><label>目录独占一页（后续 ## 与正文强制新页，不得侵入）</label><input id="tsTocSolo" type="checkbox" checked></div>
       </section>
       <section class="set-sec" data-sec="tools" hidden>
-        <div class="ts-sep"><span>外部工具（只读：自动探测结果，缺了就置灰对应导出按钮）</span></div>
-        <div class="ts-row"><label>pandoc（Word 导出）</label><span class="set-tool-val" id="setToolPandoc">检测中…</span></div>
-        <div class="ts-row"><label>浏览器（PDF 直出）</label><span class="set-tool-val" id="setToolBrowser">检测中…</span></div>
-        <div class="ts-row"><label>Rscript（R 代码块，下一版）</label><span class="set-tool-val" id="setToolR">—</span></div>
-        <div class="ts-row"><label>quarto（暂时不用）</label><span class="set-tool-val" id="setToolQuarto">—</span></div>
-        <div class="ts-row"><label></label><button class="sv-mini" id="setToolsRefresh">重新检测</button></div>
-        <p class="set-note">手工指定路径将在下一版提供；现在依赖 PATH 与常见安装目录（含 Quarto / RStudio 自带的 pandoc）。</p>
+        <div class="ts-sep"><span>外部工具（留空 = 自动探测；填了就用你指定的路径）</span></div>
+        <div class="ts-row"><label>pandoc（Word 导出）</label><input class="set-tool-inp" id="setPathPandoc" placeholder="留空=自动探测"><span class="set-tool-val" id="setToolPandoc">检测中…</span></div>
+        <div class="ts-row"><label>浏览器（PDF 直出）</label><input class="set-tool-inp" id="setPathBrowser" placeholder="留空=自动探测"><span class="set-tool-val" id="setToolBrowser">检测中…</span></div>
+        <div class="ts-row"><label>Rscript（R 代码块）</label><input class="set-tool-inp" id="setPathR" placeholder="留空=自动探测"><span class="set-tool-val" id="setToolR">检测中…</span></div>
+        <div class="ts-row"><label>quarto（暂时不用）</label><input class="set-tool-inp" id="setPathQuarto" placeholder="留空=自动探测"><span class="set-tool-val" id="setToolQuarto">检测中…</span></div>
+        <div class="ts-row"><label></label><button class="sv-mini" id="setToolsSave">保存路径</button><button class="sv-mini" id="setToolsRefresh">重新检测</button></div>
+        <p class="set-note">自动探测顺序：设置里的路径 → PATH → 常见安装目录（含 Quarto / RStudio 自带的 pandoc、注册表登记的 R）。填错会自动回落到自动探测，不会把功能锁死。</p>
       </section>
     </div>
     <div class="ts-foot"><button id="tsApply">应用</button></div>
@@ -1426,6 +1446,7 @@ function parseMarkdown(src, fx){
       restoreMath(div); fixLocalImages(div);
       mountDiagrams(div);
       highlightCode(div);
+      mountRunners(div);
       if(fresh){
         var next=q.existing[bi+1];
         preview.insertBefore(div, next||null);
@@ -2501,6 +2522,8 @@ function parseMarkdown(src, fx){
   }
   var TOOL_ROWS=[['setToolPandoc','pandoc'],['setToolBrowser','browser'],
                  ['setToolR','r'],['setToolQuarto','quarto']];
+  var TOOL_PATH_ROWS=[['setPathPandoc','pandoc_path'],['setPathBrowser','browser_path'],
+                      ['setPathR','rscript_path'],['setPathQuarto','quarto_path']];
   function fillTools(showBusy){
     for(var i=0;i<TOOL_ROWS.length;i++){
       var el=document.getElementById(TOOL_ROWS[i][0]);
@@ -2510,19 +2533,23 @@ function parseMarkdown(src, fx){
       .then(function(r){return r.json();})
       .then(function(j){
         var t=(j&&j.tools)||{};
+        var cfg=(j&&j.configured)||{};
         for(var k=0;k<TOOL_ROWS.length;k++){
           var el=document.getElementById(TOOL_ROWS[k][0]);
-          if(!el) continue;
-          var v=t[TOOL_ROWS[k][1]]||{};
-          if(v.found){
-            el.textContent=(v.version?(v.version+'  '):'')+(v.path||'');
-            el.className='set-tool-val ok';
-            el.title=v.path||'';
-          }else{
-            el.textContent='未检测到';
-            el.className='set-tool-val miss';
-            el.title='';
+          if(el){
+            var v=t[TOOL_ROWS[k][1]]||{};
+            if(v.found){
+              el.textContent=(v.version?(v.version+'  '):'')+(v.path||'');
+              el.className='set-tool-val ok';
+              el.title=v.path||'';
+            }else{
+              el.textContent='未检测到';
+              el.className='set-tool-val miss';
+              el.title='';
+            }
           }
+          var inp=document.getElementById(TOOL_PATH_ROWS[k][0]);
+          if(inp && document.activeElement!==inp){ inp.value=cfg[TOOL_PATH_ROWS[k][1]]||''; }
         }
       })
       .catch(function(){
@@ -2532,12 +2559,78 @@ function parseMarkdown(src, fx){
         }
       });
   }
+  /* 保存手工路径：四个键一起提交（空串=回到自动探测） */
+  function saveToolPaths(){
+    var cfg={};
+    for(var i=0;i<TOOL_PATH_ROWS.length;i++){
+      var el=document.getElementById(TOOL_PATH_ROWS[i][0]);
+      cfg[TOOL_PATH_ROWS[i][1]]=el?el.value.trim():'';
+    }
+    fetch('/api/tools',{method:'PUT',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({config:cfg})})
+      .then(function(r){return r.json();})
+      .then(function(j){
+        if(j&&j.ok){ showToast('外部工具路径已保存'); fillTools(false); }
+        else{ showToast('保存失败：'+((j&&j.error)||'未知错误')); }
+      })
+      .catch(function(e){ showToast('保存失败：'+e.message); });
+  }
   document.getElementById('btnSettings').addEventListener('click',tsOpen);
   document.getElementById('setTabs').addEventListener('click',function(e){
     var t=e.target.closest('.set-tab');
     if(t) setTab(t.getAttribute('data-tab'));
   });
   document.getElementById('setToolsRefresh').addEventListener('click',function(){ fillTools(true); });
+  document.getElementById('setToolsSave').addEventListener('click',saveToolPaths);
+
+  /* ── R 代码块：围栏上挂「▶ 运行」，输出/图渲染在代码块下方 ─────────
+     执行的是**用户本机的 R 代码**（与 AI 润色同理，用户自负其责）。 */
+  function mountRunners(root){
+    if(!root||!root.querySelectorAll)return;
+    var codes=root.querySelectorAll('pre code[data-lang="r"], pre code[data-lang="R"]');
+    for(var i=0;i<codes.length;i++){
+      var wrap=codes[i].parentNode?codes[i].parentNode.parentNode:null;
+      if(!wrap||wrap.getAttribute('data-runner'))continue;
+      wrap.setAttribute('data-runner','1');
+      var btn=document.createElement('button');
+      btn.type='button'; btn.className='run-btn'; btn.textContent='▶ 运行';
+      btn.title='在你本机执行这段 R 代码（输出显示在代码块下方）';
+      (function(w,b){ b.addEventListener('click',function(){ runRBlock(w,b); }); })(wrap,btn);
+      wrap.appendChild(btn);
+      var out=document.createElement('div');
+      out.className='r-out'; out.hidden=true;
+      wrap.parentNode.insertBefore(out, wrap.nextSibling);
+    }
+  }
+  function runRBlock(wrap,btn){
+    var code=wrap.querySelector('code');
+    var out=wrap.nextSibling;
+    if(!code||!out||!out.classList||!out.classList.contains('r-out'))return;
+    btn.disabled=true; btn.textContent='运行中…';
+    out.hidden=false;
+    out.innerHTML='<div class="r-out-line">运行中…</div>';
+    fetch('/api/run-r',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({code:code.textContent})})
+      .then(function(r){return r.json();})
+      .then(function(j){
+        btn.disabled=false; btn.textContent='▶ 运行';
+        var html='';
+        if(j&&j.ok){
+          if(j.stdout) html+='<pre class="r-out-txt">'+escapeHtml(j.stdout)+'</pre>';
+          if(j.image) html+='<img class="r-out-img" src="/img?path='+
+                            encodeURIComponent(j.image)+'">';
+          if(!j.stdout&&!j.image) html+='<div class="r-out-line">（执行完成，无输出）</div>';
+        }else{
+          html+='<pre class="r-out-err">'+escapeHtml((j&&j.error)||'执行失败')+'</pre>';
+          if(j&&j.stdout) html+='<pre class="r-out-txt">'+escapeHtml(j.stdout)+'</pre>';
+        }
+        out.innerHTML=html;
+      })
+      .catch(function(e){
+        btn.disabled=false; btn.textContent='▶ 运行';
+        out.innerHTML='<pre class="r-out-err">执行失败：'+escapeHtml(e.message)+'</pre>';
+      });
+  }
   document.getElementById('tsClose').addEventListener('click',function(){document.getElementById('tsOverlay').hidden=true;});
   document.getElementById('tsOverlay').addEventListener('click',function(e){if(e.target===this)this.hidden=true;});
   /* ── 内嵌模式检测（pywebview 直连 py API；否则走 HTTP）───────────────── */

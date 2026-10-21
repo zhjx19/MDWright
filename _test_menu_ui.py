@@ -139,6 +139,29 @@ PROBE_DEEPSEEK = r"""
 """
 
 
+PROBE_R = r"""
+(function(){
+  var ed=document.getElementById('editor');
+  ed.textContent='```r\ncat("R 输出:", 1+1, "\\n")\n```\n';
+  ed.dispatchEvent(new Event('input',{bubbles:true}));
+  return new Promise(function(resolve){
+    setTimeout(function(){
+      var btn=document.querySelector('#preview .run-btn');
+      if(!btn){ resolve({btn:false}); return; }
+      var out=btn.parentNode.nextSibling;
+      var hasOut=!!(out&&out.classList&&out.classList.contains('r-out'));
+      btn.click();
+      setTimeout(function(){
+        var txt=(out&&out.textContent)||'';
+        resolve({btn:true, hasOut:hasOut, outText:txt,
+                 stillDisabled: btn.disabled});
+      }, 6000);
+    }, 1500);
+  });
+})()
+"""
+
+
 def main():
     # ---- 结构 + 菜单 + 设置 ----
     r = run_expr(PROBE_MENU)
@@ -177,6 +200,13 @@ def main():
           str(r3.get("baseValue")))
     check("DeepSeek 模型预设就位",
           r3.get("models") == ["deepseek-chat", "deepseek-reasoner"], str(r3.get("models")))
+
+    # ---- R 代码块：运行按钮与就地输出（R4） ----
+    r4 = run_expr(PROBE_R)
+    check("R 围栏有「运行」按钮", r4.get("btn") is True, str(r4)[:160])
+    check("R 输出区已挂在代码块下方", r4.get("hasOut") is True, str(r4))
+    check("点运行后回显 stdout", "R 输出" in (r4.get("outText") or ""), r4.get("outText"))
+    check("运行结束按钮恢复可用", r4.get("stillDisabled") is False, str(r4))
 
     # ---- Word 导出：先选路径再导出 ----
     tmp = tempfile.mkdtemp(prefix="mdmenu-")

@@ -65,7 +65,7 @@ except Exception as _e:
 PORT = 18766
 HERE = os.path.dirname(os.path.abspath(__file__))
 EDITOR_HTML = os.path.join(HERE, "markdown-editor.html")
-MD_SERVER_VERSION = 60  # 每次服务端路由/能力变更时 +1；md_launch 依此自愈换代
+MD_SERVER_VERSION = 61  # 每次服务端路由/能力变更时 +1；md_launch 依此自愈换代
 SETTINGS_PATH = os.path.join(HERE, "runtime", "settings.json")
 
 # .smd 自包含文档格式（v1.2.0）；导入失败落错误日志，相关路由返回明确错误而非静默
@@ -504,7 +504,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 cfg = settings.get("tools") if isinstance(settings, dict) else {}
                 if not isinstance(cfg, dict):
                     cfg = {}
-                self._send(200, json.dumps({"ok": True, "tools": _tools_probe_cached(cfg)},
+                self._send(200, json.dumps({"ok": True,
+                                            "tools": _tools_probe_cached(cfg),
+                                            "configured": cfg},
                                            ensure_ascii=False),
                            "application/json; charset=utf-8")
             except Exception as e:
@@ -884,6 +886,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 pass
         self._send(404, "not found")
 
+    def do_PUT(self):
+        """PUT 语义：整体替换配置。目前只有 /api/tools 用得上；
+        BaseHTTPRequestHandler 默认不实现 PUT（会 501），这里转发给 do_POST 按路径分发。"""
+        self.do_POST()
+
     def do_POST(self):
         u = urllib.parse.urlparse(self.path)
         if u.path in ("/api/ping", "/api/bye"):
@@ -1153,6 +1160,55 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._send(200, json.dumps({"ok": True, "url": "/static/" + name}, ensure_ascii=False))
             except Exception as e:
                 self._send(500, json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
+            return
+        if u.path == "/api/tools":
+            # 保存手工路径（四个键，脏值归一），存完立刻重探并回传新结果
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                obj = json.loads(self.rfile.read(length).decode("utf-8"))
+                import md_tools
+                cfg = md_tools.norm_tools_config(obj.get("config"))
+                settings = _load_json(SETTINGS_PATH, {})
+                if not isinstance(settings, dict):
+                    settings = {}
+                settings["tools"] = cfg
+                _save_json(SETTINGS_PATH, settings)
+                _TOOLS_CACHE["val"] = None          # 强制重探（工具可能刚装/刚搬）
+                self._send(200, json.dumps({"ok": True,
+                                            "tools": _tools_probe_cached(cfg),
+                                            "configured": cfg},
+                                           ensure_ascii=False))
+            except Exception as e:
+                self._send(500, json.dumps({"ok": False, "error": str(e)},
+                                           ensure_ascii=False))
+            return
+        if u.path == "/api/run-r":
+            # 执行 R 代码块。跑的是**用户自己的代码**（UI 已明示），只在本机执行。
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                obj = json.loads(self.rfile.read(length).decode("utf-8"))
+                code = obj.get("code") or ""
+                if not code.strip():
+                    self._send(400, json.dumps({"ok": False, "error": "代码为空"},
+                                               ensure_ascii=False))
+                    return
+                settings = _load_json(SETTINGS_PATH, {})
+                cfg = settings.get("tools") if isinstance(settings, dict) else {}
+                cfg = cfg if isinstance(cfg, dict) else {}
+                import md_tools
+                rscript = md_tools.find_r(md_tools._cfg(cfg, "rscript_path", "rscript"))
+                if not rscript:
+                    self._send(400, json.dumps({"ok": False,
+                        "error": "未检测到 R 运行时（Rscript.exe）：请安装 R，"
+                                 "或在「设置 → 外部工具」里指定 Rscript 路径"},
+                        ensure_ascii=False))
+                    return
+                res = _run_r_code(code, rscript)
+                res["ok"] = bool(res.get("ok"))
+                self._send(200, json.dumps(res, ensure_ascii=False))
+            except Exception as e:
+                self._send(500, json.dumps({"ok": False, "error": str(e)},
+                                           ensure_ascii=False))
             return
         if u.path == "/api/export-docx":
             # Word 导出：前端交 markdown **源文**（不是 bodyHtml）——pandoc 吃源文，
@@ -2485,6 +2541,143 @@ def _norm_out_path(out_path, md_path, ext):
     if _is_builtin_doc(p):
         return False, "不能导出到安装目录 docs/ 下，请换一个目录"
     return True, p
+
+
+_R_WRAPPER = r'''
+a <- commandArgs(trailingOnly = TRUE)
+out_txt <- a[1]; err_txt <- a[2]; out_png <- a[3]; code_file <- a[4]; meta <- a[5]
+code <- paste(readLines(code_file, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+con_err <- file(err_txt, open = "wt", encoding = "UTF-8")
+sink(out_txt, split = FALSE)
+sink(con_err, type = "message")
+err <- NULL
+res <- NULL
+png(out_png, width = 1200, height = 800, res = 150)
+res <- tryCatch(withVisible(eval(parse(text = code), envir = globalenv())),
+                error = function(e) { err <<- conditionMessage(e); NULL })
+if (is.null(err)) {
+  v <- res$value
+  if (inherits(v, "ggplot")) print(v)
+  else if (is.function(v)) v()
+}
+invisible(dev.off())
+sink(type = "message"); sink()
+try(close(con_err), silent = TRUE)
+writeLines(c(paste0("haserr=", if (is.null(err)) "0" else "1"),
+             paste0("err=", if (is.null(err)) "" else gsub("[\r\n]+", " ", err))), meta)
+'''
+
+_R_DIR_NAME = "r"
+
+
+def _r_tmp_dir():
+    d = os.path.join(HERE, "runtime", "tmp", _R_DIR_NAME)
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _png_is_blank(path):
+    """判定 png 是不是空白图。
+
+    png 设备即使一行图都没画也会生成文件（纯白），不判就会出现一个空白图块。
+    实测空白图**0 个暗像素**、真图数千以上，故按暗像素计数判定。
+    PIL 不可用时退化成体积阈值（空白约 1KB）。
+    """
+    try:
+        from PIL import Image
+        im = Image.open(path).convert("L")
+        return sum(im.histogram()[:250]) == 0
+    except Exception:
+        try:
+            return os.path.getsize(path) < 2500
+        except Exception:
+            return True
+
+
+def _prune_r_pngs(keep=50):
+    try:
+        d = _r_tmp_dir()
+        pngs = [os.path.join(d, n) for n in os.listdir(d) if n.endswith(".png")]
+        pngs.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+        for p in pngs[keep:]:
+            try:
+                os.remove(p)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def _run_r_code(code, rscript, timeout=60):
+    """跑用户 R 代码：返回 {ok, stdout, stderr, image, error}。
+
+    设计要点（都是踩出来的）：
+    - 用户代码写独立 `.R` 文件、wrapper 用 readLines + eval(parse(text=))，
+      **不做字符串插值**——中文、引号、注释、`#` 都原样；
+    - `sink(file)` 抓 stdout；stderr 的 sink **必须先开连接**（传文件名会报
+      "'file' must be NULL or an already open connection"）；
+    - 图写 png 设备，事后按暗像素判是否真画（见 _png_is_blank）；
+    - 超时/timeout 由调用方 kill，异常统一转成人话。
+    """
+    d = _r_tmp_dir()
+    uid = uuid.uuid4().hex[:12]
+    code_path = os.path.join(d, uid + ".R")
+    run_path = os.path.join(d, uid + "-run.R")
+    out_txt = os.path.join(d, uid + ".out")
+    err_txt = os.path.join(d, uid + ".err")
+    meta = os.path.join(d, uid + ".meta")
+    png = os.path.join(d, uid + ".png")
+    try:
+        with open(code_path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(code)
+        with open(run_path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(_R_WRAPPER)
+        try:
+            subprocess.run([rscript, "--vanilla", run_path,
+                            out_txt, err_txt, png, code_path, meta],
+                           capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=timeout,
+                           creationflags=0x08000000)
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "stdout": "", "stderr": "", "image": "",
+                    "error": "执行超时（%d 秒）：代码可能陷入死循环" % timeout}
+        so = ""
+        se = ""
+        try:
+            so = io.open(out_txt, encoding="utf-8", errors="replace").read()[:20000]
+        except Exception:
+            pass
+        try:
+            se = io.open(err_txt, encoding="utf-8", errors="replace").read()[:20000]
+        except Exception:
+            pass
+        has_err, err_msg = False, ""
+        try:
+            for ln in io.open(meta, encoding="utf-8", errors="replace").read().splitlines():
+                if ln.startswith("haserr="):
+                    has_err = ln.split("=", 1)[1].strip() == "1"
+                elif ln.startswith("err="):
+                    err_msg = ln.split("=", 1)[1].strip()
+        except Exception:
+            pass
+        image = ""
+        if os.path.isfile(png) and not _png_is_blank(png):
+            image = png
+        if has_err:
+            return {"ok": False, "stdout": so, "stderr": se, "image": image,
+                    "error": err_msg or "R 执行出错"}
+        return {"ok": True, "stdout": so, "stderr": se, "image": image, "error": ""}
+    finally:
+        for p in (code_path, run_path, out_txt, err_txt, meta):
+            try:
+                if os.path.exists(p):
+                    os.remove(p)
+            except Exception:
+                pass
+        if not os.path.isfile(png):
+            pass
+        else:
+            _prune_r_pngs()
 
 
 def _pick_file_subprocess(initdir=""):
