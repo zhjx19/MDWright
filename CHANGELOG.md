@@ -11,6 +11,38 @@
 
 ---
 
+## v2.2.0（2026-10-21）
+
+**本次改动：两条新导出出口——Word（.docx，pandoc）与 PDF 直出（headless Chromium）**
+
+**新增**
+
+- **Word 导出（`.docx`）**：工具栏「Word」按钮 → `POST /api/export-docx` → 交 **markdown 源文**给本机 pandoc（不是 bodyHtml：pandoc 吃源文才能把结构落成 Word 结构）。**LaTeX 公式落为 Word 原生公式（OMML）**——实测 `word/document.xml` 含 `<m:oMath>`、`<m:sSup>`（上标）、`<m:f>`（分数），不是图片、不是 LaTeX 源码。方言 → pandoc 的转换只做 pandoc 不认的三件事（`md_pandoc.prepare_markdown`）：Callout `> [!NOTE]` → `> **NOTE**` 引用块、图片 `{N}` → pandoc `{width=N%}`、图表围栏剥掉 `{N}`；脚注 / 定义列表 / front matter / 行内高亮 / 上下标 / 公式全部原样透传（pandoc 原生支持）。资源路径——普通文档以所在目录为基准，`.smd` 以**解包目录**为基准（`_smd.base_dir_for`），否则包内图片全丢且不报错。验证——`_test_pandoc_prep.py` 10/10；`_test_docx.py` 13/13（OMML、脚注进 footnotes.xml、图片嵌入 word/media、front matter 进 docProps、Callout 无字面残留、中文/空格/`#` 文件名、未保存文档明确报错且不产文件）。
+- **PDF 直出文件**：工具栏「PDF」按钮 → `POST /api/export-pdf` → 复用分页 HTML，用 headless Chromium 出 PDF 文件，**不开打印对话框**。实现走 **CDP 单会话**：`Page.navigate` → 轮询页面上的 `data-paged-done` 标记（由页码填充脚本在「页数连续稳定」后写入）→ `Page.printToPDF(preferCSSPageSize)`。纸张尺寸跟随 `@page`（A4 实测 MediaBox 594.96×841.92pt）。页数校验：DOM 页数必须等于 PDF 页数，不一致**删掉文件并报错**，绝不留下半截 PDF。验证——`_test_pdf.py` 9/9，连跑 3 次全 PASS。
+- **外部工具探测（`md_tools.py`）**：pandoc / 浏览器 / Rscript / quarto 统一探测，顺序为「settings.json 显式路径 → PATH → 常见安装目录 / 注册表」。R 走注册表 `HKLM\SOFTWARE\R-core\R\<ver>\InstallPath`（唯一与盘符无关的探测法，本机实测 d:\R-4.6.1 能命中）。显式路径填错**回落**到自动探测，不因一次笔误永久判缺失。路由 `GET /api/tools` 供前端决定按钮是否置灰。验证——`_test_tools.py` 11/11。
+- **打开所在目录**：导出成功的 toast 带「打开所在目录」按钮 → `GET /api/reveal`（资源管理器 `/select,` 定位，只接受已存在路径）。
+
+**变更**
+
+- **PDF 直出弃用 CLI 两趟法，改 CDP 单会话**：原设计是「`--dump-dom` 数页数 + `--print-to-pdf` 出文件，两者页数相等才算成功」。实测证伪——两个命令是**两次独立加载**，同一文档、同一 profile 连跑 6 次 dump，`.pagedjs_page` 数量依次为 2/0/1/0/3/1，`data-paged-done` 还会在只有 1 页时被提前写下；这种口径下「页数一致」既会误判完成（截断文档）也会误判未完成（白等重试）。改为 CDP 在同一会话里等待标记后再打印，中间没有二次加载：实测 3 次全部 DOM=PDF=3 页、A4 尺寸正确、单次约 2.5s。规格 §5.2 的目的（页数校验、不出半截文件）不变且真正达成。
+- **分页填充脚本新增完成标记**：页码脚本判定「页数连续 3 次稳定」后写 `document.documentElement[data-paged-done=1]`，供 CDP 判断可打印。既有打印链路行为不变（`_test_paged_e2e.py` 47/47 回归通过）。
+- **两个按钮按工具可用性置灰**：页面启动即 `GET /api/tools`；缺 pandoc → 「Word」置灰并提示「装 pandoc 或用自带 pandoc 的 Quarto/RStudio」；缺浏览器 → 「PDF」置灰并提示「可改用「打印」」。探测失败一律保持置灰（不假装可用）。
+- **服务版本 55→56**：`MD_SERVER_VERSION` 自愈换代，旧页面自动刷新到带导出按钮的版本。
+
+**测试**
+
+- 新增 `_test_tools.py`（11）、`_test_pandoc_prep.py`（10）、`_test_docx.py`（13）、`_test_pdf.py`（9）、`_test_export_ui.py`（4）。
+- 新增 `_cdp.py`（最小 CDP 客户端，纯标准库 WebSocket）与 `md_tools.py`、`md_pandoc.py` 两个模块。
+- 回归：`_test_paged_e2e.py` 47/47、`_test_smd_ann.py`、`_test_syntax_ui.py` 全 PASS。
+
+**说明**
+
+- pandoc 与 Chromium 内核浏览器是**外部工具**，随本工具不分发。缺失时只是对应导出不可用，其余功能不受影响。
+- 内置「外部工具路径」手工配置 UI 属下一版（R4）；本轮只做自动探测。
+- 「打印」按钮保留原样：需要页码/目录页码等书册级排版时用它（Paged.js 在真实浏览器里跑），「PDF」是「一键出文件」的快捷通道。
+
+---
+
 ## v2.1.0（2026-10-21）
 
 **本次改动：五类 Markdown 语法扩展 + 代码语法高亮 + 代码块复制按钮**
