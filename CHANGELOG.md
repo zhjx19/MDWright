@@ -11,6 +11,30 @@
 
 ---
 
+## v2.4.0（2026-10-21）
+
+**本次改动：DeepSeek 从「OpenAI 兼容里顺带能跑」升级为一等后端**
+
+**新增**
+
+- **DeepSeek 后端**：AI 设置的后端下拉新增「DeepSeek API（api.deepseek.com）」，选中即自动填地址 `https://api.deepseek.com/v1`、显示 API Key 行、模型下拉直接给出 `deepseek-chat` / `deepseek-reasoner` 两个预设（也可点「刷新」走 `/models` 实拉）。此前要走「OpenAI 兼容」自己手填地址与模型名，填错 `/v1` 或模型名就只报一个含义不明的 HTTP 错误。
+- **reasoner 不传采样参数**：`deepseek-reasoner` 不支持 `temperature` / `top_p`（官方口径，带上可能 400），调用时按模型名（不区分大小写）识别并**从请求体里省掉 temperature**；`deepseek-chat` 照常发送。这是接 DeepSeek 最容易踩的坑，单独做了回归。
+
+**变更**
+
+- `llm_client.py` 抽出 `OPENAI_LIKE = ("openai", "deepseek")`：端点、Bearer 鉴权、`/models` 列表三处共用同一套逻辑，`openai` 后端行为**一行未改**（回归覆盖）。
+- 缺 Key 的报错按后端点名：`DeepSeek 后端需先在 LLM 设置中填写 API Key`（原先是统一的「OpenAI 兼容」）。
+- `md_server._norm_llm_config` 的后端白名单加入 `deepseek`（脏配置仍归一回默认）。
+- 服务版本 59→60：`MD_SERVER_VERSION` 自愈换代。
+
+**测试**
+
+- 新增 `_test_llm_deepseek.py`（16 项）：默认地址与 `/v1` 自动补全、chat/models 端点、Bearer 鉴权、**reasoner 不含 temperature/top_p**（含大小写变体）、deepseek-chat 照常带、缺 Key 明确报错、openai 三处回归、配置白名单、前端选项与预设存在。
+- `_test_menu_ui.py` 增 4 项浏览器级：选 DeepSeek 后 Key 行显隐、地址自动填、模型预设就位且默认选中 `deepseek-chat`。
+- 回归：`_test_llm_websearch.py`、`_test_routes.py`、全量 `_test_*.py` 通过。
+
+---
+
 ## v2.3.1（2026-10-21）
 
 **修复**

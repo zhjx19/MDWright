@@ -1,13 +1,16 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 wUwproject. Licensed under GNU AGPL v3 (or later).
-"""LLM 统一客户端 — LM Studio / Ollama / OpenAI 兼容（纯标准库 urllib 零依赖）。
+"""LLM 统一客户端 — LM Studio / Ollama / OpenAI 兼容 / DeepSeek（纯标准库 urllib 零依赖）。
 
   - LM Studio:  http://<host>:1234/v1/chat/completions
   - Ollama:     http://<host>:11434/api/chat
-  - OpenAI 兼容: https://api.openai.com/v1/chat/completions 等（DeepSeek、硅基流动、
-    OpenRouter 等同构端点均通吃；base_url 填到根或 /v1 均可，自动补全）
-模型列表、配置校验、调用超时与错误归一互相独立，供 md_server.py 注解/润色/测试共用。
+  - OpenAI 兼容: https://api.openai.com/v1/chat/completions 等（硅基流动、OpenRouter 同构端点通吃）
+  - DeepSeek:   https://api.deepseek.com/v1/chat/completions（一等支持：默认地址与模型预设；
+                deepseek-reasoner 不支持采样参数，请求体不带 temperature，否则可能 400）
+
+base_url 填到根或 /v1 均可，自动补全。模型列表、配置校验、调用超时与错误归一互相独立，
+供 md_server.py 注解/润色/测试共用。
 """
 import json
 import time
@@ -21,10 +24,13 @@ class LLMError(Exception):
 
 class LLMClient:
     """LLM 统一客户端。config 形如:
-    {"backend": "lmstudio"|"ollama"|"openai", "base_url": "...", "model": "",
+    {"backend": "lmstudio"|"ollama"|"openai"|"deepseek", "base_url": "...", "model": "",
      "api_key": "", "timeout": 180, "max_tokens": 2048, "temperature": 0.7,
      "web_search": {...联网查询配置，本类不消费，见 web_search.py...}}
     """
+
+    # OpenAI 兼容协议族的后端（同一套端点/鉴权/载荷）
+    OPENAI_LIKE = ("openai", "deepseek")
 
     def __init__(self, config=None):
         cfg = config or {}
@@ -47,34 +53,41 @@ class LLMClient:
         if not self.base_url:
             if self.backend == "ollama":
                 self.base_url = "http://localhost:11434"
+            elif self.backend == "deepseek":
+                self.base_url = "https://api.deepseek.com/v1"
             elif self.backend == "openai":
                 self.base_url = "https://api.openai.com/v1"
             else:
                 self.base_url = "http://localhost:1234"
         # OpenAI 兼容惯例 base_url 含 /v1；填根地址时自动补，两种填法都通
-        if self.backend == "openai" and not self.base_url.endswith("/v1"):
+        if self.backend in self.OPENAI_LIKE and not self.base_url.endswith("/v1"):
             self.base_url = self.base_url + "/v1"
+
+    def _is_reasoner(self):
+        """DeepSeek 推理模型：不支持采样参数（temperature/top_p），传了可能 400。"""
+        return self.backend == "deepseek" and "reasoner" in (self.model or "").lower()
 
     # ---- 端点与载荷 ----
     def _chat_url(self):
         if self.backend == "ollama":
             return self.base_url + "/api/chat"
-        if self.backend == "openai":
+        if self.backend in self.OPENAI_LIKE:
             return self.base_url + "/chat/completions"
         return self.base_url + "/v1/chat/completions"
 
     def _models_url(self):
         if self.backend == "ollama":
             return self.base_url + "/api/tags"
-        if self.backend == "openai":
+        if self.backend in self.OPENAI_LIKE:
             return self.base_url + "/models"
         return self.base_url + "/v1/models"
 
     def _headers(self):
         h = {"Content-Type": "application/json"}
-        if self.backend == "openai":
+        if self.backend in self.OPENAI_LIKE:
             if not self.api_key:
-                raise LLMError("OpenAI 兼容后端需先在 LLM 设置中填写 API Key")
+                label = "DeepSeek" if self.backend == "deepseek" else "OpenAI 兼容"
+                raise LLMError("%s 后端需先在 LLM 设置中填写 API Key" % label)
             h["Authorization"] = "Bearer " + self.api_key
         return h
 
@@ -115,15 +128,19 @@ class LLMClient:
                 "stream": False,
                 "options": {"num_predict": mt, "temperature": tp},
             }).encode("utf-8")
-        elif self.backend == "openai":
+        elif self.backend in self.OPENAI_LIKE:
             if not self.model:
-                raise LLMError("OpenAI 兼容后端需先在 LLM 设置中选择模型")
-            payload = json.dumps({
+                label = "DeepSeek" if self.backend == "deepseek" else "OpenAI 兼容"
+                raise LLMError("%s 后端需先在 LLM 设置中选择模型" % label)
+            p = {
                 "model": self.model,
                 "messages": messages,
                 "max_tokens": mt,
-                "temperature": tp,
-            }).encode("utf-8")
+            }
+            # deepseek-reasoner 不支持采样参数：带上 temperature 可能直接 400
+            if not self._is_reasoner():
+                p["temperature"] = tp
+            payload = json.dumps(p).encode("utf-8")
         else:
             p = {"messages": messages, "max_tokens": mt, "temperature": tp}
             if self.model:

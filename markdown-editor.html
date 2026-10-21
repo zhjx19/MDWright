@@ -497,6 +497,7 @@
           <option value="lmstudio">LM Studio（本地 :1234）</option>
           <option value="ollama">Ollama（本地 :11434）</option>
           <option value="openai">OpenAI 兼容（外部 API）</option>
+          <option value="deepseek">DeepSeek API（api.deepseek.com）</option>
         </select></div>
       <div class="ts-row"><label>服务地址（留空按后端默认端口）</label>
         <input id="llmBase" type="text" placeholder="http://localhost:1234" style="width:210px;"></div>
@@ -3342,13 +3343,26 @@ function parseMarkdown(src, fx){
     document.getElementById('wsGoogleRow').style.display=b==='google'?'':'none';
     document.getElementById('wsCustomRow').style.display=b==='custom'?'':'none';
   }
+  /* DeepSeek 一等支持：默认地址与模型预设（也可点「刷新」走 /models 实拉） */
+  var LLM_DEFAULTS_URL={lmstudio:'http://localhost:1234',ollama:'http://localhost:11434',
+                        openai:'https://api.openai.com/v1',
+                        deepseek:'https://api.deepseek.com/v1'};
+  var LLM_PRESET_MODELS={deepseek:['deepseek-chat','deepseek-reasoner']};
   function llmSyncBackendRows(){
     var b=document.getElementById('llmBackend').value;
-    document.getElementById('llmKeyRow').style.display=b==='openai'?'':'none';
+    document.getElementById('llmKeyRow').style.display=
+      (b==='openai'||b==='deepseek')?'':'none';
     var ph=document.getElementById('llmBase');
     if(b==='openai'){ ph.placeholder='https://api.openai.com/v1'; }
+    else if(b==='deepseek'){ ph.placeholder='https://api.deepseek.com/v1'; }
     else if(b==='ollama'){ ph.placeholder='http://localhost:11434'; }
     else{ ph.placeholder='http://localhost:1234'; }
+    /* 该后端有预设模型、且当前没选模型时，先把预设摆进下拉（省得用户先配 key 才能选） */
+    var presets=LLM_PRESET_MODELS[b];
+    var sel=document.getElementById('llmModel');
+    if(presets && (!sel.value || sel.options.length<=1)){
+      llmFillModels(presets, sel.value);
+    }
   }
   function llmCfgFromForm(){
     var temp=parseFloat(document.getElementById('llmTemp').value);
@@ -3417,9 +3431,9 @@ function parseMarkdown(src, fx){
   document.getElementById('llmBackend').addEventListener('change',function(){
     /* 切后端时，空地址或旧后端默认地址跟随切换 */
     var b=this.value;
-    var defaults={lmstudio:'http://localhost:1234',ollama:'http://localhost:11434',
-                  openai:'https://api.openai.com/v1'};
+    var defaults=LLM_DEFAULTS_URL;
     var cur=document.getElementById('llmBase').value.trim();
+    /* 空地址 / 任一后端的旧默认地址 → 换成新后端默认（用户自己填的地址不动） */
     var isDefault=Object.keys(defaults).some(function(k){return cur===defaults[k];});
     if(!cur||isDefault){ document.getElementById('llmBase').value=defaults[b]; }
     llmSyncBackendRows();

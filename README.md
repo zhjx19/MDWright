@@ -30,7 +30,7 @@
 | `md_tools.py` | 外部工具探测：pandoc / Chromium 浏览器 / Rscript / quarto（缺失时导出按钮置灰并给安装指引） |
 | `md_pandoc.py` | Word 导出：方言→pandoc 预处理 + pandoc 调用（公式落为 Word 原生 OMML） |
 | `_cdp.py` | 最小 CDP 客户端（纯标准库）：PDF 直出时等分页完成再 `Page.printToPDF` |
-| `llm_client.py` | LLM 客户端：AI 润色 / 解释对接 LM Studio、Ollama（纯 Python 标准库，零额外依赖） |
+| `llm_client.py` | LLM 客户端：AI 润色 / 解释对接 LM Studio、Ollama、DeepSeek、OpenAI 兼容（纯 Python 标准库，零额外依赖） |
 | `md_launch.pyw` | 启动器：拉起/复用后端并打开浏览器；带版本自愈 |
 | `python/` | 便携 Python 3.11.9 运行时（无需安装 Python） |
 | `katex/` | KaTeX 0.16.21 公式渲染（本地部署，MIT） |
@@ -77,7 +77,7 @@
 - **保存**：编辑自动存缓存；可设自动落盘间隔（0~60 分钟）；「保存」立即写回原文件
 - **导出**：`.md` / `.html`（带排版与公式）/ **分页 HTML（Ctrl+P 存 PDF）** / **Word `.docx`（公式为 Word 原生公式，需本机 pandoc）** / **PDF 直出文件（需 Edge/Chrome，不开打印对话框）**
 - **批注**：选中文字加备注，正文以虚线标注呈现；标注**跟文本内容走**，编辑后自动同步；批注随文档保存（详见下节）
-- **AI 润色**：选中文字一键润色改写，预览对照、可微调、确认后才替换（需本地 LLM，详见下节）
+- **AI 润色**：选中文字一键润色改写，预览对照、可微调、确认后才替换（本地 LM Studio / Ollama，或云端 DeepSeek / OpenAI 兼容 API，详见下节）
 - **自包含文档 `.smd`**：正文与图片打包为单文件，便于同步/发送/归档（详见下节）
 
 ## 自包含文档格式 `.smd`（v1.2.0）

@@ -111,6 +111,34 @@ PROBE_WORD = r"""
 """
 
 
+PROBE_DEEPSEEK = r"""
+(function(){
+  document.getElementById('btnLLM').click();
+  return new Promise(function(resolve){
+    setTimeout(function(){
+      var backend = document.getElementById('llmBackend');
+      backend.value = 'deepseek';
+      backend.dispatchEvent(new Event('change', {bubbles:true}));
+      setTimeout(function(){
+        var keyRow = document.getElementById('llmKeyRow');
+        var base = document.getElementById('llmBase');
+        var model = document.getElementById('llmModel');
+        var opts = [].map.call(model.options, function(o){return o.value;});
+        resolve({
+          panelOpen: !document.getElementById('llmOverlay').hidden,
+          keyVisible: getComputedStyle(keyRow).display !== 'none',
+          baseValue: base.value,
+          basePlaceholder: base.placeholder,
+          models: opts,
+          selected: model.value
+        });
+      }, 400);
+    }, 900);
+  });
+})()
+"""
+
+
 def main():
     # ---- 结构 + 菜单 + 设置 ----
     r = run_expr(PROBE_MENU)
@@ -139,6 +167,16 @@ def main():
     check("外部工具页显示浏览器探测结果",
           "Edge" in (r.get("toolBrowser") or "") or "Chrome" in (r.get("toolBrowser") or ""),
           r.get("toolBrowser"))
+
+    # ---- AI 面板：DeepSeek 一等后端（R3） ----
+    r3 = run_expr(PROBE_DEEPSEEK)
+    check("AI 面板可打开", r3.get("panelOpen") is True, str(r3)[:160])
+    check("选 DeepSeek 后显示 API Key 行", r3.get("keyVisible") is True, str(r3))
+    check("DeepSeek 地址自动填",
+          (r3.get("baseValue") or "").startswith("https://api.deepseek.com"),
+          str(r3.get("baseValue")))
+    check("DeepSeek 模型预设就位",
+          r3.get("models") == ["deepseek-chat", "deepseek-reasoner"], str(r3.get("models")))
 
     # ---- Word 导出：先选路径再导出 ----
     tmp = tempfile.mkdtemp(prefix="mdmenu-")
