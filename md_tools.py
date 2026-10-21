@@ -37,7 +37,7 @@ def version_of(path):
         return ""
     try:
         r = subprocess.run([path, "--version"], capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=8,
+                           encoding="utf-8", errors="replace", timeout=3,
                            creationflags=_NO_WINDOW)
         out = (r.stdout or "") + (r.stderr or "")
         for ln in out.splitlines():
@@ -132,18 +132,32 @@ def find_quarto(configured=""):
                             os.path.join(pf, "Quarto", "bin", "quarto.exe")])
 
 
-def _entry(path):
+def _entry(path, want_version=True):
+    """want_version=False 用于 GUI 程序（浏览器）：它不认 --version，
+    真去跑一次会**弹出窗口并卡约 8 秒**——只读探测绝不能有这种副作用。"""
     return {"found": bool(path),
             "path": path or "",
-            "version": version_of(path) if path else ""}
+            "version": (version_of(path) if (path and want_version) else "")}
+
+
+def _cfg(configured, *names):
+    """读配置：优先规格 §7.2 的键名（xxx_path），同时兼容短键名（R4 之前的写法）。"""
+    c = configured or {}
+    for n in names:
+        v = c.get(n)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
 
 
 def probe_all(configured=None):
-    """一次性探测四个工具。configured 形如 {"pandoc": "...", "rscript": "..."}（R4 才写入）。"""
+    """一次性探测四个工具。configured 形如 {"pandoc_path": "...", ...}（规格 §7.2）。"""
     c = configured or {}
     return {
-        "pandoc": _entry(find_pandoc(c.get("pandoc", ""))),
-        "browser": _entry(find_browser(c.get("browser", ""))),
-        "r": _entry(find_r(c.get("rscript", ""))),
-        "quarto": _entry(find_quarto(c.get("quarto", ""))),
+        "pandoc": _entry(find_pandoc(_cfg(c, "pandoc_path", "pandoc"))),
+        # 浏览器不取版本：Edge/Chrome 不认 --version，跑起来会开窗口（见 _entry）
+        "browser": _entry(find_browser(_cfg(c, "browser_path", "browser")),
+                          want_version=False),
+        "r": _entry(find_r(_cfg(c, "rscript_path", "rscript"))),
+        "quarto": _entry(find_quarto(_cfg(c, "quarto_path", "quarto"))),
     }

@@ -1749,14 +1749,18 @@ function parseMarkdown(src, fx){
   }
   /* ── Word / PDF 导出：外部工具（pandoc / Chromium 浏览器）可用才点亮 ── */
   var toolState={docx:false,pdf:false};
+  var docxBusy=false;
+  var toolProbeFailed=false;
   function applyToolState(){
     var d=document.getElementById('btnExportDocx'), p=document.getElementById('btnExportPdf');
     if(d){ d.disabled=!toolState.docx;
       d.title=toolState.docx?'导出 Word（.docx，公式转 Word 原生公式）'
-                            :'未检测到 pandoc.exe，无法导出 Word（装 pandoc 或用自带 pandoc 的 Quarto/RStudio）'; }
+        :(toolProbeFailed?'外部工具探测失败（服务未响应），无法导出 Word'
+                         :'未检测到 pandoc.exe，无法导出 Word（装 pandoc 或用自带 pandoc 的 Quarto/RStudio）'); }
     if(p){ p.disabled=!toolState.pdf;
       p.title=toolState.pdf?'直接导出 PDF 文件（不开打印对话框）'
-                           :'未检测到 Chromium 内核浏览器（Edge/Chrome），无法直出 PDF；可改用「打印」'; }
+        :(toolProbeFailed?'外部工具探测失败（服务未响应），无法直出 PDF；可改用「打印」'
+                         :'未检测到 Chromium 内核浏览器（Edge/Chrome），无法直出 PDF；可改用「打印」'); }
   }
   function probeTools(){
     fetch('/api/tools')
@@ -1765,9 +1769,14 @@ function parseMarkdown(src, fx){
         var t=(j&&j.tools)||{};
         toolState.docx=!!(t.pandoc&&t.pandoc.found);
         toolState.pdf=!!(t.browser&&t.browser.found);
+        toolProbeFailed=false;
         applyToolState();
       })
-      .catch(function(){ applyToolState(); });   /* 探测失败：保持置灰，不假装可用 */
+      .catch(function(){
+        /* 探测失败 ≠ 工具缺失：提示要区分，否则用户会去重装一个已经装好的东西 */
+        toolProbeFailed=true;
+        applyToolState();
+      });
   }
   /* 打开所在目录：资源管理器里选中该文件（/api/reveal 只接受已存在路径） */
   function revealFile(p){
@@ -1778,30 +1787,41 @@ function parseMarkdown(src, fx){
   }
   document.getElementById('btnExportDocx').addEventListener('click',function(){
     if(!currentFile){ showToast('请先保存文档再导出 Word'); return; }
+    if(docxBusy){ showToast('正在导出 Word，请稍候…'); return; }
+    docxBusy=true;   /* 双击会起两个 pandoc 写同一个 .docx，可能产出损坏的 zip */
     showToast('正在导出 Word…');
     fetch('/api/export-docx',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({path:currentFile, markdown:getText()})})
       .then(function(r){return r.json();})
       .then(function(j){
+        docxBusy=false;
         if(j&&j.ok){ showToast('已导出：'+j.path, false,
           {label:'打开所在目录', fn:function(){ revealFile(j.path); }}); }
         else{ showToast('导出失败：'+((j&&j.error)||'未知错误')); }
-      }).catch(function(e){ showToast('导出失败：'+e.message); });
+      }).catch(function(e){ docxBusy=false; showToast('导出失败：'+e.message); });
   });
   document.getElementById('btnExportPdf').addEventListener('click',function(){
     if(!currentFile){ showToast('请先保存文档再导出 PDF'); return; }
     if(pagedBusy){ showToast('正在导出，请稍候…'); return; }
     pagedBusy=true;
     showToast('正在生成 PDF…');
+    /* 服务端最多等 90s 分页；前端给 120s 上限，避免用户对着提示干等到超时 */
+    var ctl=(typeof AbortController!=='undefined')?new AbortController():null;
+    var timer=setTimeout(function(){ if(ctl) ctl.abort(); },120000);
     fetch('/api/export-pdf',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(pagedPayload())})
+      body:JSON.stringify(pagedPayload()), signal: ctl?ctl.signal:undefined})
       .then(function(r){return r.json();})
       .then(function(j){
+        clearTimeout(timer);
         pagedBusy=false;
         if(j&&j.ok){ showToast('已导出 '+j.pages+' 页：'+j.path, false,
           {label:'打开所在目录', fn:function(){ revealFile(j.path); }}); }
         else{ showToast('导出失败：'+((j&&j.error)||'未知错误')); }
-      }).catch(function(e){ pagedBusy=false; showToast('导出失败：'+e.message); });
+      }).catch(function(e){
+        clearTimeout(timer);
+        pagedBusy=false;
+        showToast('导出失败：'+(e&&e.message));
+      });
   });
 
   var katexCssText='';

@@ -124,6 +124,68 @@ def main():
         check("未保存文档明确报错",
               j2.get("ok") is False and "保存" in (j2.get("error") or ""), str(j2))
         check("未保存时不产文件", not os.path.exists(os.path.join(tmp, ".docx")))
+
+        # 临时 md 不得落在文档目录（计划全局约束：中间产物走系统临时目录）
+        import md_pandoc
+
+        class _Spy(object):
+            def __init__(self, real):
+                self.real = real
+                self.calls = []
+
+            def run(self, cmd, *a, **kw):
+                self.calls.append(cmd)
+                return self.real.run(cmd, *a, **kw)
+
+        spy = _Spy(md_pandoc.subprocess)
+        md_pandoc.subprocess = spy
+        try:
+            post("/api/export-docx", {"path": doc, "markdown": MD})
+        finally:
+            md_pandoc.subprocess = spy.real
+        src_paths = [c[-1] for c in spy.calls if isinstance(c, list) and c]
+        check("pandoc 临时 md 不在文档目录",
+              all(not str(p).lower().startswith(tmp.lower()) for p in src_paths),
+              str(src_paths))
+        check("文档目录无 pandoc 临时文件",
+              not [n for n in os.listdir(tmp) if n.endswith(".src.md")],
+              str(os.listdir(tmp)))
+
+        # .smd 自包含文档：图片在包内，工作目录必须用解包目录
+        try:
+            import _smd
+            smd_path = os.path.join(tmp, "包内文档.smd")
+            stage = tempfile.mkdtemp(prefix="mdsrc-")
+            os.makedirs(os.path.join(stage, "assets"), exist_ok=True)
+            with open(os.path.join(stage, "doc.md"), "w", encoding="utf-8") as f:
+                f.write("# 标题\n\n![图](assets/pic.png)\n")
+            with open(os.path.join(stage, "assets", "pic.png"), "wb") as f:
+                f.write(PNG)
+            _smd.pack_from_dir(smd_path, os.path.join(stage, "doc.md"),
+                               os.path.join(stage, "assets"))
+            j3 = post("/api/export-docx", {"path": smd_path,
+                                           "markdown": "# 标题\n\n![图](assets/pic.png)\n"})
+            ok3 = j3.get("ok") is True
+            check(".smd 导出 ok", ok3, str(j3)[:200])
+            if ok3 and os.path.isfile(j3["path"]):
+                z3 = zipfile.ZipFile(j3["path"])
+                check(".smd 包内图片被嵌入",
+                      any(n.startswith("word/media/") for n in z3.namelist()),
+                      str([n for n in z3.namelist() if "media" in n]))
+            shutil.rmtree(stage, ignore_errors=True)
+        except ImportError:
+            check(".smd 导出 ok", False, "_smd 不可用")
+
+        # 缺 pandoc → 明确报错且不产文件
+        import md_tools
+        saved = md_tools.find_pandoc
+        md_tools.find_pandoc = lambda configured="": None
+        try:
+            j4 = post("/api/export-docx", {"path": doc, "markdown": MD})
+        finally:
+            md_tools.find_pandoc = saved
+        check("缺 pandoc 明确报错", j4.get("ok") is False and "pandoc" in (j4.get("error") or ""),
+              str(j4)[:200])
     finally:
         httpd.shutdown()
         httpd.server_close()

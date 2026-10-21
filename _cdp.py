@@ -15,8 +15,10 @@ CDP 的价值是：**同一个会话里**可以轮询页面状态（`data-paged-
 只实现打印需要的最小子集：WebSocket 握手 + 文本帧收发 + 按 id 匹配响应。
 """
 import base64
+import hashlib
 import json
 import os
+import shutil
 import socket
 import struct
 import subprocess
@@ -52,8 +54,19 @@ class WebSocket(object):
                "Sec-WebSocket-Version: 13\r\n\r\n" % (path, host, port, key))
         self.sock.sendall(req.encode("latin-1"))
         head, self.buf = _read_http_headers(self.sock)
-        if " 101 " not in head.split("\r\n")[0]:
-            raise CDPError("websocket handshake failed: %s" % head.split("\r\n")[0])
+        status = head.split("\r\n")[0]
+        if " 101 " not in status:
+            raise CDPError("websocket handshake failed: %s" % status)
+        # 校验握手应答（RFC 6455 4.1）：算错的客户端会在这里暴露，而不是在帧解析里
+        accept = ""
+        for ln in head.split("\r\n")[1:]:
+            k, _, v = ln.partition(":")
+            if k.strip().lower() == "sec-websocket-accept":
+                accept = v.strip()
+        want = base64.b64encode(
+            hashlib.sha1((key + _WS_GUID).encode("ascii")).digest()).decode("ascii")
+        if accept != want:
+            raise CDPError("websocket accept mismatch: %r != %r" % (accept, want))
 
     # ---- 帧 ----
     def send(self, text):
@@ -174,18 +187,23 @@ def _json_list(port, timeout=10.0):
 
 
 def print_pdf(url, out_pdf, browser, wait_timeout=90.0, poll=0.2):
-    """打开 url，等 `data-paged-done="1"`，再 printToPDF 落盘。
+    """打开 url，等 `data-paged-done="1"`，再 printToPDF 写到 `out_pdf + .part`。
 
-    返回 PDF 页数；失败抛 CDPError（调用方据此给用户明确提示，且不落半截文件）。
+    返回 DOM 页数（PDF 落在 .part 文件里，由调用方校验页数后自行 os.replace 落位）。
+    这样失败路径永远不会碰到用户已存在的同名 PDF。
+
+    失败抛 CDPError（调用方据此给用户明确提示，且不落半截文件）。
     """
     prof = tempfile.mkdtemp(prefix="mdeditor-cdp-")
-    proc = subprocess.Popen([browser, "--headless=new", "--disable-gpu", "--no-sandbox",
-                             "--remote-debugging-port=0",
-                             "--user-data-dir=" + prof, "about:blank"],
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                            creationflags=_NO_WINDOW)
+    proc = None
     cdp = None
+    part = out_pdf + ".part"
     try:
+        proc = subprocess.Popen([browser, "--headless=new", "--disable-gpu", "--no-sandbox",
+                                 "--remote-debugging-port=0",
+                                 "--user-data-dir=" + prof, "about:blank"],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                creationflags=_NO_WINDOW)
         port = _devtools_port(prof)
         targets = _json_list(port)
         page = next((t for t in targets if t.get("type") == "page"), None)
@@ -197,10 +215,16 @@ def print_pdf(url, out_pdf, browser, wait_timeout=90.0, poll=0.2):
         cdp.cmd("Page.navigate", url=url)
         end = time.time() + wait_timeout
         while time.time() < end:
-            r = cdp.cmd("Runtime.evaluate",
-                        expression="document.documentElement.getAttribute('data-paged-done')"
-                                   "==='1'",
-                        returnByValue=True)
+            try:
+                r = cdp.cmd("Runtime.evaluate",
+                            expression="document.documentElement"
+                                       ".getAttribute('data-paged-done')==='1'",
+                            returnByValue=True)
+            except CDPError:
+                # 导航瞬间执行上下文会被销毁，偶发 "Cannot find context"——继续轮询，
+                # 不要因为一次瞬时错误就整单失败。
+                time.sleep(poll)
+                continue
             if r.get("result", {}).get("value") is True:
                 break
             time.sleep(poll)
@@ -219,19 +243,28 @@ def print_pdf(url, out_pdf, browser, wait_timeout=90.0, poll=0.2):
         data = base64.b64decode(res.get("data") or "")
         if not data.startswith(b"%PDF-"):
             raise CDPError("printToPDF 返回的不是 PDF")
-        with open(out_pdf, "wb") as f:
+        if os.path.exists(part):
+            os.remove(part)
+        with open(part, "wb") as f:
             f.write(data)
         return n
+    except Exception:
+        try:
+            if os.path.exists(part):
+                os.remove(part)
+        except Exception:
+            pass
+        raise
     finally:
         if cdp:
             cdp.close()
-        try:
-            proc.terminate()
-            proc.wait(timeout=5)
-        except Exception:
+        if proc is not None:
             try:
-                proc.kill()
+                proc.terminate()
+                proc.wait(timeout=5)
             except Exception:
-                pass
-        import shutil
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
         shutil.rmtree(prof, ignore_errors=True)

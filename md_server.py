@@ -24,6 +24,7 @@ import os
 import sys
 import json
 import re
+import uuid
 import atexit
 import zipfile
 import urllib.parse
@@ -499,12 +500,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # 外部工具探测（pandoc / 浏览器 / R / quarto）：前端据 found 决定按钮置灰，
             # 缺失时给安装指引而不是让导出中途炸掉。
             try:
-                import md_tools
                 settings = _load_json(SETTINGS_PATH, {})
                 cfg = settings.get("tools") if isinstance(settings, dict) else {}
                 if not isinstance(cfg, dict):
                     cfg = {}
-                self._send(200, json.dumps({"ok": True, "tools": md_tools.probe_all(cfg)},
+                self._send(200, json.dumps({"ok": True, "tools": _tools_probe_cached(cfg)},
                                            ensure_ascii=False),
                            "application/json; charset=utf-8")
             except Exception as e:
@@ -742,7 +742,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                            ensure_ascii=False))
                 return
             try:
-                subprocess.Popen(["explorer", "/select,", os.path.normpath(target)],
+                # /select, 与路径必须拼成一个参数字符串，否则资源管理器把路径当独立参数
+                subprocess.Popen('explorer /select,"%s"' % os.path.normpath(target),
                                  creationflags=0x08000000)
                 self._send(200, json.dumps({"ok": True}, ensure_ascii=False))
             except Exception as e:
@@ -1156,7 +1157,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 stem = os.path.splitext(os.path.basename(md_path))[0]
                 out = os.path.join(os.path.dirname(os.path.abspath(md_path)), stem + ".docx")
                 import md_pandoc
-                md_pandoc.export_docx(md_text, md_path, out)
+                settings = _load_json(SETTINGS_PATH, {})
+                cfg = settings.get("tools") if isinstance(settings, dict) else {}
+                cfg = cfg if isinstance(cfg, dict) else {}
+                import md_tools
+                md_pandoc.export_docx(md_text, md_path, out,
+                                      md_tools._cfg(cfg, "pandoc_path", "pandoc"))
                 self._send(200, json.dumps({"ok": True, "path": out}, ensure_ascii=False))
             except Exception as e:
                 self._send(500, json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
@@ -1177,7 +1183,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         "error": "文档不存在：%s" % md_path}, ensure_ascii=False))
                     return
                 import md_tools
-                browser = md_tools.find_browser()
+                settings = _load_json(SETTINGS_PATH, {})
+                cfg = settings.get("tools") if isinstance(settings, dict) else {}
+                cfg = cfg if isinstance(cfg, dict) else {}
+                browser = md_tools.find_browser(md_tools._cfg(cfg, "browser_path", "browser"))
                 if not browser:
                     self._send(400, json.dumps({"ok": False,
                         "error": "未检测到 Chromium 内核浏览器（Edge/Chrome），无法直出 PDF；"
@@ -1186,8 +1195,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 html = build_paged_html(md_path, obj.get("bodyHtml", ""),
                                         obj.get("tsCss", ""), obj.get("cfg", {}) or {},
                                         obj.get("docTitle") or "")
-                name = "document.paged.html"
-                with open(os.path.join(HERE, name), "w", encoding="utf-8") as f:
+                # 唯一文件名：并发导出（多标签 / 打印 + PDF 同时）不会互相覆盖半截文件
+                name = "document.paged.%s.html" % uuid.uuid4().hex[:10]
+                paged_path = os.path.join(HERE, name)
+                with open(paged_path, "w", encoding="utf-8") as f:
                     f.write(html)
                 # 端口取真实监听端口：服务可能不在 18766（测试就起在 18777），
                 # 用模块常量会让浏览器去连别的服务，产出「看起来成功但内容不对」的文件。
@@ -1196,23 +1207,39 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 stem = os.path.splitext(os.path.basename(md_path))[0]
                 out = os.path.join(os.path.dirname(os.path.abspath(md_path)), stem + ".pdf")
                 import _cdp
-                # CDP 单会话：等页面写下 data-paged-done（页码脚本按"页数连续稳定"判定）
-                # 再 printToPDF。不能用「--dump-dom + --print-to-pdf」两趟——
-                # 那是两次独立加载，实测同一文档页数在 0/1/2/3 之间乱跳，必出半截 PDF。
-                want = _cdp.print_pdf(url, out, browser)
-                data = open(out, "rb").read()
-                got = len(re.findall(rb"/Type\s*/Page[^s]", data))
-                if not (want and want == got):
-                    try:
-                        os.remove(out)          # 半截文件绝不留下
-                    except Exception:
-                        pass
-                    self._send(500, json.dumps({"ok": False,
-                        "error": "分页校验不一致（DOM %d 页 / PDF %d 页），未生成文件；"
-                                 "请改用「打印」按钮" % (want, got)}, ensure_ascii=False))
-                    return
-                self._send(200, json.dumps({"ok": True, "path": out, "pages": got},
-                                           ensure_ascii=False))
+                part = out + ".part"
+                ok = False
+                err = ""
+                pages = 0
+                try:
+                    # CDP 单会话：等页面写下 data-paged-done（页码脚本按"页数连续稳定"判定）
+                    # 再 printToPDF。不能用「--dump-dom + --print-to-pdf」两趟——
+                    # 那是两次独立加载，实测同一文档页数在 0/1/2/3 之间乱跳，必出半截 PDF。
+                    want = _cdp.print_pdf(url, out, browser)
+                    data = open(part, "rb").read()
+                    got = len(re.findall(rb"/Type\s*/Page[^s]", data))
+                    if want and want == got:
+                        os.replace(part, out)      # 校验通过才落位：失败不动已有同名文件
+                        ok, pages = True, got
+                    else:
+                        err = ("分页校验不一致（DOM %d 页 / PDF %d 页），未生成文件；"
+                               "请改用「打印」按钮" % (want, got))
+                except Exception as e:
+                    err = str(e)
+                finally:
+                    # 清理必须在**发响应之前**：否则客户端会先看到响应、后看到临时文件消失
+                    for p in (part, paged_path):
+                        try:
+                            if os.path.exists(p):
+                                os.remove(p)
+                        except Exception:
+                            pass
+                if ok:
+                    self._send(200, json.dumps({"ok": True, "path": out, "pages": pages},
+                                               ensure_ascii=False))
+                else:
+                    self._send(500, json.dumps({"ok": False, "error": err},
+                                               ensure_ascii=False))
             except Exception as e:
                 self._send(500, json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
             return
@@ -2002,6 +2029,23 @@ def _doc_title_or_fallback(doc_title, fallback):
     拿不到就回退首个 <h1>，不该让整次导出失败。
     """
     return (doc_title if isinstance(doc_title, str) else "").strip() or fallback
+
+
+# 工具探测缓存：/api/tools 每次页面加载都会调一次，而探测要起几个子进程。
+# 缓存 30s，避免刷新页面/多标签把机器拖慢（工具装/卸是低频动作）。
+_TOOLS_CACHE = {"t": 0.0, "sig": None, "val": None}
+
+
+def _tools_probe_cached(cfg, ttl=30.0):
+    import md_tools
+    sig = json.dumps(cfg, sort_keys=True, ensure_ascii=False)
+    c = _TOOLS_CACHE
+    now = time.time()
+    if c["val"] is not None and c["sig"] == sig and (now - c["t"]) < ttl:
+        return c["val"]
+    val = md_tools.probe_all(cfg)
+    c.update({"t": now, "sig": sig, "val": val})
+    return val
 
 
 def build_standalone_html(md_path, body_html, ts_css, doc_title=""):

@@ -93,6 +93,45 @@ def main():
         after = [n for n in os.listdir(tmp) if n.lower().endswith(".pdf")]
         check("未保存时不新增 PDF",
               len(after) == (1 if (out and os.path.isfile(out)) else 0), str(after))
+        # 缺浏览器 → 明确报错且不产文件
+        import md_tools
+        saved = md_tools.find_browser
+        md_tools.find_browser = lambda configured="": None
+        try:
+            j3 = post("/api/export-pdf", {"path": doc, "bodyHtml": "<p>x</p>",
+                                          "tsCss": "", "cfg": {}})
+        finally:
+            md_tools.find_browser = saved
+        check("缺浏览器明确报错",
+              j3.get("ok") is False and "浏览器" in (j3.get("error") or ""), str(j3)[:200])
+
+        # 页数不一致 → 报错，且**不动**上一次成功导出的同名 PDF（原子落位）
+        before_pdfs = {n: os.path.getsize(os.path.join(tmp, n))
+                       for n in os.listdir(tmp) if n.lower().endswith(".pdf")}
+        import _cdp
+        saved_print = _cdp.print_pdf
+
+        def _fake_print(url, out_pdf, browser, **kw):
+            # 谎报 1 页、并照约定把 PDF 写到 .part
+            with open(out_pdf + ".part", "wb") as f:
+                f.write(open(out_pdf, "rb").read() if os.path.isfile(out_pdf)
+                        else b"%PDF-1.4\n")
+            return 1
+
+        _cdp.print_pdf = _fake_print
+        try:
+            j4 = post("/api/export-pdf", {"path": doc, "bodyHtml": BODY,
+                                          "tsCss": "", "cfg": {}})
+        finally:
+            _cdp.print_pdf = saved_print
+        after_pdfs = {n: os.path.getsize(os.path.join(tmp, n))
+                      for n in os.listdir(tmp) if n.lower().endswith(".pdf")}
+        check("页数不一致时报错", j4.get("ok") is False, str(j4)[:200])
+        check("页数不一致时不动已有 PDF", after_pdfs == before_pdfs,
+              "%r -> %r" % (before_pdfs, after_pdfs))
+        check("页数不一致时不留 .part",
+              not [n for n in os.listdir(tmp) if n.endswith(".part")],
+              str(os.listdir(tmp)))
     finally:
         httpd.shutdown()
         httpd.server_close()

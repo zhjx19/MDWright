@@ -12,8 +12,10 @@
 """
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 
 import md_tools
 
@@ -31,21 +33,24 @@ def _clamp(pct):
 def prepare_markdown(src):
     """把本文方言改写成 pandoc 认得的 markdown（幂等，纯函数）。"""
     out = []
-    fence = False
+    fence_mark = ""          # 当前所在围栏的标记（``` 或 ~~~），空=不在围栏内
     for ln in src.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
         m = _FENCE_RE.match(ln)
         if m:
-            if not fence:
+            mark = m.group(2)
+            if not fence_mark:
                 # 开围栏：图表围栏的 `{N}` 宽度 pandoc 不认，剥掉；语言名保留
                 info = re.sub(r"\s*\{[1-9]\d{0,2}\}\s*$", "", m.group(3).strip())
-                out.append(m.group(1) + m.group(2) + info)
-                fence = True
-            else:
+                out.append(m.group(1) + mark + info)
+                fence_mark = mark
+            elif mark == fence_mark:
                 out.append(ln)
-                fence = False
+                fence_mark = ""          # 只有**同种**标记能闭合（``` 块里的 ~~~ 是内容）
+            else:
+                out.append(ln)           # 不同种标记：属于内容，不能被当闭合
             continue
-        if fence:
-            out.append(ln)              # 代码块内部一律不动
+        if fence_mark:
+            out.append(ln)               # 代码块内部一律不动
             continue
         cm = _CALLOUT_RE.match(ln)
         if cm:
@@ -70,32 +75,36 @@ def _workdir_for(md_path):
     return os.path.dirname(os.path.abspath(md_path))
 
 
-def export_docx(md_text, md_path, out_path):
-    """跑 pandoc 出 docx。成功返回 pandoc 路径；失败抛 RuntimeError（文案面向用户）。"""
-    pandoc = md_tools.find_pandoc()
+def export_docx(md_text, md_path, out_path, configured=""):
+    """跑 pandoc 出 docx。成功返回 pandoc 路径；失败抛 RuntimeError（文案面向用户）。
+
+    临时 md 放系统临时目录（不污染用户文档目录）；pandoc 先写临时 docx，
+    校验通过再 os.replace 到最终路径——失败/中断时用户目录里不会出现半截文件，
+    也不会覆盖掉上一次成功导出的同名文件。
+    """
+    pandoc = md_tools.find_pandoc(configured)
     if not pandoc:
         raise RuntimeError("未检测到 pandoc.exe：请安装 pandoc"
                            "（winget install JohnMacFarlane.Pandoc），"
                            "或使用自带 pandoc 的 Quarto / RStudio")
     workdir = _workdir_for(md_path)
-    tmp_md = out_path + ".src.md"
+    stage = tempfile.mkdtemp(prefix="mdeditor-pandoc-")
+    tmp_md = os.path.join(stage, "src.md")
+    tmp_docx = os.path.join(stage, "out.docx")
     try:
         with open(tmp_md, "w", encoding="utf-8", newline="\n") as f:
             f.write(prepare_markdown(md_text))
-        cmd = [pandoc, "-f", "markdown+mark", "-t", "docx", "-o", out_path]
+        cmd = [pandoc, "-f", "markdown+mark", "-t", "docx", "-o", tmp_docx]
         if workdir:
             cmd.append("--resource-path=" + workdir)
         cmd.append(tmp_md)
         r = subprocess.run(cmd, capture_output=True, text=True,
                            encoding="utf-8", errors="replace", timeout=180,
                            creationflags=_NO_WINDOW)
-        if r.returncode != 0 or not os.path.isfile(out_path):
+        if r.returncode != 0 or not os.path.isfile(tmp_docx):
             detail = ((r.stderr or r.stdout or "").strip() or "未知错误")[:400]
             raise RuntimeError("pandoc 导出失败：%s" % detail)
+        os.replace(tmp_docx, out_path)      # 原子落位
         return pandoc
     finally:
-        try:
-            if os.path.exists(tmp_md):
-                os.remove(tmp_md)
-        except Exception:
-            pass
+        shutil.rmtree(stage, ignore_errors=True)

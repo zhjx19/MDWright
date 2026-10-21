@@ -65,6 +65,18 @@ def main():
     src = "---\ntitle: t\n---\n\n正文\n"
     check("front matter 原样", prep(src) == src, prep(src))
 
+    # 7 围栏必须按**同种标记**配对：``` 块里的 ~~~ 不是结束符
+    src = "```markdown\n> [!NOTE]\n~~~\n![x](y.png){30}\n```\n"
+    out = prep(src)
+    check("``` 块内的 ~~~ 不结束围栏",
+          "[!NOTE]" in out and "{30}" in out and "**NOTE**" not in out, out)
+
+    # 8 ~~~ 块里的 ``` 同理
+    src = "~~~\n> [!NOTE]\n```\n![x](y.png){30}\n~~~\n"
+    out = prep(src)
+    check("~~~ 块内的 ``` 不结束围栏",
+          "[!NOTE]" in out and "{30}" in out, out)
+
     print("\n%s" % ("ALL PASS" if not fails else "FAILED: %s" % fails))
     sys.exit(1 if fails else 0)
 

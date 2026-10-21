@@ -55,6 +55,35 @@ def main():
     check("回落结果与自动探测同源",
           t2["pandoc"] == t["pandoc"], "%r vs %r" % (t2["pandoc"], t["pandoc"]))
 
+    # 规格 §7.2 的键名（R4 会按这套写 settings）必须被认
+    seen = []
+    orig_find = md_tools.find_pandoc
+    md_tools.find_pandoc = lambda configured="": (seen.append(configured),
+                                                  orig_find(configured))[1]
+    try:
+        md_tools.probe_all({"pandoc_path": "/x/pandoc.exe"})
+    finally:
+        md_tools.find_pandoc = orig_find
+    check("认规格键名 pandoc_path", seen and seen[0] == "/x/pandoc.exe", str(seen))
+
+    # Critical：探测不得为了拿版本号去启动浏览器（Edge 会开窗口并卡约 8 秒）
+    calls = []
+    orig = md_tools.version_of
+    md_tools.version_of = lambda p: (calls.append(p), orig(p))[1]
+    try:
+        t4 = md_tools.probe_all()
+    finally:
+        md_tools.version_of = orig
+    check("探测不为浏览器启动进程取版本",
+          t4["browser"]["path"] not in calls,
+          "spawned: %r" % ([c for c in calls if c == t4["browser"]["path"]],))
+
+    import time as _time
+    t0 = _time.time()
+    md_tools.probe_all()
+    dt = _time.time() - t0
+    check("整轮探测 < 5s", dt < 5.0, "%.2fs" % dt)
+
     print("\n%s" % ("ALL PASS" if not fails else "FAILED: %s" % fails))
     sys.exit(1 if fails else 0)
 
