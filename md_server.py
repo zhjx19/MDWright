@@ -733,6 +733,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._send(400, json.dumps({"ok": False,
                     "error": "仅允许打开本机服务地址"}, ensure_ascii=False))
             return
+        if u.path == "/api/reveal":
+            # 在资源管理器里定位导出产物（只接受已存在路径，不做任意命令执行）
+            q = urllib.parse.parse_qs(u.query)
+            target = q.get("path", [""])[0]
+            if not target or not os.path.exists(target):
+                self._send(400, json.dumps({"ok": False, "error": "路径不存在"},
+                                           ensure_ascii=False))
+                return
+            try:
+                subprocess.Popen(["explorer", "/select,", os.path.normpath(target)],
+                                 creationflags=0x08000000)
+                self._send(200, json.dumps({"ok": True}, ensure_ascii=False))
+            except Exception as e:
+                self._send(500, json.dumps({"ok": False, "error": str(e)},
+                                           ensure_ascii=False))
+            return
         if u.path == "/doc":
             q = urllib.parse.parse_qs(u.query)
             fname = q.get("file", [""])[0]

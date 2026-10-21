@@ -300,7 +300,7 @@
     <button id="btnOpen" class="tb-btn" title="打开 .md 文件">打开</button>
     
     
-    <button id="btnExportPaged" class="tb-btn" title="打印：生成分页版 HTML（纸张/页码/目录）并在浏览器打开，Ctrl+P 即可打印或存为 PDF">打印</button><button id="btnExportHtml" class="tb-btn" title="导出 HTML">.html</button>
+    <button id="btnExportPaged" class="tb-btn" title="打印：生成分页版 HTML（纸张/页码/目录）并在浏览器打开，Ctrl+P 即可打印或存为 PDF">打印</button><button id="btnExportHtml" class="tb-btn" title="导出 HTML">.html</button><button id="btnExportDocx" class="tb-btn" title="导出 Word（.docx，公式转 Word 原生公式）">Word</button><button id="btnExportPdf" class="tb-btn" title="直接导出 PDF 文件（不开打印对话框）">PDF</button>
     <button id="btnLLM" class="tb-btn" title="AI 设置：润色 / 智能备注的后端与模型">AI</button>
     <button id="btnTypeset" class="tb-btn" title="排版设置：字体/表格/缩进/自动落盘">排版</button>
     <button id="btnSave" class="tb-btn" title="保存（Ctrl+S）">保存</button>
@@ -1705,17 +1705,9 @@ function parseMarkdown(src, fx){
     pagedBusy = true;
     var pv = document.getElementById('preview');
     uiBeacon('打印:2 preview存在=' + (!!pv));
-    var bh = pv ? pv.innerHTML : '';
-    uiBeacon('打印:3 html长度=' + bh.length);
     var payload;
     try {
-      payload = JSON.stringify({
-        path: currentFile,
-        bodyHtml: bh,
-        docTitle: (frontMeta && frontMeta.title) || '',
-        tsCss: (document.getElementById('ts-style')||{textContent:''}).textContent,
-        cfg: (function(){try{return JSON.parse(localStorage.getItem('md-editor-typeset-v3')||'{}').page||{};}catch(e){return {};}})()
-      });
+      payload = JSON.stringify(pagedPayload());
     } catch(e) {
       pagedBusy = false;
       uiBeacon('打印:4 stringify失败 ' + e.message);
@@ -1743,6 +1735,74 @@ function parseMarkdown(src, fx){
   });
 
 
+
+  /* 分页类导出共用的请求体：打印 / PDF 直出同一份，避免两处各拼一份走样 */
+  function pagedPayload(){
+    var pv=document.getElementById('preview');
+    return {
+      path: currentFile,
+      bodyHtml: pv?pv.innerHTML:'',
+      docTitle: (frontMeta && frontMeta.title) || '',
+      tsCss: (document.getElementById('ts-style')||{textContent:''}).textContent,
+      cfg: (function(){try{return JSON.parse(localStorage.getItem('md-editor-typeset-v3')||'{}').page||{};}catch(e){return {};}})()
+    };
+  }
+  /* ── Word / PDF 导出：外部工具（pandoc / Chromium 浏览器）可用才点亮 ── */
+  var toolState={docx:false,pdf:false};
+  function applyToolState(){
+    var d=document.getElementById('btnExportDocx'), p=document.getElementById('btnExportPdf');
+    if(d){ d.disabled=!toolState.docx;
+      d.title=toolState.docx?'导出 Word（.docx，公式转 Word 原生公式）'
+                            :'未检测到 pandoc.exe，无法导出 Word（装 pandoc 或用自带 pandoc 的 Quarto/RStudio）'; }
+    if(p){ p.disabled=!toolState.pdf;
+      p.title=toolState.pdf?'直接导出 PDF 文件（不开打印对话框）'
+                           :'未检测到 Chromium 内核浏览器（Edge/Chrome），无法直出 PDF；可改用「打印」'; }
+  }
+  function probeTools(){
+    fetch('/api/tools')
+      .then(function(r){return r.json();})
+      .then(function(j){
+        var t=(j&&j.tools)||{};
+        toolState.docx=!!(t.pandoc&&t.pandoc.found);
+        toolState.pdf=!!(t.browser&&t.browser.found);
+        applyToolState();
+      })
+      .catch(function(){ applyToolState(); });   /* 探测失败：保持置灰，不假装可用 */
+  }
+  /* 打开所在目录：资源管理器里选中该文件（/api/reveal 只接受已存在路径） */
+  function revealFile(p){
+    fetch('/api/reveal?path='+encodeURIComponent(p))
+      .then(function(r){return r.json();})
+      .then(function(j){ if(!j||!j.ok){ showToast('打开失败：'+((j&&j.error)||'未知错误')); } })
+      .catch(function(e){ showToast('打开失败：'+e.message); });
+  }
+  document.getElementById('btnExportDocx').addEventListener('click',function(){
+    if(!currentFile){ showToast('请先保存文档再导出 Word'); return; }
+    showToast('正在导出 Word…');
+    fetch('/api/export-docx',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({path:currentFile, markdown:getText()})})
+      .then(function(r){return r.json();})
+      .then(function(j){
+        if(j&&j.ok){ showToast('已导出：'+j.path, false,
+          {label:'打开所在目录', fn:function(){ revealFile(j.path); }}); }
+        else{ showToast('导出失败：'+((j&&j.error)||'未知错误')); }
+      }).catch(function(e){ showToast('导出失败：'+e.message); });
+  });
+  document.getElementById('btnExportPdf').addEventListener('click',function(){
+    if(!currentFile){ showToast('请先保存文档再导出 PDF'); return; }
+    if(pagedBusy){ showToast('正在导出，请稍候…'); return; }
+    pagedBusy=true;
+    showToast('正在生成 PDF…');
+    fetch('/api/export-pdf',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(pagedPayload())})
+      .then(function(r){return r.json();})
+      .then(function(j){
+        pagedBusy=false;
+        if(j&&j.ok){ showToast('已导出 '+j.pages+' 页：'+j.path, false,
+          {label:'打开所在目录', fn:function(){ revealFile(j.path); }}); }
+        else{ showToast('导出失败：'+((j&&j.error)||'未知错误')); }
+      }).catch(function(e){ pagedBusy=false; showToast('导出失败：'+e.message); });
+  });
 
   var katexCssText='';
   try{fetch('/static/katex/katex.min.css').then(function(r){return r.text();}).then(function(t){katexCssText=t.replace(/url\((['\"]?)fonts\//g,'url($1/static/katex/fonts/');}).catch(function(){});}catch(e){}
@@ -1982,6 +2042,7 @@ function parseMarkdown(src, fx){
   if(sf==='0')followOn=false;
   applyFollow();
   render();updateStats();
+  probeTools();   /* 外部工具探测：决定 Word / PDF 按钮是否可用（缺失则置灰并给指引） */
   /* 字体就绪后折行可能变化：重建镜像测量表；窗口缩放同理（防抖） */
   if(document.fonts&&document.fonts.ready){
     document.fonts.ready.then(function(){ buildMirrorMap(); syncPreviewToEditor(); });
