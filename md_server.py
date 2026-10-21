@@ -65,7 +65,7 @@ except Exception as _e:
 PORT = 18766
 HERE = os.path.dirname(os.path.abspath(__file__))
 EDITOR_HTML = os.path.join(HERE, "markdown-editor.html")
-MD_SERVER_VERSION = 61  # 每次服务端路由/能力变更时 +1；md_launch 依此自愈换代
+MD_SERVER_VERSION = 62  # 每次服务端路由/能力变更时 +1；md_launch 依此自愈换代
 SETTINGS_PATH = os.path.join(HERE, "runtime", "settings.json")
 
 # .smd 自包含文档格式（v1.2.0）；导入失败落错误日志，相关路由返回明确错误而非静默
@@ -1178,6 +1178,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                             "tools": _tools_probe_cached(cfg),
                                             "configured": cfg},
                                            ensure_ascii=False))
+            except Exception as e:
+                self._send(500, json.dumps({"ok": False, "error": str(e)},
+                                           ensure_ascii=False))
+            return
+        if u.path == "/api/run-py":
+            # 执行 Python 代码块（内置便携运行时；只回 stdout/stderr）
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                obj = json.loads(self.rfile.read(length).decode("utf-8"))
+                code = obj.get("code") or ""
+                if not code.strip():
+                    self._send(400, json.dumps({"ok": False, "error": "代码为空"},
+                                               ensure_ascii=False))
+                    return
+                self._send(200, json.dumps(_run_py_code(code), ensure_ascii=False))
             except Exception as e:
                 self._send(500, json.dumps({"ok": False, "error": str(e)},
                                            ensure_ascii=False))
@@ -2678,6 +2693,44 @@ def _run_r_code(code, rscript, timeout=60):
             pass
         else:
             _prune_r_pngs()
+
+
+def _run_py_code(code, timeout=60):
+    """跑用户 Python 代码（用**内置便携运行时**，零额外依赖）。
+
+    只返回 stdout/stderr：打包运行时里没有 matplotlib，画图不在支持范围内，
+    不假装支持（要画图请用 R 代码块）。
+    """
+    d = os.path.join(HERE, "runtime", "tmp", "py")
+    os.makedirs(d, exist_ok=True)
+    uid = uuid.uuid4().hex[:12]
+    script = os.path.join(d, uid + ".py")
+    try:
+        with open(script, "w", encoding="utf-8", newline="\n") as f:
+            f.write(code)
+        env = dict(os.environ)
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
+        try:
+            r = subprocess.run([sys.executable, "-X", "utf8", script],
+                               capture_output=True, text=True, encoding="utf-8",
+                               errors="replace", timeout=timeout, cwd=d, env=env,
+                               creationflags=0x08000000)
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "stdout": "", "stderr": "",
+                    "error": "执行超时（%d 秒）：代码可能陷入死循环" % timeout}
+        so = (r.stdout or "")[:20000]
+        se = (r.stderr or "")[:20000]
+        if r.returncode != 0:
+            return {"ok": False, "stdout": so, "stderr": se,
+                    "error": (se.strip().splitlines() or ["执行失败"])[-1][:600]}
+        return {"ok": True, "stdout": so, "stderr": se, "error": ""}
+    finally:
+        try:
+            if os.path.exists(script):
+                os.remove(script)
+        except Exception:
+            pass
 
 
 def _pick_file_subprocess(initdir=""):

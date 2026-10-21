@@ -37,7 +37,8 @@ PROBE_MENU = r"""
     settingsBtn: !!q('#btnSettings'),
     // 旧的平铺按钮：不应再直接出现在 header 里（只能在下拉内）
     flatBtns: qa('#toolbar > .tb-group > .tb-btn, #toolbar > .tb-group > .tb-btn').length,
-    fmtCount: qa('#fmtBtns .menu-item').length
+    fmtCount: qa('#fmtBtns .menu-item[data-fmt]').length,
+    fmtTotal: qa('#fmtBtns .menu-item').length
   };
   // 打开「编辑」菜单
   var editLabel = qa('#menuBar .menu-label').filter(function(b){return b.textContent.trim()==='编辑';})[0];
@@ -139,24 +140,53 @@ PROBE_DEEPSEEK = r"""
 """
 
 
+PROBE_EDIT = r"""
+(function(){
+  var out={};
+  out.insCode=!!document.getElementById('btnInsCode');
+  out.insFoot=!!document.getElementById('btnInsFootnote');
+  out.runSel=!!document.getElementById('btnRunSel');
+  out.light=document.body.classList.contains('light');
+  out.baseFont=getComputedStyle(document.documentElement)
+      .getPropertyValue('--base-font').trim();
+  var ed=document.getElementById('editor');
+  var sel=window.getSelection();
+  function selectAll(){
+    ed.focus();
+    var rng=document.createRange(); rng.selectNodeContents(ed);
+    sel.removeAllRanges(); sel.addRange(rng);
+  }
+  ed.textContent='abc'; selectAll();
+  document.getElementById('btnInsCode').click();
+  out.afterCode=ed.textContent;
+  ed.textContent='正文'; selectAll();
+  document.getElementById('btnInsFootnote').click();
+  out.afterFoot=ed.textContent;
+  return out;
+})()
+"""
+
 PROBE_R = r"""
 (function(){
   var ed=document.getElementById('editor');
-  ed.textContent='```r\ncat("R 输出:", 1+1, "\\n")\n```\n';
+  ed.textContent='```python\nprint("py 输出")\n```\n\n```r\ncat("r 输出")\n```\n';
   ed.dispatchEvent(new Event('input',{bubbles:true}));
   return new Promise(function(resolve){
     setTimeout(function(){
-      var btn=document.querySelector('#preview .run-btn');
-      if(!btn){ resolve({btn:false}); return; }
-      var out=btn.parentNode.nextSibling;
-      var hasOut=!!(out&&out.classList&&out.classList.contains('r-out'));
-      btn.click();
+      var btns=[].slice.call(document.querySelectorAll('#preview .run-btn'));
+      if(btns.length<2){ resolve({count:btns.length}); return; }
+      var pyBtn=btns[0], rBtn=btns[1];
+      function outOf(b){ var o=b.parentNode.nextSibling; return (o&&o.textContent)||''; }
+      pyBtn.click();
       setTimeout(function(){
-        var txt=(out&&out.textContent)||'';
-        resolve({btn:true, hasOut:hasOut, outText:txt,
-                 stillDisabled: btn.disabled});
+        var pyOut=outOf(pyBtn);
+        rBtn.click();
+        setTimeout(function(){
+          resolve({count:btns.length, pyOut:pyOut, rOut:outOf(rBtn),
+                   disabled: pyBtn.disabled || rBtn.disabled});
+        }, 6000);
       }, 6000);
-    }, 1500);
+    }, 1200);
   });
 })()
 """
@@ -170,6 +200,7 @@ def main():
     check("有「设置」按钮", r.get("settingsBtn") is True)
     check("旧的平铺按钮已收进下拉", (r.get("flatBtns") or 0) <= 1, str(r.get("flatBtns")))
     check("编辑菜单有 12 个格式项", r.get("fmtCount") == 12, str(r.get("fmtCount")))
+    check("编辑菜单共 15 项（含插入类）", r.get("fmtTotal") == 15, str(r.get("fmtTotal")))
     check("点击菜单标签展开", r.get("openAfterClick") == "true" and r.get("popVisible") is True,
           "expanded=%r visible=%r" % (r.get("openAfterClick"), r.get("popVisible")))
     check("加粗项包裹选中文字", r.get("afterBold") == "**abc**", str(r.get("afterBold")))
@@ -201,12 +232,26 @@ def main():
     check("DeepSeek 模型预设就位",
           r3.get("models") == ["deepseek-chat", "deepseek-reasoner"], str(r3.get("models")))
 
-    # ---- R 代码块：运行按钮与就地输出（R4） ----
+    # ---- R / Python 代码块：运行按钮与就地输出 ----
     r4 = run_expr(PROBE_R)
-    check("R 围栏有「运行」按钮", r4.get("btn") is True, str(r4)[:160])
-    check("R 输出区已挂在代码块下方", r4.get("hasOut") is True, str(r4))
-    check("点运行后回显 stdout", "R 输出" in (r4.get("outText") or ""), r4.get("outText"))
-    check("运行结束按钮恢复可用", r4.get("stillDisabled") is False, str(r4))
+    check("R 与 Python 围栏各有一个运行按钮", r4.get("count") == 2, str(r4.get("count")))
+    check("Python 块运行回显 stdout", "py 输出" in (r4.get("pyOut") or ""), r4.get("pyOut"))
+    check("R 块运行回显 stdout", "r 输出" in (r4.get("rOut") or ""), r4.get("rOut"))
+    check("运行结束按钮恢复可用", r4.get("disabled") is False, str(r4))
+
+    # ---- 编辑菜单：插入代码块 / 脚注 / 运行选中；默认亮色与字号 ----
+    re_ = run_expr(PROBE_EDIT)
+    check("编辑菜单含插入代码块", re_.get("insCode") is True, str(re_))
+    check("编辑菜单含插入脚注", re_.get("insFoot") is True, str(re_))
+    check("编辑菜单含运行选中代码", re_.get("runSel") is True, str(re_))
+    check("默认主题为亮色", re_.get("light") is True, str(re_))
+    check("正文字号变量已生效", (re_.get("baseFont") or "") == "15px", str(re_.get("baseFont")))
+    check("插入代码块写入围栏",
+          "```r" in (re_.get("afterCode") or "") and (re_.get("afterCode") or "").count("```") >= 2,
+          str(re_.get("afterCode")))
+    check("插入脚注写入引用与定义",
+          "[^1]" in (re_.get("afterFoot") or "") and "[^1]: " in (re_.get("afterFoot") or ""),
+          str(re_.get("afterFoot")))
 
     # ---- Word 导出：先选路径再导出 ----
     tmp = tempfile.mkdtemp(prefix="mdmenu-")

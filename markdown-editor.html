@@ -8,24 +8,34 @@
 <title>Markdown 编辑器</title>
 <style>
   :root{
-    --bg:#1a1a1c; --panel:#212124; --editor-bg:#1e1e20; --preview-bg:#1a1a1c;
-    --text:#e6e6e8; --muted:#8a8a90; --border:#33333a; --accent:#7aa2f7;
-    --accent-soft:rgba(122,162,247,.14); --code-bg:#2a2a30; --shadow:0 2px 12px rgba(0,0,0,.4);
-    --quote-border:#3a3a44; --table-border:#3a3a44; --radius:10px;
+    /* 默认亮色（GitHub Primer 浅色）——暗色在 body 不带 .light 时生效，见下方 body:not(.light) */
+    --bg:#ffffff; --panel:#f6f8fa; --editor-bg:#ffffff; --preview-bg:#ffffff;
+    --text:#1f2328; --muted:#636c76; --border:#d0d7de; --accent:#0969da;
+    --accent-soft:rgba(9,105,218,.09); --code-bg:#f6f8fa; --shadow:0 1px 3px rgba(31,35,40,.10);
+    --quote-border:#d0d7de; --table-border:#d0d7de; --radius:10px;
     --mono:Consolas,Menlo,Monaco,"Courier New",monospace;
     --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    --base-font:15px; --editor-font:14px;
   }
+  /* 暗色（GitHub Primer 深色）：body 没有 .light 时生效 */
+  body:not(.light){
+    --bg:#0d1117; --panel:#161b22; --editor-bg:#0d1117; --preview-bg:#0d1117;
+    --text:#e6edf3; --muted:#8b949e; --border:#30363d; --accent:#2f81f7;
+    --accent-soft:rgba(47,129,247,.15); --code-bg:#161b22; --shadow:0 4px 14px rgba(1,4,9,.5);
+    --quote-border:#30363d; --table-border:#30363d;
+  }
+  /* 亮色显式覆盖（body.light；与 :root 同值，保留主题切换语义） */
   body.light{
-    --bg:#f7f6f3; --panel:#ffffff; --editor-bg:#fbfaf8; --preview-bg:#f7f6f3;
-    --text:#2b2b2e; --muted:#9a978f; --border:#e6e3dc; --accent:#4a6cf7;
-    --accent-soft:rgba(74,108,247,.10); --code-bg:#f0eee9; --shadow:0 2px 12px rgba(0,0,0,.06);
-    --quote-border:#d8d4cb; --table-border:#e0ddd5;
+    --bg:#ffffff; --panel:#f6f8fa; --editor-bg:#ffffff; --preview-bg:#ffffff;
+    --text:#1f2328; --muted:#636c76; --border:#d0d7de; --accent:#0969da;
+    --accent-soft:rgba(9,105,218,.09); --code-bg:#f6f8fa; --shadow:0 1px 3px rgba(31,35,40,.10);
+    --quote-border:#d0d7de; --table-border:#d0d7de;
   }
   *{box-sizing:border-box;}
   html,body{height:100%;margin:0;padding:0;}
   body{
     background:var(--bg); color:var(--text);
-    font-family:var(--sans); font-size:15px; line-height:1.7;
+    font-family:var(--sans); font-size:var(--base-font,15px); line-height:1.7;
     display:flex; flex-direction:column; overflow:hidden;
     -webkit-font-smoothing:antialiased;
   }
@@ -102,6 +112,18 @@
     white-space:pre-wrap; font-family:var(--mono); font-size:.95em;}
   .markdown-body .r-out-img{max-width:100%; margin:.4em 0; border-radius:6px; background:#fff;}
   .markdown-body .r-out-line{color:var(--muted); font-size:.95em;}
+  /* 运行结果弹窗（行内/选中片段运行） */
+  #runOverlay{position:fixed; inset:0; background:rgba(0,0,0,.42); z-index:99;
+    display:flex; align-items:center; justify-content:center;}
+  #runOverlay[hidden]{display:none !important;}
+  #runPanel{width:640px; max-height:76vh; overflow:auto; background:var(--panel);
+    color:var(--text); border:1px solid var(--border); border-radius:12px;
+    box-shadow:var(--shadow);}
+  #runPanel .ts-body{padding:12px 16px 16px;}
+  #runPanel .r-out-txt,#runPanel .r-out-err{
+    margin:0; padding:10px 12px; background:var(--code-bg); border:1px solid var(--border);
+    border-radius:8px; white-space:pre-wrap; font-family:var(--mono); font-size:12.5px;
+    line-height:1.6; overflow:auto; max-height:56vh;}
   #main{flex:1 1 auto; display:flex; min-height:0;}
   .pane{min-height:0; overflow:auto;}
   #outline{
@@ -123,7 +145,7 @@
   #editor{
     display:block; width:100%; height:100%; border:none; outline:none; resize:none;
     background:var(--editor-bg); color:var(--text);
-    font-family:var(--mono); font-size:14px; line-height:1.8;
+    font-family:var(--mono); font-size:var(--editor-font,14px); line-height:1.8;
     padding:24px 28px; tab-size:2;
     overflow:auto; cursor:text; caret-color:var(--text);
     /* 纯文本 contenteditable：pre-wrap 让 \n 文本节点渲染为换行；
@@ -268,8 +290,8 @@
 </style>
   <link rel="stylesheet" href="/static/katex/katex.min.css">
   <!-- 代码高亮主题：两套用 media 开关切换（见 applyTheme），跟随编辑器明暗 -->
-  <link id="hljsDark" rel="stylesheet" href="/static/highlight/styles/github-dark.css">
-  <link id="hljsLight" rel="stylesheet" href="/static/highlight/styles/github.css" media="not all">
+  <link id="hljsDark" rel="stylesheet" href="/static/highlight/styles/github-dark.css" media="not all">
+  <link id="hljsLight" rel="stylesheet" href="/static/highlight/styles/github.css">
   <style id="ts-ui">
     #tsOverlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99;display:flex;align-items:center;justify-content:center;}
     #tsOverlay[hidden]{display:none !important;}
@@ -345,7 +367,7 @@
   </style>
   <meta name="generator" content="MDEditor - AI-assisted (generated with an AI coding agent)">
 </head>
-<body>
+<body class="light">
 <header id="toolbar">
   <div class="tb-group brand" title="本工具由 AI 辅助生成 (AI-assisted)">MDEditor</div>
   <nav id="menuBar">
@@ -448,9 +470,10 @@
     </div>
     <div class="ts-body">
       <section class="set-sec" data-sec="appearance" hidden>
-        <div class="ts-row"><label>主题</label><select id="setTheme"><option value="dark">暗色</option><option value="light">亮色</option></select></div>
+        <div class="ts-row"><label>主题</label><select id="setTheme"><option value="light">亮色（GitHub 浅色）</option><option value="dark">暗色（GitHub 深色）</option></select></div>
+        <div class="ts-row"><label>正文字号（预览与编辑区，磅）</label><input id="setBaseSize" type="number" min="12" max="24" step="1" placeholder="15"></div>
         <div class="ts-row"><label>预览跟随编辑区滚动（仅分屏模式）</label><input id="setFollow" type="checkbox"></div>
-        <p class="set-note">主题与跟随也可在「视图」菜单里快速切换，两边始终同步。</p>
+        <p class="set-note">主题与跟随也可在「视图」菜单里快速切换，两边始终同步。逐元素的字体/字号在「排版」页签里设置（优先级高于这里的正文字号）。</p>
       </section>
       <section class="set-sec" data-sec="save" hidden>
         <div class="ts-row"><label>自动落盘间隔（分钟，0=仅手动）</label><input id="tsAuto" type="number" min="0" max="60" step="1"></div>
@@ -616,7 +639,14 @@
 <div id="selTools" hidden>
   <button id="selNote" title="给选中片段加批注">备注</button>
   <button id="selPolish" title="AI 润色选中片段">润色</button>
+  <button id="selRun" title="把选中的代码片段按 R / Python 在本机执行">▶ 运行</button>
   <button id="selRagPolish" title="基于 RAG 知识库检索增强润色（需 RAG 服务在线）" disabled>RAG润色</button>
+</div>
+<div id="runOverlay" hidden>
+  <div id="runPanel">
+    <div class="ts-head"><span id="runTitle">运行结果</span><button id="runClose" title="关闭">×</button></div>
+    <div class="ts-body" id="runBody"></div>
+  </div>
 </div>
 <input type="file" id="fileInput" hidden accept=".md,.markdown,.txt">
 <script defer src="/static/katex/katex.min.js"></script>
@@ -1055,6 +1085,7 @@ function parseMarkdown(src, fx){
   var fileInput=document.getElementById('fileInput');
   var STORE_KEY='md-editor-content-v1';
   var THEME_KEY='md-editor-theme';
+  var SIZE_KEY='md-editor-base-size';
   var VIEW_KEY='md-editor-view';
   var FOLLOW_KEY='md-editor-follow';
   var BUILTIN_DOCS=[{name:'使用指南',file:'MDEditor 使用指南.md'},
@@ -1744,6 +1775,44 @@ function parseMarkdown(src, fx){
     document.getElementById('selRagPolish').click();
   });
 
+  /* 编辑菜单尾部：插入类（代码块 / 脚注）——与格式项同源，避免菜单结构分两处维护 */
+  (function(){
+    var sp=document.createElement('div'); sp.className='menu-sep'; fmtBtns.appendChild(sp);
+    var defs=[['btnInsCode','插入代码块'],['btnInsFootnote','插入脚注'],
+              ['btnRunSel','运行选中代码']];
+    defs.forEach(function(d){
+      var b=document.createElement('button');
+      b.className='menu-item'; b.setAttribute('role','menuitem');
+      b.id=d[0]; b.textContent=d[1];
+      fmtBtns.appendChild(b);
+    });
+  })();
+  function insertBlockCode(){
+    var lang='r';
+    var ins='\n```'+lang+'\n\n```\n';
+    var r=getSel(), val=getText();
+    setText(val.substring(0,r.s)+ins+val.substring(r.e));
+    var pos=r.s+('\n```'+lang+'\n').length;
+    setSel(pos,pos);
+    editor.focus(); scheduleRender(); scheduleSave();
+  }
+  function insertFootnote(){
+    var val=getText();
+    var used={}, re=/\[\^([^\]\s]+)\]/g, m;
+    while((m=re.exec(val))!==null){ used[m[1]]=1; }
+    var n=1; while(used[String(n)]) n++;
+    var label=String(n);
+    var r=getSel();
+    var ref='[^'+label+']';
+    var def='\n[^'+label+']: ';
+    var sep=val.slice(-1)==='\n'?'':'\n';
+    setText(val.substring(0,r.s)+ref+val.substring(r.e)+sep+def);
+    var pos=r.s+ref.length;
+    setSel(pos,pos);
+    editor.focus(); scheduleRender(); scheduleSave();
+  }
+  document.getElementById('btnInsCode').addEventListener('click',insertBlockCode);
+  document.getElementById('btnInsFootnote').addEventListener('click',insertFootnote);
   function applyFormat(d){
     var selR=getSel();
     var s=selR.s,e=selR.e;
@@ -1802,6 +1871,16 @@ function parseMarkdown(src, fx){
     if(followOn)syncPreviewToEditor();   /* 重新打开立即对齐，不等下次滚动 */
   });
 
+  /* 正文字号：一个值同时作用于预览与编辑区（排版页签的逐元素设置优先级更高） */
+  function applyBaseSize(px){
+    var v=parseInt(px,10);
+    if(isNaN(v)) v=15;
+    v=Math.max(12,Math.min(24,v));
+    document.documentElement.style.setProperty('--base-font', v+'px');
+    document.documentElement.style.setProperty('--editor-font', Math.max(11,v-1)+'px');
+    try{localStorage.setItem(SIZE_KEY,String(v));}catch(e){}
+    return v;
+  }
   function applyTheme(t){
     if(t==='light')document.body.classList.add('light');else document.body.classList.remove('light');
     document.getElementById('btnTheme').textContent=(t==='light'?'亮色':'暗色');
@@ -2261,7 +2340,9 @@ function parseMarkdown(src, fx){
   var sv=null;try{sv=localStorage.getItem(VIEW_KEY);}catch(e){}
   if(sv)viewIdx=views.indexOf(sv);
   var st=null;try{st=localStorage.getItem(THEME_KEY);}catch(e){}
-  applyTheme(st||'dark');
+  applyTheme(st||'light');   /* 默认亮色（GitHub 浅色）；用户切过就沿用其选择 */
+  var sz=null;try{sz=localStorage.getItem(SIZE_KEY);}catch(e){}
+  applyBaseSize(sz||15);
   applyView();
   var sf=null;try{sf=localStorage.getItem(FOLLOW_KEY);}catch(e){}
   if(sf==='0')followOn=false;
@@ -2503,6 +2584,8 @@ function parseMarkdown(src, fx){
     /* 外观与外部工具：与「视图」菜单 / /api/tools 同源 */
     document.getElementById('setTheme').value =
       document.body.classList.contains('light') ? 'light' : 'dark';
+    document.getElementById('setBaseSize').value =
+      (function(){try{return parseInt(localStorage.getItem(SIZE_KEY),10)||15;}catch(e){return 15;}})();
     document.getElementById('setFollow').checked = !!followOn;
     setTab('appearance');
     fillTools(false);
@@ -2583,33 +2666,37 @@ function parseMarkdown(src, fx){
   document.getElementById('setToolsRefresh').addEventListener('click',function(){ fillTools(true); });
   document.getElementById('setToolsSave').addEventListener('click',saveToolPaths);
 
-  /* ── R 代码块：围栏上挂「▶ 运行」，输出/图渲染在代码块下方 ─────────
-     执行的是**用户本机的 R 代码**（与 AI 润色同理，用户自负其责）。 */
+  /* ── R / Python 代码块：围栏上挂「▶ 运行」，输出/图渲染在代码块下方 ──
+     执行的是**用户本机的代码**（R 走 Rscript；Python 走内置便携运行时）。 */
+  var RUN_API={r:'/api/run-r', python:'/api/run-py'};
+  var RUN_LABEL={r:'R', python:'Python'};
   function mountRunners(root){
     if(!root||!root.querySelectorAll)return;
-    var codes=root.querySelectorAll('pre code[data-lang="r"], pre code[data-lang="R"]');
+    var codes=root.querySelectorAll('pre code[data-lang]');
     for(var i=0;i<codes.length;i++){
+      var lang=(codes[i].getAttribute('data-lang')||'').toLowerCase();
+      if(!RUN_API[lang])continue;
       var wrap=codes[i].parentNode?codes[i].parentNode.parentNode:null;
       if(!wrap||wrap.getAttribute('data-runner'))continue;
-      wrap.setAttribute('data-runner','1');
+      wrap.setAttribute('data-runner',lang);
       var btn=document.createElement('button');
       btn.type='button'; btn.className='run-btn'; btn.textContent='▶ 运行';
-      btn.title='在你本机执行这段 R 代码（输出显示在代码块下方）';
-      (function(w,b){ b.addEventListener('click',function(){ runRBlock(w,b); }); })(wrap,btn);
+      btn.title='在你本机运行这段 '+RUN_LABEL[lang]+' 代码（输出显示在代码块下方）';
+      (function(w,b,l){ b.addEventListener('click',function(){ runCodeBlock(w,b,l); }); })(wrap,btn,lang);
       wrap.appendChild(btn);
       var out=document.createElement('div');
       out.className='r-out'; out.hidden=true;
       wrap.parentNode.insertBefore(out, wrap.nextSibling);
     }
   }
-  function runRBlock(wrap,btn){
+  function runCodeBlock(wrap,btn,lang){
     var code=wrap.querySelector('code');
     var out=wrap.nextSibling;
     if(!code||!out||!out.classList||!out.classList.contains('r-out'))return;
     btn.disabled=true; btn.textContent='运行中…';
     out.hidden=false;
     out.innerHTML='<div class="r-out-line">运行中…</div>';
-    fetch('/api/run-r',{method:'POST',headers:{'Content-Type':'application/json'},
+    fetch(RUN_API[lang],{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({code:code.textContent})})
       .then(function(r){return r.json();})
       .then(function(j){
@@ -2631,6 +2718,50 @@ function parseMarkdown(src, fx){
         out.innerHTML='<pre class="r-out-err">执行失败：'+escapeHtml(e.message)+'</pre>';
       });
   }
+  /* 行内/选中片段运行：猜语言（Python 特征 → python，其余按 R），结果显示在弹窗里 */
+  function guessRunLang(code){
+    if(/(^|\n)\s*(import|from|def|class)\s|\bprint\(/.test(code)) return 'python';
+    return 'r';
+  }
+  function runSelection(){
+    var r=getSel();
+    var txt=getText().substring(r.s,r.e).trim();
+    if(!txt){ showToast('请先选中要运行的代码（行内代码或片段）'); return; }
+    var lang=guessRunLang(txt);
+    var ov=document.getElementById('runOverlay');
+    var body=document.getElementById('runBody');
+    document.getElementById('runTitle').textContent='运行结果（按 '+RUN_LABEL[lang]+' 执行）';
+    body.innerHTML='<div class="r-out-line">运行中…</div>';
+    ov.hidden=false;
+    fetch(RUN_API[lang],{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({code:txt})})
+      .then(function(res){return res.json();})
+      .then(function(j){
+        var html='';
+        if(j&&j.ok){
+          if(j.stdout) html+='<pre class="r-out-txt">'+escapeHtml(j.stdout)+'</pre>';
+          if(j.image) html+='<img class="r-out-img" src="/img?path='+
+                            encodeURIComponent(j.image)+'">';
+          if(!j.stdout&&!j.image) html='<div class="r-out-line">（执行完成，无输出）</div>';
+        }else{
+          html='<pre class="r-out-err">'+escapeHtml((j&&j.error)||'执行失败')+'</pre>';
+        }
+        body.innerHTML=html;
+      })
+      .catch(function(e){
+        body.innerHTML='<pre class="r-out-err">执行失败：'+escapeHtml(e.message)+'</pre>';
+      });
+  }
+  document.getElementById('selRun').addEventListener('click',function(){
+    selTools.hidden=true; runSelection();
+  });
+  document.getElementById('btnRunSel').addEventListener('click',runSelection);
+  document.getElementById('runClose').addEventListener('click',function(){
+    document.getElementById('runOverlay').hidden=true;
+  });
+  document.getElementById('runOverlay').addEventListener('click',function(e){
+    if(e.target===this) this.hidden=true;
+  });
   document.getElementById('tsClose').addEventListener('click',function(){document.getElementById('tsOverlay').hidden=true;});
   document.getElementById('tsOverlay').addEventListener('click',function(e){if(e.target===this)this.hidden=true;});
   /* ── 内嵌模式检测（pywebview 直连 py API；否则走 HTTP）───────────────── */
@@ -2889,6 +3020,7 @@ function parseMarkdown(src, fx){
     if((wantTheme==='light')!==document.body.classList.contains('light')) applyTheme(wantTheme);
     var wantFollow=document.getElementById('setFollow').checked;
     if(!!followOn!==wantFollow){ followOn=wantFollow; applyFollow(); }
+    applyBaseSize(document.getElementById('setBaseSize').value);
     applyTypeset();resetAutoDisk();
     document.getElementById('tsOverlay').hidden=true;
     var ss=document.getElementById('statSave');ss.textContent='排版已更新（缓存）';ss.className='saved';
