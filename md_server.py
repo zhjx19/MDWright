@@ -65,7 +65,7 @@ except Exception as _e:
 PORT = 18766
 HERE = os.path.dirname(os.path.abspath(__file__))
 EDITOR_HTML = os.path.join(HERE, "markdown-editor.html")
-MD_SERVER_VERSION = 56  # 每次服务端路由/能力变更时 +1；md_launch 依此自愈换代
+MD_SERVER_VERSION = 57  # 每次服务端路由/能力变更时 +1；md_launch 依此自愈换代
 SETTINGS_PATH = os.path.join(HERE, "runtime", "settings.json")
 
 # .smd 自包含文档格式（v1.2.0）；导入失败落错误日志，相关路由返回明确错误而非静默
@@ -733,6 +733,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._send(400, json.dumps({"ok": False,
                     "error": "仅允许打开本机服务地址"}, ensure_ascii=False))
             return
+        if u.path == "/api/save-dialog":
+            # 原生「保存为」框：Word / PDF 导出先让用户选路径（可改目录与文件名，
+            # 覆盖已存在文件时由系统确认）。取消返回 path=""
+            try:
+                q = urllib.parse.parse_qs(u.query)
+                ext = (q.get("ext", [""])[0] or "").lower()
+                name = q.get("name", [""])[0]
+                initdir = q.get("dir", [""])[0]
+                title = q.get("title", [""])[0] or ("保存为 .%s" % ext)
+                p = _save_dialog_subprocess(title, name, initdir, ext)
+                self._send(200, json.dumps({"ok": True, "path": p or ""},
+                                           ensure_ascii=False))
+            except Exception as e:
+                self._send(500, json.dumps({"ok": False, "error": str(e)},
+                                           ensure_ascii=False))
+            return
         if u.path == "/api/reveal":
             # 在资源管理器里定位导出产物（只接受已存在路径，不做任意命令执行）
             q = urllib.parse.parse_qs(u.query)
@@ -1154,8 +1170,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     self._send(400, json.dumps({"ok": False,
                         "error": "文档不存在：%s" % md_path}, ensure_ascii=False))
                     return
+                if _is_builtin_doc(md_path):
+                    self._send(400, json.dumps({"ok": False,
+                        "error": "内置文档不能直接导出（会写进安装目录）："
+                                 "请先「另存为」到你自己的目录，再导出 Word"},
+                        ensure_ascii=False))
+                    return
                 stem = os.path.splitext(os.path.basename(md_path))[0]
-                out = os.path.join(os.path.dirname(os.path.abspath(md_path)), stem + ".docx")
+                okp, out = _norm_out_path((obj.get("outPath") or "").strip(), md_path, "docx")
+                if not okp:
+                    self._send(400, json.dumps({"ok": False, "error": out},
+                                               ensure_ascii=False))
+                    return
                 import md_pandoc
                 settings = _load_json(SETTINGS_PATH, {})
                 cfg = settings.get("tools") if isinstance(settings, dict) else {}
@@ -1182,6 +1208,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     self._send(400, json.dumps({"ok": False,
                         "error": "文档不存在：%s" % md_path}, ensure_ascii=False))
                     return
+                if _is_builtin_doc(md_path):
+                    self._send(400, json.dumps({"ok": False,
+                        "error": "内置文档不能直接导出（会写进安装目录）："
+                                 "请先「另存为」到你自己的目录，再导出 PDF"},
+                        ensure_ascii=False))
+                    return
                 import md_tools
                 settings = _load_json(SETTINGS_PATH, {})
                 cfg = settings.get("tools") if isinstance(settings, dict) else {}
@@ -1205,7 +1237,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 port = self.server.server_address[1]
                 url = "http://127.0.0.1:%d/static/%s" % (port, name)
                 stem = os.path.splitext(os.path.basename(md_path))[0]
-                out = os.path.join(os.path.dirname(os.path.abspath(md_path)), stem + ".pdf")
+                okp, out = _norm_out_path((obj.get("outPath") or "").strip(), md_path, "pdf")
+                if not okp:
+                    self._send(400, json.dumps({"ok": False, "error": out},
+                                               ensure_ascii=False))
+                    return
                 import _cdp
                 part = out + ".part"
                 ok = False
@@ -2036,6 +2072,20 @@ def _doc_title_or_fallback(doc_title, fallback):
 _TOOLS_CACHE = {"t": 0.0, "sig": None, "val": None}
 
 
+def _is_builtin_doc(p):
+    """内置文档（使用指南 / 版权声明）住在应用目录 docs/ 下。
+
+    导出会往安装目录里写产物：既污染安装（下次升级被覆盖、卸载删不干净），
+    也可能因为装在 Program Files 而写不进去。引导用户先「另存为」。
+    """
+    try:
+        docs_dir = os.path.normcase(os.path.normpath(os.path.join(HERE, "docs")))
+        target = os.path.normcase(os.path.normpath(os.path.abspath(p)))
+        return target.startswith(docs_dir + os.sep)
+    except Exception:
+        return False
+
+
 def _tools_probe_cached(cfg, ttl=30.0):
     import md_tools
     sig = json.dumps(cfg, sort_keys=True, ensure_ascii=False)
@@ -2377,6 +2427,67 @@ def _run_picker(script, tmpname):
         return io.open(tmp, encoding="utf-8").read().strip()
     except Exception:
         return ""
+
+
+def _save_dialog_subprocess(title, default_name, initdir, ext):
+    """原生「保存文件」框（GetSaveFileNameW）；返回用户选择的完整路径，取消返回空串。
+
+    与 `_pick_file_subprocess` 同一模式：独立子进程弹窗（避免阻塞服务线程），
+    路径经临时文件回传。过滤串在服务端按扩展名白名单生成——不接受前端传来的
+    任意 filter 文本（那是直接拼进 Win32 结构的字符串）。
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    picker = os.path.join(here, "_savefile.py")
+    if not os.path.exists(picker):
+        return ""
+    ext = (ext or "").lower().lstrip(".")
+    if ext == "docx":
+        flt = "Word 文档 (*.docx)\0*.docx\0所有文件 (*.*)\0*.*\0\0"
+    elif ext == "pdf":
+        flt = "PDF 文档 (*.pdf)\0*.pdf\0所有文件 (*.*)\0*.*\0\0"
+    else:
+        return ""
+    tmp = os.path.join(tempfile.gettempdir(), "md_save_dialog.txt")
+    try:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    except Exception:
+        pass
+    exe_dir = os.path.dirname(sys.executable)
+    py_exe = os.path.join(exe_dir, "python.exe")
+    if not os.path.exists(py_exe):
+        py_exe = sys.executable
+    try:
+        subprocess.run([py_exe, picker, tmp, title, default_name, initdir, flt, ext],
+                       timeout=900, creationflags=0x08000000)
+    except Exception:
+        pass
+    try:
+        return io.open(tmp, encoding="utf-8").read().strip()
+    except Exception:
+        return ""
+
+
+def _norm_out_path(out_path, md_path, ext):
+    """校验前端指定的导出路径：绝对路径、父目录存在、扩展名正确、不能是内置文档目录。
+
+    返回 (ok, path_or_error)。
+    """
+    if not out_path:
+        stem = os.path.splitext(os.path.basename(md_path))[0]
+        return True, os.path.join(os.path.dirname(os.path.abspath(md_path)),
+                                  stem + "." + ext)
+    if not os.path.isabs(out_path):
+        return False, "导出路径必须是绝对路径"
+    p = os.path.abspath(out_path)
+    if os.path.splitext(p)[1].lower() != "." + ext:
+        return False, "导出路径必须是 .%s 文件" % ext
+    parent = os.path.dirname(p)
+    if not os.path.isdir(parent):
+        return False, "目标目录不存在：%s" % parent
+    if _is_builtin_doc(p):
+        return False, "不能导出到安装目录 docs/ 下，请换一个目录"
+    return True, p
 
 
 def _pick_file_subprocess(initdir=""):
