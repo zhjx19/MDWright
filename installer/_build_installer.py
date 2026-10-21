@@ -33,7 +33,7 @@ DIST_DOCS_DIRS = ["MDEditor 使用指南.assets"]
 DIST_FILES = ["md_launch.pyw", "_md_run.py", "md_server.py", "markdown-editor.html",
               "md-editor.ico", "uninstall-md.ico", "llm_client.py", "web_search.py",
               "rag_client.py", "_smd.py", "md_assets.py", "_splash.py",
-              "md_tools.py", "md_pandoc.py", "_cdp.py",
+              "md_tools.py", "md_pandoc.py", "_cdp.py", "_savefile.py",
               "_pickdir_modern.py", "_pickfile.py", "md_app.pyw", "LICENSE", "README.md",
               "install.cmd", "MarkdownEditor.cs", "MarkdownEditor.exe", "_mklnk.ps1",
               "uninstall.cmd", "UninstallMDEditor.cs", "desktop-shortcut.cmd", "md_stop.cmd"]
@@ -180,7 +180,7 @@ def verify_staging():
     少了它们的症状是**静默失效**：装完 app 能开、页面能看，只是「Word/PDF」按钮
     永远置灰、代码块永不着色，没有任何报错。所以在这里前置拦住。
     """
-    need = [("md_tools.py", 1), ("md_pandoc.py", 1), ("_cdp.py", 1),
+    need = [("md_tools.py", 1), ("md_pandoc.py", 1), ("_cdp.py", 1), ("_savefile.py", 1),
             ("highlight/highlight.min.js", 100 * 1024),
             ("highlight/styles/github.css", 500),
             ("highlight/styles/github-dark.css", 500)]
