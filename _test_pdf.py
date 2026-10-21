@@ -132,6 +132,15 @@ def main():
         check("页数不一致时不留 .part",
               not [n for n in os.listdir(tmp) if n.endswith(".part")],
               str(os.listdir(tmp)))
+
+        # 内置文档（安装目录 docs/）不得直接导出
+        builtin = os.path.join(HERE, "docs", "MDEditor 使用指南.md")
+        if os.path.isfile(builtin):
+            j5 = post("/api/export-pdf", {"path": builtin, "bodyHtml": "<p>x</p>",
+                                          "tsCss": "", "cfg": {}})
+            check("内置文档拒绝导出并提示另存为",
+                  j5.get("ok") is False and "另存为" in (j5.get("error") or ""),
+                  str(j5)[:200])
     finally:
         httpd.shutdown()
         httpd.server_close()

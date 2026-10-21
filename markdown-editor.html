@@ -44,6 +44,44 @@
   }
   .tb-btn:hover{background:var(--accent-soft);}
   .tb-btn.active{background:var(--accent-soft); border-color:var(--accent);}
+  /* ── 菜单栏（一级标签 + 二级下拉）────────────────────────────
+     工具栏只剩 5 个菜单 + 设置，避免二十多个按钮平铺。 */
+  #menuBar{display:flex; align-items:center; gap:2px;}
+  .menu{position:relative;}
+  .menu-label[aria-expanded="true"]{background:var(--accent-soft); border-color:var(--accent);}
+  .menu-pop{
+    position:absolute; top:calc(100% + 5px); left:0; z-index:60;
+    min-width:216px; padding:5px; display:none;
+    background:var(--panel); border:1px solid var(--border); border-radius:9px;
+    box-shadow:0 14px 34px rgba(0,0,0,.38);
+  }
+  .menu[data-open="1"] .menu-pop{display:block;}
+  .menu-item{
+    display:flex; align-items:center; justify-content:space-between; gap:18px;
+    width:100%; padding:7px 10px; border:none; border-radius:6px; cursor:pointer;
+    background:transparent; color:var(--text); font-family:var(--sans);
+    font-size:13px; text-align:left; white-space:nowrap;
+  }
+  .menu-item:hover{background:var(--accent-soft);}
+  .menu-item:disabled{opacity:.42; cursor:not-allowed;}
+  .menu-item:disabled:hover{background:transparent;}
+  .menu-item kbd{color:var(--muted); font-family:var(--mono); font-size:11px;}
+  .menu-sep{height:1px; background:var(--border); margin:5px 6px;}
+  /* ── 设置面板：左侧分页签 ─────────────────────────────────── */
+  .set-tabs{display:flex; gap:4px; padding:0 16px 8px; border-bottom:1px solid var(--border);}
+  .set-tab{
+    background:transparent; border:1px solid transparent; border-radius:7px;
+    padding:5px 12px; font-size:12.5px; cursor:pointer; color:var(--muted);
+    font-family:var(--sans);
+  }
+  .set-tab:hover{background:var(--accent-soft); color:var(--text);}
+  .set-tab[data-active="1"]{background:var(--accent-soft); color:var(--text); border-color:var(--accent);}
+  .set-sec[hidden]{display:none;}
+  .set-note{margin:10px 0 0; font-size:12px; color:var(--muted); line-height:1.6;}
+  .set-tool-val{flex:0 0 auto; max-width:280px; font-size:12px; font-family:var(--mono);
+    color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .set-tool-val.ok{color:#5fae7a;}
+  .set-tool-val.miss{color:#d99a4e;}
   #main{flex:1 1 auto; display:flex; min-height:0;}
   .pane{min-height:0; overflow:auto;}
   #outline{
@@ -290,21 +328,52 @@
 <body>
 <header id="toolbar">
   <div class="tb-group brand" title="本工具由 AI 辅助生成 (AI-assisted)">MDEditor</div>
-  <div class="tb-group" id="fmtBtns"></div>
-  <div class="tb-group"><button id="btnNew" class="tb-btn" title="新建文档 (Ctrl+N)">新建</button></div>
+  <nav id="menuBar">
+    <div class="menu">
+      <button class="tb-btn menu-label" data-menu="file" aria-haspopup="true" aria-expanded="false">文件</button>
+      <div class="menu-pop" role="menu">
+        <button class="menu-item" id="btnNew" role="menuitem">新建<kbd>Ctrl+N</kbd></button>
+        <button class="menu-item" id="btnOpen" role="menuitem">打开…</button>
+        <button class="menu-item" id="btnSave" role="menuitem">保存<kbd>Ctrl+S</kbd></button>
+        <button class="menu-item" id="btnSaveAs" role="menuitem">另存为…</button>
+        <div class="menu-sep"></div>
+        <button class="menu-item" id="btnFiles" role="menuitem">最近文件 / 内置文档…</button>
+      </div>
+    </div>
+    <div class="menu">
+      <button class="tb-btn menu-label" data-menu="edit" aria-haspopup="true" aria-expanded="false">编辑</button>
+      <div class="menu-pop" id="fmtBtns" role="menu"></div>
+    </div>
+    <div class="menu">
+      <button class="tb-btn menu-label" data-menu="view" aria-haspopup="true" aria-expanded="false">视图</button>
+      <div class="menu-pop" role="menu">
+        <button class="menu-item" id="btnView" role="menuitem">分屏</button>
+        <button class="menu-item" id="btnFollow" role="menuitem">预览跟随</button>
+        <button class="menu-item" id="btnTheme" role="menuitem">暗色</button>
+      </div>
+    </div>
+    <div class="menu">
+      <button class="tb-btn menu-label" data-menu="export" aria-haspopup="true" aria-expanded="false">导出</button>
+      <div class="menu-pop" role="menu">
+        <button class="menu-item" id="btnExportHtml" role="menuitem">HTML（.html）</button>
+        <button class="menu-item" id="btnExportPaged" role="menuitem">打印（分页 HTML）…</button>
+        <div class="menu-sep"></div>
+        <button class="menu-item" id="btnExportDocx" role="menuitem">Word（.docx）…</button>
+        <button class="menu-item" id="btnExportPdf" role="menuitem">PDF（.pdf）…</button>
+      </div>
+    </div>
+    <div class="menu">
+      <button class="tb-btn menu-label" data-menu="ai" aria-haspopup="true" aria-expanded="false">AI</button>
+      <div class="menu-pop" role="menu">
+        <button class="menu-item" id="btnPolishSel" role="menuitem">润色选中文字…</button>
+        <button class="menu-item" id="btnRagPolish" role="menuitem">RAG 润色选中文字…</button>
+        <div class="menu-sep"></div>
+        <button class="menu-item" id="btnLLM" role="menuitem">AI 设置…</button>
+      </div>
+    </div>
+  </nav>
   <div class="tb-group right">
-    <button id="btnView" class="tb-btn" title="视图切换">分屏</button>
-    <button id="btnFollow" class="tb-btn" title="预览跟随编辑区滚动（仅分屏模式生效），点击开/关">跟随</button>
-    <button id="btnTheme" class="tb-btn" title="主题切换">暗色</button>
-    <button id="btnFiles" class="tb-btn" title="最近文件与切换">文件</button>
-    <button id="btnOpen" class="tb-btn" title="打开 .md 文件">打开</button>
-    
-    
-    <button id="btnExportPaged" class="tb-btn" title="打印：生成分页版 HTML（纸张/页码/目录）并在浏览器打开，Ctrl+P 即可打印或存为 PDF">打印</button><button id="btnExportHtml" class="tb-btn" title="导出 HTML">.html</button><button id="btnExportDocx" class="tb-btn" title="导出 Word（.docx，公式转 Word 原生公式）">Word</button><button id="btnExportPdf" class="tb-btn" title="直接导出 PDF 文件（不开打印对话框）">PDF</button>
-    <button id="btnLLM" class="tb-btn" title="AI 设置：润色 / 智能备注的后端与模型">AI</button>
-    <button id="btnTypeset" class="tb-btn" title="排版设置：字体/表格/缩进/自动落盘">排版</button>
-    <button id="btnSave" class="tb-btn" title="保存（Ctrl+S）">保存</button>
-    <button id="btnSaveAs" class="tb-btn" title="另存为…">另存为</button>
+    <button id="btnSettings" class="tb-btn" title="设置：外观 / 保存 / 排版 / 分页 / 外部工具">设置</button>
   </div>
 </header>
 <main id="main">
@@ -349,38 +418,66 @@
   </div>
 <div id="tsOverlay" hidden>
   <div id="tsPanel">
-    <div class="ts-head"><span>排版设置</span><button id="tsClose" title="关闭">×</button></div>
-  <div class="ts-body">
-      <div class="ts-row"><label>自动落盘间隔（分钟，0=仅手动）</label><input id="tsAuto" type="number" min="0" max="60" step="1"></div>
-      <div class="ts-sep"><span>字体 / 字号 / 对齐（字号留空 = 保持默认，单位磅；本机字体由后端自动枚举）</span></div>
-      <div class="ts-row"><label>正文</label><select data-ts="p"></select><input data-tssz="p" type="number" min="6" max="72" step="0.5" placeholder="磅"><select data-algn="p"></select></div>
-      <div class="ts-row"><label>H1 标题</label><select data-ts="h1"></select><input data-tssz="h1" type="number" min="6" max="72" step="0.5" placeholder="磅"><select data-algn="h1"></select></div>
-      <div class="ts-row"><label>H2 标题</label><select data-ts="h2"></select><input data-tssz="h2" type="number" min="6" max="72" step="0.5" placeholder="磅"><select data-algn="h2"></select></div>
-      <div class="ts-row"><label>H3 标题</label><select data-ts="h3"></select><input data-tssz="h3" type="number" min="6" max="72" step="0.5" placeholder="磅"><select data-algn="h3"></select></div>
-      <div class="ts-row"><label>H4~H6 标题</label><select data-ts="h4"></select><input data-tssz="h4" type="number" min="6" max="72" step="0.5" placeholder="磅"><select data-algn="h4"></select></div>
-      <div class="ts-row"><label>引用块</label><select data-ts="quote"></select><input data-tssz="quote" type="number" min="6" max="72" step="0.5" placeholder="磅"><select data-algn="quote"></select></div>
-      <div class="ts-row"><label>列表</label><select data-ts="li"></select><input data-tssz="li" type="number" min="6" max="72" step="0.5" placeholder="磅"><select data-algn="li"></select></div>
-      <div class="ts-row"><label>表格</label><select data-ts="table"></select><input data-tssz="table" type="number" min="6" max="72" step="0.5" placeholder="磅"><select data-algn="table"></select></div>
-      <div class="ts-row"><label>代码</label><select data-ts="code"></select><input data-tssz="code" type="number" min="6" max="72" step="0.5" placeholder="磅"><select data-algn="code"></select></div>
-      <div class="ts-row"><label>公式（KaTeX，字体固定）</label><input data-tssz="math" type="number" min="6" max="72" step="0.5" placeholder="磅"><select data-algn="math"></select></div>
-      <div class="ts-sep"><span>段落缩进（按元素独立，字符数 × 当前字号自动换算）</span></div>
-      <div class="ts-row"><label>正文</label><select data-ind="p"></select><input data-indchars="p" type="number" min="0" max="8" step="0.5" value="2"></div>
-      <div class="ts-row"><label>引用块</label><select data-ind="quote"></select><input data-indchars="quote" type="number" min="0" max="8" step="0.5" value="2"></div>
-      <div class="ts-row"><label>列表</label><select data-ind="li"></select><input data-indchars="li" type="number" min="0" max="8" step="0.5" value="2"></div>
-      <div class="ts-sep"><span>表格样式</span></div>
-      <div class="ts-row"><label>三线表（去竖线，三条横线）</label><input id="tsThree" type="checkbox"></div>
-      <div class="ts-row"><label>表头底色</label><input id="tsHeadOn" type="checkbox"><input id="tsHeadColor" type="color" value="#dbe5ff"></div>
-      <div class="ts-row"><label>首列底色</label><input id="tsColOn" type="checkbox"><input id="tsColColor" type="color" value="#dbe5ff"></div>
-      <div class="ts-sep"><span>页面（作用于「打印」导出）</span></div>
-      <div class="ts-row"><label>纸张</label><select id="tsPaper"><option>A4</option><option>A3</option><option>A5</option><option>B5</option><option>B4</option><option>Letter</option><option>Legal</option><option>Ledger</option><option>A0</option><option>A1</option><option>A2</option><option>B0</option><option>B1</option><option>B2</option><option>B3</option><option value="custom">自定义</option></select></div>
-      <div class="ts-row" id="tsCustomRow" hidden><label>自定义宽 × 高（mm）</label><input id="tsPw" type="number" min="50" max="3000" step="1" placeholder="宽"><input id="tsPh" type="number" min="50" max="3000" step="1" placeholder="高"></div>
-      <div class="ts-row"><label>页边距 上/右/下/左（mm）</label><input id="tsMt" type="number" min="0" max="100" step="0.5" value="25"><input id="tsMr" type="number" min="0" max="100" step="0.5" value="18"><input id="tsMb" type="number" min="0" max="100" step="0.5" value="25"><input id="tsMl" type="number" min="0" max="100" step="0.5" value="18"></div>
-      <div class="ts-sep"><span>页码（打印导出时渲染）</span></div>
-      <div class="ts-row"><label>页码</label><select id="tsPnOn"><option value="off">无</option><option value="on">显示</option></select><select id="tsPnPos"><option value="outer">外侧（奇右偶左）</option><option value="bc">底部居中</option><option value="br">底部右侧</option><option value="bl">底部左侧</option><option value="tc">顶部居中</option><option value="tr">顶部右侧</option></select></div>
-      <div class="ts-row"><label>页码模板与字号（{p}=页码，{P}=正文总页数）</label><input id="tsPnTpl" type="text" value="{p}"><input id="tsPnSize" type="number" min="6" max="24" step="0.5" value="9"></div>
-      <div class="ts-sep"><span>目录（打印导出时自动生成，条目带页码）</span></div>
-      <div class="ts-row"><label>目录</label><select id="tsTocOn"><option value="off">不生成</option><option value="on">生成</option></select><select id="tsTocPos"><option value="top">置于文首</option><option value="afterh1">第一个 # 之下</option></select></div>
-      <div class="ts-row"><label>目录独占一页（后续 ## 与正文强制新页，不得侵入）</label><input id="tsTocSolo" type="checkbox" checked></div>
+    <div class="ts-head"><span>设置</span><button id="tsClose" title="关闭">×</button></div>
+    <div class="set-tabs" id="setTabs">
+      <button class="set-tab" data-tab="appearance">外观</button>
+      <button class="set-tab" data-tab="save">保存</button>
+      <button class="set-tab" data-tab="typeset">排版</button>
+      <button class="set-tab" data-tab="page">分页</button>
+      <button class="set-tab" data-tab="tools">外部工具</button>
+    </div>
+    <div class="ts-body">
+      <section class="set-sec" data-sec="appearance" hidden>
+        <div class="ts-row"><label>主题</label><select id="setTheme"><option value="dark">暗色</option><option value="light">亮色</option></select></div>
+        <div class="ts-row"><label>预览跟随编辑区滚动（仅分屏模式）</label><input id="setFollow" type="checkbox"></div>
+        <p class="set-note">主题与跟随也可在「视图」菜单里快速切换，两边始终同步。</p>
+      </section>
+      <section class="set-sec" data-sec="save" hidden>
+        <div class="ts-row"><label>自动落盘间隔（分钟，0=仅手动）</label><input id="tsAuto" type="number" min="0" max="60" step="1"></div>
+        <p class="set-note">编辑停顿会先写入浏览器草稿缓存（防丢稿）；这里的间隔是「自动写回原文件」。</p>
+      </section>
+      <section class="set-sec" data-sec="typeset" hidden>
+        <div class="ts-sep"><span>字体 / 字号 / 对齐（字号留空 = 保持默认，单位磅；本机字体由后端自动枚举）</span></div>
+        <div class="ts-row"><label>正文</label><select data-ts="p"></select><input data-tssz="p" type="number" min="6" max="72" step="0.5" placeholder="磅"><select data-algn="p"></select></div>
+        <div class="ts-row"><label>H1 标题</label><select data-ts="h1"></select><input data-tssz="h1" type="number" min="6" max="72" step="0.5" placeholder="磅"><select data-algn="h1"></select></div>
+        <div class="ts-row"><label>H2 标题</label><select data-ts="h2"></select><input data-tssz="h2" type="number" min="6" max="72" step="0.5" placeholder="磅"><select data-algn="h2"></select></div>
+        <div class="ts-row"><label>H3 标题</label><select data-ts="h3"></select><input data-tssz="h3" type="number" min="6" max="72" step="0.5" placeholder="磅"><select data-algn="h3"></select></div>
+        <div class="ts-row"><label>H4~H6 标题</label><select data-ts="h4"></select><input data-tssz="h4" type="number" min="6" max="72" step="0.5" placeholder="磅"><select data-algn="h4"></select></div>
+        <div class="ts-row"><label>引用块</label><select data-ts="quote"></select><input data-tssz="quote" type="number" min="6" max="72" step="0.5" placeholder="磅"><select data-algn="quote"></select></div>
+        <div class="ts-row"><label>列表</label><select data-ts="li"></select><input data-tssz="li" type="number" min="6" max="72" step="0.5" placeholder="磅"><select data-algn="li"></select></div>
+        <div class="ts-row"><label>表格</label><select data-ts="table"></select><input data-tssz="table" type="number" min="6" max="72" step="0.5" placeholder="磅"><select data-algn="table"></select></div>
+        <div class="ts-row"><label>代码</label><select data-ts="code"></select><input data-tssz="code" type="number" min="6" max="72" step="0.5" placeholder="磅"><select data-algn="code"></select></div>
+        <div class="ts-row"><label>公式（KaTeX，字体固定）</label><input data-tssz="math" type="number" min="6" max="72" step="0.5" placeholder="磅"><select data-algn="math"></select></div>
+        <div class="ts-sep"><span>段落缩进（按元素独立，字符数 × 当前字号自动换算）</span></div>
+        <div class="ts-row"><label>正文</label><select data-ind="p"></select><input data-indchars="p" type="number" min="0" max="8" step="0.5" value="2"></div>
+        <div class="ts-row"><label>引用块</label><select data-ind="quote"></select><input data-indchars="quote" type="number" min="0" max="8" step="0.5" value="2"></div>
+        <div class="ts-row"><label>列表</label><select data-ind="li"></select><input data-indchars="li" type="number" min="0" max="8" step="0.5" value="2"></div>
+        <div class="ts-sep"><span>表格样式</span></div>
+        <div class="ts-row"><label>三线表（去竖线，三条横线）</label><input id="tsThree" type="checkbox"></div>
+        <div class="ts-row"><label>表头底色</label><input id="tsHeadOn" type="checkbox"><input id="tsHeadColor" type="color" value="#dbe5ff"></div>
+        <div class="ts-row"><label>首列底色</label><input id="tsColOn" type="checkbox"><input id="tsColColor" type="color" value="#dbe5ff"></div>
+      </section>
+      <section class="set-sec" data-sec="page" hidden>
+        <div class="ts-sep"><span>页面（作用于「打印」与「导出 PDF」）</span></div>
+        <div class="ts-row"><label>纸张</label><select id="tsPaper"><option>A4</option><option>A3</option><option>A5</option><option>B5</option><option>B4</option><option>Letter</option><option>Legal</option><option>Ledger</option><option>A0</option><option>A1</option><option>A2</option><option>B0</option><option>B1</option><option>B2</option><option>B3</option><option value="custom">自定义</option></select></div>
+        <div class="ts-row" id="tsCustomRow" hidden><label>自定义宽 × 高（mm）</label><input id="tsPw" type="number" min="50" max="3000" step="1" placeholder="宽"><input id="tsPh" type="number" min="50" max="3000" step="1" placeholder="高"></div>
+        <div class="ts-row"><label>页边距 上/右/下/左（mm）</label><input id="tsMt" type="number" min="0" max="100" step="0.5" value="25"><input id="tsMr" type="number" min="0" max="100" step="0.5" value="18"><input id="tsMb" type="number" min="0" max="100" step="0.5" value="25"><input id="tsMl" type="number" min="0" max="100" step="0.5" value="18"></div>
+        <div class="ts-sep"><span>页码（打印导出时渲染）</span></div>
+        <div class="ts-row"><label>页码</label><select id="tsPnOn"><option value="off">无</option><option value="on">显示</option></select><select id="tsPnPos"><option value="outer">外侧（奇右偶左）</option><option value="bc">底部居中</option><option value="br">底部右侧</option><option value="bl">底部左侧</option><option value="tc">顶部居中</option><option value="tr">顶部右侧</option></select></div>
+        <div class="ts-row"><label>页码模板与字号（{p}=页码，{P}=正文总页数）</label><input id="tsPnTpl" type="text" value="{p}"><input id="tsPnSize" type="number" min="6" max="24" step="0.5" value="9"></div>
+        <div class="ts-sep"><span>目录（打印导出时自动生成，条目带页码）</span></div>
+        <div class="ts-row"><label>目录</label><select id="tsTocOn"><option value="off">不生成</option><option value="on">生成</option></select><select id="tsTocPos"><option value="top">置于文首</option><option value="afterh1">第一个 # 之下</option></select></div>
+        <div class="ts-row"><label>目录独占一页（后续 ## 与正文强制新页，不得侵入）</label><input id="tsTocSolo" type="checkbox" checked></div>
+      </section>
+      <section class="set-sec" data-sec="tools" hidden>
+        <div class="ts-sep"><span>外部工具（只读：自动探测结果，缺了就置灰对应导出按钮）</span></div>
+        <div class="ts-row"><label>pandoc（Word 导出）</label><span class="set-tool-val" id="setToolPandoc">检测中…</span></div>
+        <div class="ts-row"><label>浏览器（PDF 直出）</label><span class="set-tool-val" id="setToolBrowser">检测中…</span></div>
+        <div class="ts-row"><label>Rscript（R 代码块，下一版）</label><span class="set-tool-val" id="setToolR">—</span></div>
+        <div class="ts-row"><label>quarto（暂时不用）</label><span class="set-tool-val" id="setToolQuarto">—</span></div>
+        <div class="ts-row"><label></label><button class="sv-mini" id="setToolsRefresh">重新检测</button></div>
+        <p class="set-note">手工指定路径将在下一版提供；现在依赖 PATH 与常见安装目录（含 Quarto / RStudio 自带的 pandoc）。</p>
+      </section>
     </div>
     <div class="ts-foot"><button id="tsApply">应用</button></div>
   </div>
@@ -1547,28 +1644,84 @@ function parseMarkdown(src, fx){
   editor.addEventListener('scroll',syncPreviewToEditor);
 
   var fmtDefs=[
-    {label:'H1',title:'一级标题',wrap:false,pre:'# ',post:'',ph:'标题'},
-    {label:'H2',title:'二级标题',wrap:false,pre:'## ',post:'',ph:'标题'},
-    {label:'B',title:'加粗',wrap:true,pre:'**',post:'**',ph:'粗体'},
-    {label:'I',title:'斜体',wrap:true,pre:'*',post:'*',ph:'斜体'},
-    {label:'S',title:'删除线',wrap:true,pre:'~~',post:'~~',ph:'删除'},
-    {label:'</>',title:'行内代码',wrap:true,pre:'`',post:'`',ph:'code'},
-    {label:'引用',title:'引用块',wrap:false,pre:'> ',post:'',ph:'引用'},
-    {label:'列表',title:'无序列表',wrap:false,pre:'- ',post:'',ph:'列表项'},
-    {label:'序号',title:'有序列表',wrap:false,pre:'1. ',post:'',ph:'列表项'},
-    {label:'任务',title:'任务列表',wrap:false,pre:'- [ ] ',post:'',ph:'任务'},
-    {label:'链接',title:'插入链接',wrap:false,pre:'[',post:'](https://)',ph:'链接文字'},
-    {label:'表格',title:'插入表格',wrap:false,pre:'| 列1 | 列2 |\n| --- | --- |\n| 单元格 | 单元格 |\n',post:'',ph:''}
+    {label:'H1',text:'一级标题',title:'一级标题',wrap:false,pre:'# ',post:'',ph:'标题'},
+    {label:'H2',text:'二级标题',title:'二级标题',wrap:false,pre:'## ',post:'',ph:'标题'},
+    {label:'B',text:'加粗',title:'加粗（**文字**）',wrap:true,pre:'**',post:'**',ph:'粗体'},
+    {label:'I',text:'斜体',title:'斜体（*文字*）',wrap:true,pre:'*',post:'*',ph:'斜体'},
+    {label:'S',text:'删除线',title:'删除线（~~文字~~）',wrap:true,pre:'~~',post:'~~',ph:'删除'},
+    {label:'</>',text:'行内代码',title:'行内代码（`code`）',wrap:true,pre:'`',post:'`',ph:'code'},
+    {label:'引用',text:'引用块',title:'引用块',wrap:false,pre:'> ',post:'',ph:'引用'},
+    {label:'列表',text:'无序列表',title:'无序列表',wrap:false,pre:'- ',post:'',ph:'列表项'},
+    {label:'序号',text:'有序列表',title:'有序列表',wrap:false,pre:'1. ',post:'',ph:'列表项'},
+    {label:'任务',text:'任务列表',title:'任务列表',wrap:false,pre:'- [ ] ',post:'',ph:'任务'},
+    {label:'链接',text:'链接',title:'插入链接',wrap:false,pre:'[',post:'](https://)',ph:'链接文字'},
+    {label:'表格',text:'表格',title:'插入表格',wrap:false,pre:'| 列1 | 列2 |\n| --- | --- |\n| 单元格 | 单元格 |\n',post:'',ph:''}
   ];
   var fmtBtns=document.getElementById('fmtBtns');
-  fmtDefs.forEach(function(d){
+  fmtDefs.forEach(function(d,idx){
+    /* 分组分隔：标题 | 行内强调 | 块级 | 插入 */
+    if(idx===2||idx===6||idx===10){
+      var sp=document.createElement('div'); sp.className='menu-sep';
+      fmtBtns.appendChild(sp);
+    }
     var b=document.createElement('button');
-    b.className='tb-btn';
-    b.textContent=d.label;
+    b.className='menu-item';
+    b.setAttribute('role','menuitem');
+    b.setAttribute('data-fmt',d.label);
+    b.textContent=d.text||d.label;
     b.title=d.title;
     b.addEventListener('click',function(){applyFormat(d);});
     fmtBtns.appendChild(b);
   });
+  /* ── 菜单栏行为：点击开合 / 悬停切换 / Esc 与点外面关闭 ──────────
+     mousedown 一律 preventDefault：菜单不能抢走编辑区的焦点与选区，
+     否则「润色选中文字」拿到的会是一个空选区。 */
+  var menuBar=document.getElementById('menuBar');
+  function closeMenus(){
+    var ms=menuBar.querySelectorAll('.menu');
+    for(var i=0;i<ms.length;i++){
+      ms[i].removeAttribute('data-open');
+      var lb=ms[i].querySelector('.menu-label');
+      if(lb) lb.setAttribute('aria-expanded','false');
+    }
+  }
+  function openMenu(menu){
+    closeMenus();
+    menu.setAttribute('data-open','1');
+    var lb=menu.querySelector('.menu-label');
+    if(lb) lb.setAttribute('aria-expanded','true');
+  }
+  menuBar.addEventListener('mousedown',function(e){
+    if(e.target.closest('.menu-label')||e.target.closest('.menu-item')) e.preventDefault();
+  });
+  menuBar.addEventListener('click',function(e){
+    var lb=e.target.closest('.menu-label');
+    if(lb){
+      var m=lb.parentNode;
+      if(m.getAttribute('data-open')==='1') closeMenus(); else openMenu(m);
+      return;
+    }
+    if(e.target.closest('.menu-item')) closeMenus();   /* 选中后收起 */
+  });
+  menuBar.addEventListener('mouseover',function(e){
+    if(!menuBar.querySelector('.menu[data-open="1"]')) return;   /* 未展开时不跟踪 */
+    var lb=e.target.closest('.menu-label');
+    if(lb) openMenu(lb.parentNode);
+  });
+  document.addEventListener('click',function(e){
+    if(!menuBar.contains(e.target)) closeMenus();
+  });
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape') closeMenus();
+  });
+  /* AI 菜单两项复用选区工具条的处理器（选区已由上面的 preventDefault 保住） */
+  document.getElementById('btnPolishSel').addEventListener('click',function(){
+    document.getElementById('selPolish').click();
+  });
+  document.getElementById('btnRagPolish').addEventListener('click',function(){
+    document.getElementById('selRagPolish').click();
+  });
+
   function applyFormat(d){
     var selR=getSel();
     var s=selR.s,e=selR.e;
@@ -1785,43 +1938,73 @@ function parseMarkdown(src, fx){
       .then(function(j){ if(!j||!j.ok){ showToast('打开失败：'+((j&&j.error)||'未知错误')); } })
       .catch(function(e){ showToast('打开失败：'+e.message); });
   }
-  document.getElementById('btnExportDocx').addEventListener('click',function(){
-    if(!currentFile){ showToast('请先保存文档再导出 Word'); return; }
-    if(docxBusy){ showToast('正在导出 Word，请稍候…'); return; }
-    docxBusy=true;   /* 双击会起两个 pandoc 写同一个 .docx，可能产出损坏的 zip */
-    showToast('正在导出 Word…');
-    fetch('/api/export-docx',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({path:currentFile, markdown:getText()})})
+  /* 导出前先弹原生「保存为」框：可改目录与文件名，覆盖已有文件由系统确认。
+     取消（path 为空）则什么都不做，绝不悄悄写到别处。 */
+  function askSavePath(ext, suggestName, cb){
+    var dir=currentFile?currentFile.replace(/[\\/][^\\/]*$/,''):'';
+    fetch('/api/save-dialog?ext='+encodeURIComponent(ext)
+        +'&name='+encodeURIComponent(suggestName||'')
+        +'&dir='+encodeURIComponent(dir)
+        +'&title='+encodeURIComponent('导出 .'+ext))
       .then(function(r){return r.json();})
       .then(function(j){
-        docxBusy=false;
-        if(j&&j.ok){ showToast('已导出：'+j.path, false,
-          {label:'打开所在目录', fn:function(){ revealFile(j.path); }}); }
-        else{ showToast('导出失败：'+((j&&j.error)||'未知错误')); }
-      }).catch(function(e){ docxBusy=false; showToast('导出失败：'+e.message); });
+        if(!j||!j.ok){ showToast('无法打开保存对话框：'+((j&&j.error)||'未知错误')); return; }
+        if(!j.path){ showToast('已取消导出'); return; }
+        cb(j.path);
+      })
+      .catch(function(e){ showToast('无法打开保存对话框：'+e.message); });
+  }
+  function docStem(){
+    if(!currentFile) return '文档';
+    var base=currentFile.replace(/^.*[\\/]/,'');
+    return base.replace(/\.[^.]+$/,'')||'文档';
+  }
+  document.getElementById('btnExportDocx').addEventListener('click',function(){
+    if(!currentFile){ showToast('请先保存文档再导出 Word'); return; }
+    if(currentBuiltin>=0){ showToast('内置文档请先「另存为」到你自己的目录，再导出 Word'); return; }
+    if(docxBusy){ showToast('正在导出 Word，请稍候…'); return; }
+    /* 选路径放在前面：取消就完全不发导出请求 */
+    askSavePath('docx', docStem()+'.docx', function(outPath){
+      docxBusy=true;
+      showToast('正在导出 Word…');
+      fetch('/api/export-docx',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({path:currentFile, markdown:getText(), outPath:outPath})})
+        .then(function(r){return r.json();})
+        .then(function(j){
+          docxBusy=false;
+          if(j&&j.ok){ showToast('已导出：'+j.path, false,
+            {label:'打开所在目录', fn:function(){ revealFile(j.path); }}); }
+          else{ showToast('导出失败：'+((j&&j.error)||'未知错误')); }
+        }).catch(function(e){ docxBusy=false; showToast('导出失败：'+e.message); });
+    });
   });
   document.getElementById('btnExportPdf').addEventListener('click',function(){
     if(!currentFile){ showToast('请先保存文档再导出 PDF'); return; }
+    if(currentBuiltin>=0){ showToast('内置文档请先「另存为」到你自己的目录，再导出 PDF'); return; }
     if(pagedBusy){ showToast('正在导出，请稍候…'); return; }
-    pagedBusy=true;
-    showToast('正在生成 PDF…');
-    /* 服务端最多等 90s 分页；前端给 120s 上限，避免用户对着提示干等到超时 */
-    var ctl=(typeof AbortController!=='undefined')?new AbortController():null;
-    var timer=setTimeout(function(){ if(ctl) ctl.abort(); },120000);
-    fetch('/api/export-pdf',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(pagedPayload()), signal: ctl?ctl.signal:undefined})
-      .then(function(r){return r.json();})
-      .then(function(j){
-        clearTimeout(timer);
-        pagedBusy=false;
-        if(j&&j.ok){ showToast('已导出 '+j.pages+' 页：'+j.path, false,
-          {label:'打开所在目录', fn:function(){ revealFile(j.path); }}); }
-        else{ showToast('导出失败：'+((j&&j.error)||'未知错误')); }
-      }).catch(function(e){
-        clearTimeout(timer);
-        pagedBusy=false;
-        showToast('导出失败：'+(e&&e.message));
-      });
+    askSavePath('pdf', docStem()+'.pdf', function(outPath){
+      pagedBusy=true;
+      showToast('正在生成 PDF…');
+      /* 服务端最多等 90s 分页；前端给 120s 上限，避免用户对着提示干等到超时 */
+      var ctl=(typeof AbortController!=='undefined')?new AbortController():null;
+      var timer=setTimeout(function(){ if(ctl) ctl.abort(); },120000);
+      var payload=pagedPayload();
+      payload.outPath=outPath;
+      fetch('/api/export-pdf',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(payload), signal: ctl?ctl.signal:undefined})
+        .then(function(r){return r.json();})
+        .then(function(j){
+          clearTimeout(timer);
+          pagedBusy=false;
+          if(j&&j.ok){ showToast('已导出 '+j.pages+' 页：'+j.path, false,
+            {label:'打开所在目录', fn:function(){ revealFile(j.path); }}); }
+          else{ showToast('导出失败：'+((j&&j.error)||'未知错误')); }
+        }).catch(function(e){
+          clearTimeout(timer);
+          pagedBusy=false;
+          showToast('导出失败：'+(e&&e.message));
+        });
+    });
   });
 
   var katexCssText='';
@@ -2295,9 +2478,65 @@ function parseMarkdown(src, fx){
     document.getElementById('tsPnTpl').value=pg.pn.tpl;document.getElementById('tsPnSize').value=pg.pn.size;
     document.getElementById('tsTocOn').value=pg.toc.on;document.getElementById('tsTocPos').value=pg.toc.pos;
     document.getElementById('tsTocSolo').checked=!!pg.toc.solo;
+    /* 外观与外部工具：与「视图」菜单 / /api/tools 同源 */
+    document.getElementById('setTheme').value =
+      document.body.classList.contains('light') ? 'light' : 'dark';
+    document.getElementById('setFollow').checked = !!followOn;
+    setTab('appearance');
+    fillTools(false);
     document.getElementById('tsOverlay').hidden=false;
   }
-  document.getElementById('btnTypeset').addEventListener('click',tsOpen);
+  /* ── 设置面板：分页签 + 外部工具状态 ─────────────────────────── */
+  function setTab(name){
+    var tabs=document.querySelectorAll('#setTabs .set-tab');
+    for(var i=0;i<tabs.length;i++){
+      tabs[i].setAttribute('data-active',
+        tabs[i].getAttribute('data-tab')===name ? '1' : '0');
+    }
+    var secs=document.querySelectorAll('#tsPanel .set-sec');
+    for(var j=0;j<secs.length;j++){
+      secs[j].hidden = secs[j].getAttribute('data-sec')!==name;
+    }
+  }
+  var TOOL_ROWS=[['setToolPandoc','pandoc'],['setToolBrowser','browser'],
+                 ['setToolR','r'],['setToolQuarto','quarto']];
+  function fillTools(showBusy){
+    for(var i=0;i<TOOL_ROWS.length;i++){
+      var el=document.getElementById(TOOL_ROWS[i][0]);
+      if(el&&showBusy){ el.textContent='检测中…'; el.className='set-tool-val'; }
+    }
+    fetch('/api/tools')
+      .then(function(r){return r.json();})
+      .then(function(j){
+        var t=(j&&j.tools)||{};
+        for(var k=0;k<TOOL_ROWS.length;k++){
+          var el=document.getElementById(TOOL_ROWS[k][0]);
+          if(!el) continue;
+          var v=t[TOOL_ROWS[k][1]]||{};
+          if(v.found){
+            el.textContent=(v.version?(v.version+'  '):'')+(v.path||'');
+            el.className='set-tool-val ok';
+            el.title=v.path||'';
+          }else{
+            el.textContent='未检测到';
+            el.className='set-tool-val miss';
+            el.title='';
+          }
+        }
+      })
+      .catch(function(){
+        for(var k=0;k<TOOL_ROWS.length;k++){
+          var el=document.getElementById(TOOL_ROWS[k][0]);
+          if(el){ el.textContent='探测失败（服务未响应）'; el.className='set-tool-val miss'; }
+        }
+      });
+  }
+  document.getElementById('btnSettings').addEventListener('click',tsOpen);
+  document.getElementById('setTabs').addEventListener('click',function(e){
+    var t=e.target.closest('.set-tab');
+    if(t) setTab(t.getAttribute('data-tab'));
+  });
+  document.getElementById('setToolsRefresh').addEventListener('click',function(){ fillTools(true); });
   document.getElementById('tsClose').addEventListener('click',function(){document.getElementById('tsOverlay').hidden=true;});
   document.getElementById('tsOverlay').addEventListener('click',function(e){if(e.target===this)this.hidden=true;});
   /* ── 内嵌模式检测（pywebview 直连 py API；否则走 HTTP）───────────────── */
@@ -2551,6 +2790,11 @@ function parseMarkdown(src, fx){
     pg.pn.size=parseFloat(document.getElementById('tsPnSize').value)||9;
     pg.toc.on=document.getElementById('tsTocOn').value;pg.toc.pos=document.getElementById('tsTocPos').value;
     pg.toc.solo=document.getElementById('tsTocSolo').checked;
+    /* 外观页签的两个项：主题 / 预览跟随（与「视图」菜单同一状态源） */
+    var wantTheme=document.getElementById('setTheme').value;
+    if((wantTheme==='light')!==document.body.classList.contains('light')) applyTheme(wantTheme);
+    var wantFollow=document.getElementById('setFollow').checked;
+    if(!!followOn!==wantFollow){ followOn=wantFollow; applyFollow(); }
     applyTypeset();resetAutoDisk();
     document.getElementById('tsOverlay').hidden=true;
     var ss=document.getElementById('statSave');ss.textContent='排版已更新（缓存）';ss.className='saved';

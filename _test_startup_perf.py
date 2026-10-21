@@ -69,8 +69,13 @@ def cmdline_of(pid):
 
 
 def start(entry):
+    # 干掉 IDE（Positron/VSCode）注入的 PYTHONPYCACHEPREFIX：
+    # 它会把 .pyc 写到 IDE 的全局缓存目录，测到的就不是「用户双击启动」的行为。
+    env = dict(os.environ)
+    for k in ("PYTHONPYCACHEPREFIX", "PYTHONDONTWRITEBYTECODE", "PYTHONHOME", "PYTHONPATH"):
+        env.pop(k, None)
     p = subprocess.Popen([PY, os.path.join(HERE, entry)], cwd=HERE,
-                         creationflags=NO_WINDOW)
+                         creationflags=NO_WINDOW, env=env)
     return p
 
 

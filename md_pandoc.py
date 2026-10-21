@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import uuid
 
 import md_tools
 
@@ -78,9 +79,11 @@ def _workdir_for(md_path):
 def export_docx(md_text, md_path, out_path, configured=""):
     """跑 pandoc 出 docx。成功返回 pandoc 路径；失败抛 RuntimeError（文案面向用户）。
 
-    临时 md 放系统临时目录（不污染用户文档目录）；pandoc 先写临时 docx，
-    校验通过再 os.replace 到最终路径——失败/中断时用户目录里不会出现半截文件，
-    也不会覆盖掉上一次成功导出的同名文件。
+    落盘策略（两个坑都要避开）：
+    - 源码 md 放系统临时目录（不污染用户文档目录）；
+    - **待落位的 docx 必须建在目标同目录**：Windows 上 `os.replace` 不能跨卷
+      （C: 的 %TEMP% → D: 的文档目录会报 WinError 17），所以暂存文件放在目标目录里，
+      命名带随机串隐藏，成功才 replace、失败即删。
     """
     pandoc = md_tools.find_pandoc(configured)
     if not pandoc:
@@ -88,23 +91,32 @@ def export_docx(md_text, md_path, out_path, configured=""):
                            "（winget install JohnMacFarlane.Pandoc），"
                            "或使用自带 pandoc 的 Quarto / RStudio")
     workdir = _workdir_for(md_path)
+    out_dir = os.path.dirname(os.path.abspath(out_path))
     stage = tempfile.mkdtemp(prefix="mdeditor-pandoc-")
     tmp_md = os.path.join(stage, "src.md")
-    tmp_docx = os.path.join(stage, "out.docx")
+    staged_out = os.path.join(out_dir, ".mdeditor-%s.docx.part" % uuid.uuid4().hex[:10])
     try:
         with open(tmp_md, "w", encoding="utf-8", newline="\n") as f:
             f.write(prepare_markdown(md_text))
-        cmd = [pandoc, "-f", "markdown+mark", "-t", "docx", "-o", tmp_docx]
+        cmd = [pandoc, "-f", "markdown+mark", "-t", "docx", "-o", staged_out]
         if workdir:
             cmd.append("--resource-path=" + workdir)
         cmd.append(tmp_md)
         r = subprocess.run(cmd, capture_output=True, text=True,
                            encoding="utf-8", errors="replace", timeout=180,
                            creationflags=_NO_WINDOW)
-        if r.returncode != 0 or not os.path.isfile(tmp_docx):
+        if r.returncode != 0 or not os.path.isfile(staged_out):
             detail = ((r.stderr or r.stdout or "").strip() or "未知错误")[:400]
             raise RuntimeError("pandoc 导出失败：%s" % detail)
-        os.replace(tmp_docx, out_path)      # 原子落位
+        os.replace(staged_out, out_path)      # 同卷 → 原子落位
         return pandoc
+    except PermissionError:
+        raise RuntimeError("目标目录不可写：%s（多因位于 Program Files，"
+                           "需管理员权限或以普通目录另存）" % out_dir)
     finally:
+        try:
+            if os.path.exists(staged_out):
+                os.remove(staged_out)
+        except Exception:
+            pass
         shutil.rmtree(stage, ignore_errors=True)
