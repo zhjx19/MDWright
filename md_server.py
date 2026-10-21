@@ -65,7 +65,7 @@ except Exception as _e:
 PORT = 18766
 HERE = os.path.dirname(os.path.abspath(__file__))
 EDITOR_HTML = os.path.join(HERE, "markdown-editor.html")
-MD_SERVER_VERSION = 58  # 每次服务端路由/能力变更时 +1；md_launch 依此自愈换代
+MD_SERVER_VERSION = 59  # 每次服务端路由/能力变更时 +1；md_launch 依此自愈换代
 SETTINGS_PATH = os.path.join(HERE, "runtime", "settings.json")
 
 # .smd 自包含文档格式（v1.2.0）；导入失败落错误日志，相关路由返回明确错误而非静默
@@ -2433,19 +2433,16 @@ def _save_dialog_subprocess(title, default_name, initdir, ext):
     """原生「保存文件」框（GetSaveFileNameW）；返回用户选择的完整路径，取消返回空串。
 
     与 `_pick_file_subprocess` 同一模式：独立子进程弹窗（避免阻塞服务线程），
-    路径经临时文件回传。过滤串在服务端按扩展名白名单生成——不接受前端传来的
-    任意 filter 文本（那是直接拼进 Win32 结构的字符串）。
+    路径经临时文件回传。**过滤串由 _savefile.py 内部按扩展名构造**——Win32 的
+    filter 必须含内嵌 NUL，而命令行参数不允许 NUL（会抛 embedded null character，
+    弹框根本出不来，用户看到的是「已取消导出」）。
     """
     here = os.path.dirname(os.path.abspath(__file__))
     picker = os.path.join(here, "_savefile.py")
     if not os.path.exists(picker):
         return ""
     ext = (ext or "").lower().lstrip(".")
-    if ext == "docx":
-        flt = "Word 文档 (*.docx)\0*.docx\0所有文件 (*.*)\0*.*\0\0"
-    elif ext == "pdf":
-        flt = "PDF 文档 (*.pdf)\0*.pdf\0所有文件 (*.*)\0*.*\0\0"
-    else:
+    if ext not in ("docx", "pdf"):
         return ""
     tmp = os.path.join(tempfile.gettempdir(), "md_save_dialog.txt")
     try:
@@ -2458,7 +2455,7 @@ def _save_dialog_subprocess(title, default_name, initdir, ext):
     if not os.path.exists(py_exe):
         py_exe = sys.executable
     try:
-        subprocess.run([py_exe, picker, tmp, title, default_name, initdir, flt, ext],
+        subprocess.run([py_exe, picker, tmp, title, default_name, initdir, ext],
                        timeout=900, creationflags=0x08000000)
     except Exception:
         pass

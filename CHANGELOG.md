@@ -11,6 +11,19 @@
 
 ---
 
+## v2.3.1（2026-10-21）
+
+**修复**
+
+- **导出 Word / PDF 一点就提示「已取消导出」，保存框根本不出现**：现象——v2.3.0 里点「导出 → Word…/PDF…」，界面上直接冒出「已取消导出」，Windows 的「另存为」对话框从未出现。根因——保存框的**文件类型过滤器**被当成命令行参数传给 `_savefile.py`，而 Win32 的 filter 格式必须是 `描述\0通配\0…\0\0`（内嵌 NUL）；命令行参数不允许 NUL，`subprocess.run` 在启动子进程前就抛 `ValueError: embedded null character`，异常被 `except Exception: pass` 吞掉、路径回传文件未生成 → 上层读到空串即判定「用户取消」。修法——过滤器改由 `_savefile.py` **内部按扩展名构造**，argv 只传 `docx`/`pdf`；`_save_dialog_subprocess` 增加扩展名白名单。验证——`_test_outpath.py` 新增三项：保存框被真的调起、**argv 中无 NUL 字符**（这条就是复发守卫）、`_savefile.py --selftest` 断言过滤器以双 NUL 结尾且含对应通配（不弹框）。
+- **`_test_startup_perf.py` 在 IDE 终端里误报**：Positron/VSCode 给子进程注入 `PYTHONPYCACHEPREFIX`，`.pyc` 被写到 IDE 的全局缓存目录而不是 `./__pycache__`，测试因此报「pyc generated after first run」失败。修法——测试启动子进程时剥掉 `PYTHONPYCACHEPREFIX`/`PYTHONDONTWRITEBYTECODE`/`PYTHONHOME`/`PYTHONPATH`，还原「用户双击启动」的环境。验证——12/12 通过。
+
+**变更**
+
+- 服务版本 58→59：`MD_SERVER_VERSION` 自愈换代。
+
+---
+
 ## v2.3.0（2026-10-21）
 
 **本次改动：工具栏改为菜单栏（5 个下拉 + 设置）、统一设置面板、Word/PDF 导出可选保存路径**

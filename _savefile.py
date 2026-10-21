@@ -8,8 +8,11 @@
 - OFN_OVERWRITEPROMPT：覆盖已有文件时由系统弹「是否替换」
 - 取消时写入空串（调用方据此什么都不做）
 
-用法: python _savefile.py <输出文件> <标题> <默认文件名> <初始目录> <过滤串>
-过滤串形如 "Word 文档 (*.docx)\0*.docx\0所有文件 (*.*)\0*.*\0\0"
+用法: python _savefile.py <输出文件> <标题> <默认文件名> <初始目录> <扩展名>
+
+为什么过滤串在脚本内部构造、而不是命令行传：Win32 的 filter 必须是
+`描述\0通配\0…\0\0` 这种**内嵌 NUL** 的串，而命令行参数不允许 NUL
+（subprocess 会直接抛 "embedded null character"，弹框根本没机会出现）。
 """
 import ctypes
 import io
@@ -84,14 +87,35 @@ def save_file(title, default_name, init_dir, filter_str, def_ext):
             pass
 
 
+# 过滤器：按扩展名在脚本内部构造（NUL 只在脚本内部存在，绝不跨命令行）
+FILTERS = {
+    "docx": "Word 文档 (*.docx)\0*.docx\0所有文件 (*.*)\0*.*\0\0",
+    "pdf": "PDF 文档 (*.pdf)\0*.pdf\0所有文件 (*.*)\0*.*\0\0",
+}
+
+
+def filter_for(ext):
+    e = (ext or "").lower().lstrip(".")
+    return FILTERS.get(e, "所有文件 (*.*)\0*.*\0\0")
+
+
 try:
     out_path = sys.argv[1]
     title = sys.argv[2] if len(sys.argv) > 2 else "保存"
     default_name = sys.argv[3] if len(sys.argv) > 3 else ""
     init_dir = sys.argv[4] if len(sys.argv) > 4 else ""
-    filter_str = sys.argv[5] if len(sys.argv) > 5 else "所有文件 (*.*)\0*.*\0\0"
-    def_ext = sys.argv[6] if len(sys.argv) > 6 else ""
-    result = save_file(title, default_name, init_dir, filter_str, def_ext)
+    ext = sys.argv[5] if len(sys.argv) > 5 else ""
+    if "--selftest" in sys.argv:
+        # 自检（不弹框）：过滤器结构正确、扩展名映射正确
+        for k in ("docx", "pdf"):
+            f = filter_for(k)
+            assert f.endswith("\0\0"), "filter must end with two NULs"
+            parts = f.split("\0")
+            assert len(parts) >= 5 and parts[-1] == "" and parts[-2] == "", f
+            assert ("*." + k) in f, f
+        io.open(out_path, "w", encoding="utf-8").write("SELFTEST OK")
+        sys.exit(0)
+    result = save_file(title, default_name, init_dir, filter_for(ext), ext)
 except Exception:
     result = ""
 try:

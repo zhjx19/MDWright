@@ -8,6 +8,7 @@
 （`/api/save-dialog` 会弹原生框、阻塞等人点，不做自动测试。）
 """
 import json
+import io
 import os
 import shutil
 import sys
@@ -99,6 +100,45 @@ def main():
         finally:
             httpd.shutdown()
             httpd.server_close()
+        # ---- 保存框：argv 里不得出现 NUL（曾因此让弹框永不出现） ----
+        calls = []
+
+        class _Spy2(object):
+            def __init__(self, real):
+                self.real = real
+
+            def run(self, cmd, *a, **kw):
+                calls.append(list(cmd))
+                return self.real.run(cmd, *a, **kw)
+
+        spy2 = _Spy2(md_server.subprocess)
+        md_server.subprocess = spy2
+        try:
+            md_server._save_dialog_subprocess("导出 .docx", "x.docx", "", "docx")
+        finally:
+            md_server.subprocess = spy2.real
+        check("保存框被真的调起", bool(calls), str(calls)[:120])
+        if calls:
+            argv = calls[-1]
+            check("argv 中无 NUL 字符（含过滤器就会炸）",
+                  all("\0" not in str(x) for x in argv),
+                  str([x for x in argv if "\0" in str(x)])[:120])
+            check("argv 末位是扩展名", argv[-1] == "docx", str(argv[-3:]))
+
+        # _savefile.py 自检：过滤器结构正确（不弹框）
+        import subprocess as _sp
+        sel = os.path.join(tmp, "selfcheck.txt")
+        py = os.path.join(HERE, "python", "python.exe")
+        if not os.path.isfile(py):
+            py = sys.executable
+        r = _sp.run([py, os.path.join(HERE, "_savefile.py"), sel, "导出", "x.docx", "",
+                     "docx", "--selftest"], capture_output=True, text=True,
+                    encoding="utf-8", errors="replace", timeout=60)
+        ok_self = r.returncode == 0 and os.path.isfile(sel) and \
+            io.open(sel, encoding="utf-8").read().strip() == "SELFTEST OK"
+        check("_savefile.py 自检通过（过滤器结构）", ok_self,
+              (r.stderr or r.stdout or "")[-200:])
+
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
