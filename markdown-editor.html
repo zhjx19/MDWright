@@ -15,7 +15,7 @@
     --quote-border:#d0d7de; --table-border:#d0d7de; --radius:10px;
     --mono:Consolas,Menlo,Monaco,"Courier New",monospace;
     --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
-    --base-font:15px; --editor-font:14px;
+    --base-font:15px; --editor-font:15px;
   }
   /* 暗色（GitHub Primer 深色）：body 没有 .light 时生效 */
   body:not(.light){
@@ -77,6 +77,10 @@
   .menu-item:disabled:hover{background:transparent;}
   .menu-item kbd{color:var(--muted); font-family:var(--mono); font-size:11px;}
   .menu-sep{height:1px; background:var(--border); margin:5px 6px;}
+  .menu-group{padding:5px 10px 3px; font-size:11px; color:var(--muted); letter-spacing:.03em;}
+  .menu-item .vk{color:var(--muted); font-size:11px; font-weight:400;}
+  .menu-item.view-item.active{color:var(--accent); font-weight:600; background:var(--accent-soft);}
+  .menu-item.view-item.active .vk{color:var(--accent); opacity:.85;}
   /* ── 设置面板：左侧分页签 ─────────────────────────────────── */
   .set-tabs{display:flex; gap:4px; padding:0 16px 8px; border-bottom:1px solid var(--border);}
   .set-tab{
@@ -169,7 +173,7 @@
      分屏联动硬锚的数据源（软折行自动包含，零近似） */
   #mirror{
     position:absolute; left:-9999px; top:0; visibility:hidden; pointer-events:none;
-    font-family:var(--mono); font-size:14px; line-height:1.8;
+    font-family:var(--mono); font-size:var(--editor-font,15px); line-height:1.8;
     tab-size:2; white-space:pre-wrap; word-wrap:break-word; box-sizing:border-box;
   }
   #mirror .ml{min-height:1.8em;}
@@ -190,11 +194,11 @@
   /* 编辑中就只显示源码框：渲染子节点隐藏而不删除（保住其上的复制/运行按钮监听） */
   body.view-live .pblk.editing > *:not(.pblk-src){display:none !important;}
   .pblk-src{
-    display:block; width:100%; box-sizing:border-box; min-height:3.2em;
-    font-family:var(--mono); font-size:calc(var(--editor-font,14px) - 1px);
-    line-height:1.7; tab-size:2;
+    display:block; width:100%; box-sizing:border-box; min-height:8em;
+    font-family:var(--mono); font-size:var(--base-font,15px);
+    line-height:1.85; tab-size:2;
     color:var(--text); background:var(--editor-bg);
-    border:1px solid var(--accent); border-radius:6px; padding:8px 10px;
+    border:1px solid var(--accent); border-radius:6px; padding:12px 14px;
     outline:none; resize:vertical; white-space:pre-wrap; overflow:auto;
   }
   #status{
@@ -407,7 +411,12 @@
     <div class="menu">
       <button class="tb-btn menu-label" data-menu="view" aria-haspopup="true" aria-expanded="false">视图</button>
       <div class="menu-pop" role="menu">
-        <button class="menu-item" id="btnView" role="menuitem">分屏</button>
+        <div class="menu-group">视图模式</div>
+        <button class="menu-item view-item" data-view="split" role="menuitemradio" aria-checked="true">分屏<span class="vk">左编辑 · 右预览</span></button>
+        <button class="menu-item view-item" data-view="edit" role="menuitemradio" aria-checked="false">仅编辑</button>
+        <button class="menu-item view-item" data-view="preview" role="menuitemradio" aria-checked="false">仅预览</button>
+        <button class="menu-item view-item" data-view="live" role="menuitemradio" aria-checked="false">即时渲染<span class="vk">点段即改</span></button>
+        <div class="menu-sep"></div>
         <button class="menu-item" id="btnFollow" role="menuitem">预览跟随</button>
         <button class="menu-item" id="btnTheme" role="menuitem">暗色</button>
       </div>
@@ -1884,23 +1893,38 @@ function parseMarkdown(src, fx){
   }
 
   var views=['split','edit','preview','live'];
-  var viewNames={split:'分屏',edit:'仅编辑',preview:'仅预览',live:'即时'};
+  var viewNames={split:'分屏',edit:'仅编辑',preview:'仅预览',live:'即时渲染'};
   var viewIdx=0;
+  function syncViewMenu(){
+    var cur=views[viewIdx];
+    var items=document.querySelectorAll('.view-item[data-view]');
+    for(var i=0;i<items.length;i++){
+      var on=items[i].getAttribute('data-view')===cur;
+      items[i].classList.toggle('active',on);
+      items[i].setAttribute('aria-checked',on?'true':'false');
+    }
+  }
   function applyView(){
     document.body.classList.remove('view-edit','view-preview','view-live');
     if(views[viewIdx]==='edit')document.body.classList.add('view-edit');
     if(views[viewIdx]==='preview')document.body.classList.add('view-preview');
-    if(views[viewIdx]==='live'){
-      document.body.classList.add('view-live');
-      liveCommit();   /* 切走前把未提交的就地编辑落地 */
-    }
-    document.getElementById('btnView').textContent=viewNames[views[viewIdx]];
+    if(views[viewIdx]==='live')document.body.classList.add('view-live');
+    syncViewMenu();
     try{localStorage.setItem(VIEW_KEY,views[viewIdx]);}catch(e){}
   }
-  document.getElementById('btnView').addEventListener('click',function(){
-    if(liveEditing) liveCommit();   /* 离开当前视图前先提交 */
-    viewIdx=(viewIdx+1)%views.length;applyView();
-  });
+  function setView(name){
+    var i=views.indexOf(name);
+    if(i<0||i===viewIdx)return;
+    if(liveEditing) liveCommit();   /* 切走前把未提交的就地编辑落地 */
+    viewIdx=i; applyView();
+  }
+  var _viewItems=document.querySelectorAll('.view-item[data-view]');
+  for(var _vi=0;_vi<_viewItems.length;_vi++){
+    _viewItems[_vi].addEventListener('click',function(){
+      setView(this.getAttribute('data-view'));
+      closeMenus();
+    });
+  }
 
   /* ── 即时渲染（live）：单栏全渲染，点某块就地编辑该块源码 ─────────
      预览块序号 i ↔ splitBlocksRaw(getText())[i] 的原文区间（同口径切块）。
@@ -1938,11 +1962,18 @@ function parseMarkdown(src, fx){
     blk.appendChild(ta);
     blk.classList.add('editing');
     liveEditing={blk:blk, ta:ta, range:range};
+    autoGrowTa(ta);
     ta.focus();
+    ta.addEventListener('input', function(){ autoGrowTa(ta); });
     ta.addEventListener('blur', liveCommit);
     ta.addEventListener('keydown', function(e){
       if(e.key==='Escape'){ e.preventDefault(); ta.blur(); }
     });
+  }
+  /* 源码框按内容自动撑高（不放一个 2 行的小窗口让人挤着改） */
+  function autoGrowTa(ta){
+    ta.style.height='auto';
+    ta.style.height=Math.max(ta.scrollHeight+4, 150)+'px';
   }
   /* 委托点击：仅 live 模式、点中 .pblk、且不是链接/按钮/输入框时才进入编辑 */
   preview.addEventListener('click', function(e){
@@ -1973,7 +2004,7 @@ function parseMarkdown(src, fx){
     if(isNaN(v)) v=15;
     v=Math.max(12,Math.min(24,v));
     document.documentElement.style.setProperty('--base-font', v+'px');
-    document.documentElement.style.setProperty('--editor-font', Math.max(11,v-1)+'px');
+    document.documentElement.style.setProperty('--editor-font', v+'px');
     try{localStorage.setItem(SIZE_KEY,String(v));}catch(e){}
     return v;
   }
@@ -2903,6 +2934,11 @@ function parseMarkdown(src, fx){
   document.addEventListener('keydown', function(e){
     if ((e.ctrlKey||e.metaKey) && (e.key==='n'||e.key==='N')){
       e.preventDefault(); newDoc();
+    }
+    if ((e.ctrlKey||e.metaKey) && !e.shiftKey && (e.key==='s'||e.key==='S')){
+      e.preventDefault();
+      if(liveEditing) liveCommit();   /* 先落地块内编辑，再保存 */
+      document.getElementById('btnSave').click();
     }
   });
   var quickDirs = null;

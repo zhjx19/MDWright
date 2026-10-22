@@ -50,11 +50,20 @@ PROBE = r"""
       return wait(80);
     }).then(function(){
       out.splitNoEdit = !document.querySelector('#preview textarea.pblk-src');
-      /* 切到「即时」（循环点击，最多 6 次） */
-      var btn=document.getElementById('btnView');
-      for(var i=0;i<6 && !document.body.classList.contains('view-live');i++) btn.click();
+      /* Ctrl+S：应以程序化点击「保存」来落盘（此处用 spy 验证快捷键确实触发保存） */
+      var fired=0;
+      var sb=document.getElementById('btnSave');
+      var orig=sb.click;
+      sb.click=function(){ fired++; };
+      document.dispatchEvent(new KeyboardEvent('keydown',{key:'s',ctrlKey:true,bubbles:true}));
+      out.ctrlS=fired;
+      sb.click=orig;
+      /* 视图菜单：4 个显式选项，点「即时渲染」直接切换 */
+      out.viewItems=document.querySelectorAll('.view-item[data-view]').length;
+      var liveItem=document.querySelector('.view-item[data-view="live"]');
+      liveItem.click();
       out.viewLive=document.body.classList.contains('view-live');
-      out.btnText=btn.textContent.trim();
+      out.liveActive=liveItem.classList.contains('active');
       out.editorHidden=getComputedStyle(document.getElementById('editorPane')).display==='none';
       return wait(700);
     }).then(function(){
@@ -88,8 +97,10 @@ PROBE = r"""
 
 def main():
     out = run_expr(PROBE)
-    check("切到即时视图（第 4 态）", out.get("viewLive") is True, str(out.get("viewLive")))
-    check("视图按钮显示「即时」", out.get("btnText") == "\u5373\u65f6", str(out.get("btnText")))
+    check("切到即时视图（第 4 项）", out.get("viewLive") is True, str(out.get("viewLive")))
+    check("视图菜单有 4 个显式选项", out.get("viewItems") == 4, str(out.get("viewItems")))
+    check("当前视图项高亮", out.get("liveActive") is True, str(out.get("liveActive")))
+    check("Ctrl+S 触发保存", out.get("ctrlS") == 1, str(out.get("ctrlS")))
     check("即时视图下编辑栏隐藏", out.get("editorHidden") is True, str(out.get("editorHidden")))
     check("非 live 模式点块不进编辑", out.get("splitNoEdit") is True, str(out.get("splitNoEdit")))
     check("文档切成 2 块", out.get("blockCount") == 2, str(out.get("blockCount")))
