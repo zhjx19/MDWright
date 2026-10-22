@@ -179,6 +179,24 @@
   body.view-preview #editorPane{display:none;}
   body.view-preview #outline{border-right:1px solid var(--border);}
   body.view-preview #previewPane{border-right:none;}
+  /* 即时渲染（live）：与"仅预览"同样的单栏布局，但预览块可点就地编辑 */
+  body.view-live #editorPane{display:none;}
+  body.view-live #outline{border-right:1px solid var(--border);}
+  body.view-live #previewPane{border-right:none;}
+  body.view-live .pblk{cursor:text; border-radius:6px; transition:background .12s, box-shadow .12s;}
+  body.view-live .pblk:hover{background:var(--accent-soft); box-shadow:0 0 0 1px var(--border);}
+  body.view-live .pblk.editing:hover{background:transparent; box-shadow:none;}
+  body.view-live .pblk.editing{cursor:auto;}
+  /* 编辑中就只显示源码框：渲染子节点隐藏而不删除（保住其上的复制/运行按钮监听） */
+  body.view-live .pblk.editing > *:not(.pblk-src){display:none !important;}
+  .pblk-src{
+    display:block; width:100%; box-sizing:border-box; min-height:3.2em;
+    font-family:var(--mono); font-size:calc(var(--editor-font,14px) - 1px);
+    line-height:1.7; tab-size:2;
+    color:var(--text); background:var(--editor-bg);
+    border:1px solid var(--accent); border-radius:6px; padding:8px 10px;
+    outline:none; resize:vertical; white-space:pre-wrap; overflow:auto;
+  }
   #status{
     flex:0 0 auto; display:flex; gap:18px; align-items:center;
     padding:5px 16px; font-size:12px; color:var(--muted);
@@ -1262,6 +1280,26 @@ function parseMarkdown(src, fx){
     if(cur.length) blocks.push(cur.join('\n'));
     return blocks;
   }
+  function splitBlocksRaw(text){
+    /* 与 splitBlocks 同口径（H1/H2、fence 感知）切块，但返回**原始文本**里的
+       字符区间 {start,end}（end 为半开区间的右边界）。供即时渲染模式把"点中的
+       预览块"映射回源码区间：预览块序号 i ↔ 本函数结果 i。
+       三个剥离函数里，front matter 与脚注定义都是"换空行"（行数不变），
+       数学只把块内 $$..$$ 折叠成占位（不改块序），因此块序与预览一致；
+       调用方再用「区间数 === 预览块数」守卫，异常结构直接拒绝而非错位。 */
+    var lines=text.split('\n'), ranges=[], fence=false, pos=0, curStart=0;
+    for(var i=0;i<lines.length;i++){
+      var ln=lines[i];
+      if(/^\s*(```|~~~)/.test(ln)) fence=!fence;
+      if(!fence && /^#{1,2} /.test(ln) && pos>curStart){
+        ranges.push({start:curStart, end:pos-1});   /* pos-1 = 标题行前的那个 \n */
+        curStart=pos;
+      }
+      pos+=ln.length+1;
+    }
+    if(text.length>=curStart) ranges.push({start:curStart, end:text.length});
+    return ranges;
+  }
   function blkHash(s){
     var h=5381;
     for(var i=0;i<s.length;i++){ h=((h<<5)+h+s.charCodeAt(i))>>>0; }
@@ -1634,7 +1672,8 @@ function parseMarkdown(src, fx){
   function syncPreviewToEditor(){
     if(!followOn) return;                       /* 跟随开关：关=预览不联动 */
     if(document.body.classList.contains('view-edit')||
-       document.body.classList.contains('view-preview')) return;
+       document.body.classList.contains('view-preview')||
+       document.body.classList.contains('view-live')) return;
     if(syncRaf) return;
     syncRaf=requestAnimationFrame(function(){
       syncRaf=null;
@@ -1844,18 +1883,75 @@ function parseMarkdown(src, fx){
     scheduleRender();scheduleSave();
   }
 
-  var views=['split','edit','preview'];
-  var viewNames={split:'分屏',edit:'仅编辑',preview:'仅预览'};
+  var views=['split','edit','preview','live'];
+  var viewNames={split:'分屏',edit:'仅编辑',preview:'仅预览',live:'即时'};
   var viewIdx=0;
   function applyView(){
-    document.body.classList.remove('view-edit','view-preview');
+    document.body.classList.remove('view-edit','view-preview','view-live');
     if(views[viewIdx]==='edit')document.body.classList.add('view-edit');
     if(views[viewIdx]==='preview')document.body.classList.add('view-preview');
+    if(views[viewIdx]==='live'){
+      document.body.classList.add('view-live');
+      liveCommit();   /* 切走前把未提交的就地编辑落地 */
+    }
     document.getElementById('btnView').textContent=viewNames[views[viewIdx]];
     try{localStorage.setItem(VIEW_KEY,views[viewIdx]);}catch(e){}
   }
   document.getElementById('btnView').addEventListener('click',function(){
-    viewIdx=(viewIdx+1)%3;applyView();
+    if(liveEditing) liveCommit();   /* 离开当前视图前先提交 */
+    viewIdx=(viewIdx+1)%views.length;applyView();
+  });
+
+  /* ── 即时渲染（live）：单栏全渲染，点某块就地编辑该块源码 ─────────
+     预览块序号 i ↔ splitBlocksRaw(getText())[i] 的原文区间（同口径切块）。
+     块内是普通 textarea（非 contenteditable）→ 原生撤销 / 中文输入法天然可用；
+     失焦或 Esc 把该块源码拼回主缓冲并走增量重渲，未动块 hash 不变不重渲。 */
+  var liveEditing=null;   /* {blk, ta, range} 当前就地编辑中的块 */
+  function liveCommit(){
+    var L=liveEditing;
+    if(!L) return;
+    liveEditing=null;
+    var raw=getText();
+    var val=L.ta.value;
+    if(L.blk.classList) L.blk.classList.remove('editing');
+    if(L.ta.parentNode) L.ta.parentNode.removeChild(L.ta);
+    if(val!==raw.slice(L.range.start, L.range.end)){
+      setText(raw.slice(0,L.range.start)+val+raw.slice(L.range.end));
+      scheduleRender(); scheduleSave();
+    }
+  }
+  function liveEditBlock(blk){
+    if(liveEditing && liveEditing.blk===blk) return;
+    liveCommit();   /* 一次只编辑一块：先提交上一个 */
+    var pblks=preview.querySelectorAll('.pblk');
+    var idx=Array.prototype.indexOf.call(pblks, blk);
+    var ranges=splitBlocksRaw(getText());
+    if(idx<0 || ranges.length!==pblks.length){
+      showToast('本文结构特殊，暂不支持点段编辑（块数不一致）');
+      return;
+    }
+    var range=ranges[idx];
+    /* 原样取区间（含尾部 \n）：未改动时提交即"原字节不变"，避免吃掉空行 */
+    var ta=document.createElement('textarea');
+    ta.className='pblk-src';
+    ta.value=getText().slice(range.start, range.end);
+    blk.appendChild(ta);
+    blk.classList.add('editing');
+    liveEditing={blk:blk, ta:ta, range:range};
+    ta.focus();
+    ta.addEventListener('blur', liveCommit);
+    ta.addEventListener('keydown', function(e){
+      if(e.key==='Escape'){ e.preventDefault(); ta.blur(); }
+    });
+  }
+  /* 委托点击：仅 live 模式、点中 .pblk、且不是链接/按钮/输入框时才进入编辑 */
+  preview.addEventListener('click', function(e){
+    if(!document.body.classList.contains('view-live')) return;
+    if(e.target.closest('a,button,input,textarea')) return;
+    var blk=e.target.closest('.pblk');
+    if(!blk||blk.classList.contains('editing')) return;
+    e.preventDefault();
+    liveEditBlock(blk);
   });
 
   /* 分屏联动开关：开=预览跟随编辑滚动（分屏联动管线照常），关=各滚各的。
