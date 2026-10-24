@@ -32,6 +32,12 @@ import urllib.request
 import webbrowser
 import html as html_module
 
+# 便携运行时（python311._pth）不会把脚本目录挂进 sys.path：直接 `python md_server.py`
+# 启动时同级模块 import 会失败。显式补一次，保证「直跑」和「走 _md_run.py」都成立。
+_HERE_DIR = os.path.dirname(os.path.abspath(__file__))
+if _HERE_DIR not in sys.path:
+    sys.path.insert(0, _HERE_DIR)
+
 import md_runs
 
 try:
