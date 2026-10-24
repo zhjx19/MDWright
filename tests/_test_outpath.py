@@ -115,12 +115,24 @@ def main():
         calls = []
 
         class _Spy2(object):
+            """只记录 argv，**不真启动**保存框进程。
+
+            真启动会弹原生模态框，并阻塞在 `subprocess.run(timeout=900)` 里；
+            没人点就一直挂着（实测让整套跑出 300s TIMEOUT，还留下一个僵尸弹框）。
+            本文件开头的约定本就是"保存框不做自动测试"，这里只验传给 _savefile.py 的 argv。
+            """
+
+            class _Done(object):
+                returncode = 0
+                stdout = ""
+                stderr = ""
+
             def __init__(self, real):
                 self.real = real
 
             def run(self, cmd, *a, **kw):
                 calls.append(list(cmd))
-                return self.real.run(cmd, *a, **kw)
+                return _Spy2._Done()
 
         spy2 = _Spy2(md_server.subprocess)
         md_server.subprocess = spy2
@@ -128,9 +140,11 @@ def main():
             md_server._save_dialog_subprocess("导出 .docx", "x.docx", "", "docx")
         finally:
             md_server.subprocess = spy2.real
-        check("保存框被真的调起", bool(calls), str(calls)[:120])
+        check("保存框命令被正确构造", bool(calls), str(calls)[:120])
         if calls:
             argv = calls[-1]
+            check("调用的是 _savefile.py",
+                  len(argv) > 1 and str(argv[1]).endswith("_savefile.py"), str(argv)[:120])
             check("argv 中无 NUL 字符（含过滤器就会炸）",
                   all("\0" not in str(x) for x in argv),
                   str([x for x in argv if "\0" in str(x)])[:120])

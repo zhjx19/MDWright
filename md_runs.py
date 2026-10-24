@@ -66,7 +66,6 @@ repeat {
   try(close(con_err), silent = TRUE)
   writeLines(if (is.null(err)) "ok" else paste0("err\t",
              gsub("[\r\n]+", " ", err)), file.path(wd, paste0(id, ".status")))
-  cat("DONE ", id, "\n", sep = ""); flush(stdout())
 }
 '''
 
@@ -94,7 +93,6 @@ for line in sys.stdin:
     io.open(os.path.join(wd, rid + ".err.txt"), "w", encoding="utf-8").write(eb.getvalue())
     io.open(os.path.join(wd, rid + ".status"), "w", encoding="utf-8").write(
         "ok" if not err else "err\t" + err)
-    sys.stdout.write("DONE " + rid + "\n")
     sys.stdout.flush()
 '''
 
@@ -158,8 +156,9 @@ def _png_blank(path):
 
 
 class _Session(object):
-    def __init__(self, key, lang, exe, workdir):
+    def __init__(self, key, lang, exe, workdir, meta=None):
         self.key, self.lang, self.workdir = key, lang, workdir
+        self.meta = meta or {}
         self.seq = 0
         self.dead = False
         self.used = time.time()
@@ -169,7 +168,7 @@ class _Session(object):
         argv = ([exe, "-u", "-X", "utf8", driver, workdir] if lang == "python"
                 else [exe, driver, workdir])
         self.proc = subprocess.Popen(
-            argv, cwd=workdir, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            argv, cwd=workdir, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace",
             bufsize=1, creationflags=_NO_WINDOW)
 
@@ -199,17 +198,23 @@ class _Session(object):
             self.dead = True
             return {"ok": False, "stdout": "", "stderr": "", "error": "会话已断开",
                     "image": "", "timeout": False}
-        timer = threading.Timer(timeout, self.kill)
-        timer.start()
-        try:
-            line = self.proc.stdout.readline()
-        finally:
-            timer.cancel()
-        if line.strip() != "DONE " + rid:
-            self.dead = True
-            return {"ok": False, "stdout": "", "stderr": "",
-                    "error": "执行超时（%d 秒）或会话中断" % timeout,
-                    "image": "", "timeout": True}
+        # 完成信号看「状态文件写出来没有」，**不读 stdout**：
+        # 用户代码随时可能往 stdout 写（自己 sink() 后 cat、os.system/子进程继承 stdout），
+        # 拿 stdout 当握手通道会被打乱，表现为假超时且变量全丢。
+        status_path = os.path.join(self.workdir, rid + ".status")
+        deadline = time.time() + timeout
+        while not os.path.isfile(status_path):
+            if self.proc.poll() is not None:
+                self.dead = True
+                return {"ok": False, "stdout": "", "stderr": "",
+                        "error": "会话已退出（代码可能终止了解释器进程）",
+                        "image": "", "timeout": False}
+            if time.time() >= deadline:
+                self.kill()
+                return {"ok": False, "stdout": "", "stderr": "",
+                        "error": "执行超时（%d 秒）或会话中断" % timeout,
+                        "image": "", "timeout": True}
+            time.sleep(0.05)
         return self._collect(rid)
 
     def _collect(self, rid):
@@ -233,13 +238,24 @@ class _Session(object):
 
 def _spawn(key, lang):
     if lang == "python":
+        import md_tools
         exe = _py_exe()
+        # 「谁跑的」必须标明：随包内置还是本机解释器，决定第三方包能不能 import
+        runtime = "builtin" if os.path.normcase(exe) == os.path.normcase(sys.executable) \
+            else "local"
+        try:
+            ver = md_tools.version_of(exe) or ""
+        except Exception:
+            ver = ""
+        meta = {"runtime": runtime, "python": ver or "Python %s" % ".".join(
+            map(str, sys.version_info[:3]))}
     else:
         exe = _r_exe()
         if not exe:
             raise RuntimeError("未检测到 R 运行时（Rscript.exe）：请安装 R，"
                                "或在「设置 → 外部工具」里指定 Rscript 路径")
-    return _Session(key, lang, exe, _workdir(key, lang))
+        meta = {}
+    return _Session(key, lang, exe, _workdir(key, lang), meta)
 
 
 def run_code(lang, code, doc_key, timeout=60):
@@ -249,6 +265,7 @@ def run_code(lang, code, doc_key, timeout=60):
         try:
             res = s.run(code, timeout)
             res["restarted"] = False
+            res.update(s.meta)
             return res
         finally:
             s.kill()
@@ -268,6 +285,7 @@ def run_code(lang, code, doc_key, timeout=60):
                 _SESS[key] = s
         res = s.run(code, timeout)
         res["restarted"] = restarted
+        res.update(s.meta)
         return res
     finally:
         with _GUARD:

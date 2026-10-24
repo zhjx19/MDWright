@@ -301,8 +301,7 @@
   /* ── 图片排版（v3.2.0）：独占一行的图不吃首行缩进；对齐是段落级属性 ──
      选择器带 #preview 前缀是为了压过排版面板注入的 #preview p{text-indent}
      （同为 !important 时比权重，ID+类 > 单个 ID）；类规则再压面板的对齐档。
-     ⚠ 导出链路（md_server.py 的 SYNTAX_CSS / 分页 / docx）**尚未同步**这三条，
-       本轮只保预览；同步时两处必须一一对应，改一处要改另一处。 */
+     导出三链路已同步同一套规则（md_server.py 的 SYNTAX_CSS），改一处必须同步改另一处。 */
   #preview p.p-img,.markdown-body p.p-img{text-indent:0 !important; margin:.6em 0;}
   #preview p.p-img.al-l,.markdown-body p.p-img.al-l{text-align:left !important;}
   #preview p.p-img.al-c,.markdown-body p.p-img.al-c{text-align:center !important;}

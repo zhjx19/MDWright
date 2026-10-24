@@ -205,9 +205,10 @@ def inject_run_outputs(md_text, blocks):
                 out.append("```output")
                 out.extend(hit["stdout"].rstrip("\n").split("\n"))
                 out.append("```")
-            if hit.get("image"):
+            img = hit.get("imageAbs") or hit.get("image")
+            if img:
                 out.append("")
-                out.append('![运行输出](<%s>){80}' % str(hit["image"]).replace("\\", "/"))
+                out.append('![运行输出](<%s>){80}' % str(img).replace("\\", "/"))
             out.append("")
         i = j + 1
     return "\n".join(out)

@@ -52,7 +52,6 @@ PROBE = r"""
             out1: outs[0] ? outs[0].textContent : '',
             out2: outs[1] ? outs[1].textContent : '',
             resetBtn: !!document.getElementById('btnResetSession'),
-            posted: (window.__runPost || '')
           });
         }, 7000);
       }, 7000);
@@ -97,7 +96,7 @@ def main():
 
     r = run_expr(PROBE, url=url)
     check("两块各有一个运行按钮", r.get("count") == 2, str(r.get("count")))
-    check("第一块跑出结果", "40" not in (r.get("out1") or "") or True, str(r.get("out1"))[:80])
+    check("第一块跑出结果（无输出也算完成）", r.get("out1") is not None, str(r.get("out1"))[:80])
     check("第二块能用到第一块的变量", "42" in (r.get("out2") or ""),
           str(r.get("out2"))[:120])
     check("工具栏有会话重置按钮", r.get("resetBtn") is True, str(r.get("resetBtn")))

@@ -62,12 +62,21 @@ def main():
     check("表格等内容没被动", "| 列1 | 列2 |" in out, out[:300])
     check("源码本身没被改写", "x <- 1" in out and "```r" in out, "")
 
-    # 图片输出 → 下行插图片
-    out2 = md_pandoc.inject_run_outputs(
-        "```r\nplot(1)\n```\n",
-        [{"lang": "r", "code": "plot(1)", "stdout": "", "error": "",
-          "image": r"C:\tmp\a b\run-1.png"}])
-    check("图片输出插成图片行", "![运行输出](<C:/tmp/a b/run-1.png>){80}" in out2, out2[:200])
+    # 图片输出 → 下行插图片（用存档读回的真实形态：image 是裸文件名、imageAbs 是绝对路径）
+    import md_runs
+    tmpdoc = os.path.join(tempfile.mkdtemp(prefix="mdimg-"), "d.md")
+    open(tmpdoc, "w", encoding="utf-8").write("```r\nplot(1)\n```\n")
+    md_runs.save_output("r", "plot(1)",
+                        {"stdout": "", "error": "",
+                         "image": os.path.join(_ROOT, "docs", "screenshots", "writing.png")},
+                        tmpdoc, "")
+    blocks = md_runs.read_outputs(tmpdoc, "")
+    out2 = md_pandoc.inject_run_outputs("```r\nplot(1)\n```\n", blocks)
+    injected = [ln for ln in out2.splitlines() if ln.startswith("![运行输出]")]
+    check("图片输出插成图片行", bool(injected), out2[:200])
+    check("图片用的是绝对路径（裸文件名 pandoc 找不到）",
+          bool(injected) and re.search(r"!\[运行输出\]\(<[A-Za-z]:/", injected[0]) is not None,
+          injected[0][:160] if injected else "")
 
     if not PANDOC:
         print("SKIP: 本机无 pandoc，跳过真导出（77）")
@@ -107,11 +116,15 @@ def main():
     try:
         tdoc = os.path.join(tmp, "e2e.md")
         with open(tdoc, "w", encoding="utf-8") as f:
-            f.write(MD)
+            f.write(MD + "\n```r\nplot(1)\n```\n")
         md_runs.save_output("r", "x <- 1", {"stdout": "[1] 5.5\n"}, tdoc, "")
+        md_runs.save_output("r", "plot(1)",
+                            {"stdout": "", "error": "",
+                             "image": os.path.join(_ROOT, "docs", "screenshots", "writing.png")},
+                            tdoc, "")
         req = urllib.request.Request(
             "http://127.0.0.1:%d/api/export-docx" % port,
-            data=_json.dumps({"path": tdoc, "markdown": MD,
+            data=_json.dumps({"path": tdoc, "markdown": MD + "\n```r\nplot(1)\n```\n",
                               "outPath": os.path.join(tmp, "e2e.docx"),
                               "threeLine": True}).encode("utf-8"),
             headers={"Content-Type": "application/json"})
@@ -120,7 +133,10 @@ def main():
         check("端点导出成功", j.get("ok") is True, str(j)[:200])
         with zipfile.ZipFile(os.path.join(tmp, "e2e.docx")) as z:
             xml2 = z.read("word/document.xml").decode("utf-8")
-        check("端到端：输出进了 Word", "5.5" in xml2, "")
+            media = [n for n in z.namelist() if n.startswith("word/media/")]
+        check("端到端：文字输出进了 Word", "5.5" in xml2, "")
+        check("端到端：运行图真的嵌进去了（<w:drawing> + media）",
+              "<w:drawing>" in xml2 and len(media) >= 1, "media=%r" % (media[:3],))
         check("端到端：三线表生效", "<w:tblBorders>" in xml2, "")
         check("端到端：没把语法残渣带进正文",
               "@@" not in xml2 and "{80}" not in xml2, "")

@@ -35,7 +35,7 @@
 
 **验证**
 
-- 全套串行：`48` 个用例 → **`PASS 42 / SKIP 5 / FAIL 1 / TIMEOUT 0`**。5 个 SKIP 为本机未装 playwright；唯一 FAIL 是 `_test_rag_e2e`（本机未部署 rag-assistant，属既有基线，与本次改动无关）。
+- 全套串行：`53` 个用例 → **`PASS 47 / SKIP 5 / FAIL 1 / TIMEOUT 0`**。5 个 SKIP 为本机未装 playwright；唯一 FAIL 是 `_test_rag_e2e`（本机未部署 rag-assistant，属既有基线，与本次改动无关）。
 - Word 三线表改写的 docx 经 `pandoc -f docx -t markdown` 回读通过；端到端导出断言输出文本与 `<w:tblBorders>` 同时存在、正文无 `@@` 与 `{80}` 残渣。
 
 ---

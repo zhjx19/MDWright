@@ -108,6 +108,27 @@ def main():
     r4, _ = post("/api/run-r", {"code": "exists('x')", "doc": DOC})
     check("重置后变量消失", "FALSE" in (r4.get("stdout") or ""), str(r4)[:200])
 
+    # ---- 用户代码直接写 stdout：不能打断握手、不能丢变量 ----
+    post("/api/run-r", {"code": "keep <- 7", "doc": DOC})
+    rr, _ = post("/api/run-r", {"code": "sink(); cat('raw output\\n'); sink()", "doc": DOC})
+    check("R: 用户直接写 stdout 不判超时", "超时" not in (rr.get("error") or ""),
+          str(rr)[:160])
+    rr2, _ = post("/api/run-r", {"code": "keep * 2", "doc": DOC})
+    check("R: 之后变量仍在", "14" in (rr2.get("stdout") or ""), str(rr2)[:160])
+
+    post("/api/run-py", {"code": "keep = 7", "doc": DOC})
+    pp, _ = post("/api/run-py", {"code": "import os; os.system('echo hi')", "doc": DOC})
+    check("Python: 子进程写 stdout 不判超时", "超时" not in (pp.get("error") or ""),
+          str(pp)[:160])
+    pp2, _ = post("/api/run-py", {"code": "print(keep * 2)", "doc": DOC})
+    check("Python: 之后变量仍在", "14" in (pp2.get("stdout") or ""), str(pp2)[:160])
+
+    # ---- Python 运行结果要标明是谁跑的（随包内置 / 本机解释器）----
+    py, _ = post("/api/run-py", {"code": "print(1)", "doc": DOC})
+    check("Python 结果带 runtime/python 标记",
+          py.get("runtime") in ("builtin", "local") and bool(py.get("python")),
+          str(py)[:200])
+
     # ---- 无 doc/token：一次性执行，不跨块 ----
     post("/api/run-r", {"code": "z <- 1"})
     r5, _ = post("/api/run-r", {"code": "exists('z')"})
