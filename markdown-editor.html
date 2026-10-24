@@ -751,11 +751,46 @@ function extractFrontMatter(src){
    编号：按【引用首次出现顺序】（用户 2026-10-21 决定）；无定义的引用保持字面。
    定义行剥离出正文（不进预览正文），文末由 buildFootnoteSection 生成脚注区。
    只在文档级调用一次：分块渲染时同一份 fx 需传给每个块，否则编号会各自从 1 起。 */
+/* ── 围栏状态机（区分 ``` 与 ~~~）──────────────────────────────────
+   旧实现用单个布尔在两种标记间来回翻：`~~~markdown` 里嵌 ` ```r ` 示例时，
+   两种标记互相"闭合"，示例正文掉出围栏后被当普通文本（$..$ 被公式化、$ 消失）。
+   这里记住开围栏的字符与长度：只有**同字符、长度不短于开头**的标记才闭合。 */
+function fenceMarker(line){
+  var m=line.match(/^[ \t]*(`{3,}|~{3,})/);
+  if(!m) return null;
+  return {ch:m[1].charAt(0), n:m[1].length, rest:line.slice(m[0].length)};
+}
+function fenceIsOpen(line, st){
+  var t=fenceMarker(line);
+  if(!t) return st;
+  if(st===null||st===undefined) return {ch:t.ch, n:t.n};   /* 开围栏 */
+  if(t.ch===st.ch && t.n>=st.n) return null;               /* 同字符且不短 → 闭合 */
+  return st;                                               /* 围栏内出现的异标记 → 普通内容 */
+}
+/* 按围栏切成 [{text,fenced}] 段，保持原文可无损拼回（段间用 \n 连接即原文）。 */
+function splitFenced(text){
+  var lines=text.split('\n'), segs=[], cur=[], curFenced=false, fence=null;
+  function flush(){ if(cur.length){ segs.push({text:cur.join('\n'), fenced:curFenced}); cur=[]; } }
+  for(var i=0;i<lines.length;i++){
+    var ln=lines[i];
+    var nf=fenceIsOpen(ln,fence);
+    if(nf!==fence){
+      flush();
+      fence=nf;
+      curFenced=(fence!==null);
+      cur.push(ln);
+    } else {
+      cur.push(ln);
+    }
+  }
+  flush();
+  return segs;
+}
 function extractFootnotes(src){
-  var lines=src.split('\n'), kept=[], defs={}, i=0, fence=false;
+  var lines=src.split('\n'), kept=[], defs={}, i=0, fence=null;
   while(i<lines.length){
     var ln=lines[i];
-    if(/^\s*(```|~~~)/.test(ln))fence=!fence;
+    fence=fenceIsOpen(ln,fence);
     var m=(!fence)?ln.match(/^\[\^([^\]\s]+)\]:[ ]?(.*)$/):null;
     if(m){
       var label=m[1], body=m[2], buf=[], dstart=i;
@@ -775,10 +810,10 @@ function extractFootnotes(src){
     kept.push(ln); i++;
   }
   /* 编号：按引用首次出现顺序；代码围栏内的 [^x] 不算引用（否则会凭空造出无人引用的脚注） */
-  var nums={}, order=[], fence2=false, cl=kept.join('\n').split('\n');
+  var nums={}, order=[], fence2=null, cl=kept.join('\n').split('\n');
   for(var li=0;li<cl.length;li++){
     var l2=cl[li];
-    if(/^\s*(```|~~~)/.test(l2)){fence2=!fence2;continue;}
+    fence2=fenceIsOpen(l2,fence2);
     if(fence2)continue;
     var re=/\[\^([^\]\s]+)\]/g, mm;
     while((mm=re.exec(l2))!==null){
@@ -1214,15 +1249,15 @@ function parseMarkdown(src, fx){
   var mathStore=[];
   function extractMath(src){
     mathStore=[];
-    var parts=src.split(/(```[\s\S]*?```|~~~[\s\S]*?~~~)/);
-    for(var i=0;i<parts.length;i++){
-      if(i%2===1)continue; /* fenced code stays untouched */
-      parts[i]=parts[i].replace(/\$\$[\s\S]+?\$\$|\$[^$\n]+?\$/g,function(m){
+    var segs=splitFenced(src), out=[];
+    for(var i=0;i<segs.length;i++){
+      if(segs[i].fenced){ out.push(segs[i].text); continue; }   /* 围栏内原样保留 */
+      out.push(segs[i].text.replace(/\$\$[\s\S]+?\$\$|\$[^$\n]+?\$/g,function(m){
         mathStore.push(m);
         return '\uE000M'+(mathStore.length-1)+'\uE001';
-      });
+      }));
     }
-    return parts.join('');
+    return out.join('\n');
   }
   function restoreMath(root){
     if(!window.katex){
@@ -1279,10 +1314,10 @@ function parseMarkdown(src, fx){
   }
   function splitBlocks(src){
     /* fence 感知的 H1/H2 分块：长文档按章切块做增量渲染 */
-    var lines=src.split('\n'), blocks=[], cur=[], fence=false;
+    var lines=src.split('\n'), blocks=[], cur=[], fence=null;
     for(var i=0;i<lines.length;i++){
       var ln=lines[i];
-      if(/^\s*(```|~~~)/.test(ln)) fence=!fence;
+      fence=fenceIsOpen(ln,fence);
       if(!fence && /^#{1,2} /.test(ln) && cur.length){ blocks.push(cur.join('\n')); cur=[]; }
       cur.push(ln);
     }
@@ -1296,10 +1331,10 @@ function parseMarkdown(src, fx){
        三个剥离函数里，front matter 与脚注定义都是"换空行"（行数不变），
        数学只把块内 $$..$$ 折叠成占位（不改块序），因此块序与预览一致；
        调用方再用「区间数 === 预览块数」守卫，异常结构直接拒绝而非错位。 */
-    var lines=text.split('\n'), ranges=[], fence=false, pos=0, curStart=0;
+    var lines=text.split('\n'), ranges=[], fence=null, pos=0, curStart=0;
     for(var i=0;i<lines.length;i++){
       var ln=lines[i];
-      if(/^\s*(```|~~~)/.test(ln)) fence=!fence;
+      fence=fenceIsOpen(ln,fence);
       if(!fence && /^#{1,2} /.test(ln) && pos>curStart){
         ranges.push({start:curStart, end:pos-1});   /* pos-1 = 标题行前的那个 \n */
         curStart=pos;
@@ -1555,9 +1590,9 @@ function parseMarkdown(src, fx){
     for(var i=0;i<els.length&&i<blocks.length;i++){
       var heads=els[i].querySelectorAll('h1,h2,h3,h4');
       if(!heads.length) continue;
-      var lines=blocks[i].split('\n'), fence=false, hits=[], base=(startLines[i]||0);
+      var lines=blocks[i].split('\n'), fence=null, hits=[], base=(startLines[i]||0);
       for(var l=0;l<lines.length;l++){
-        if(/^\s*(```|~~~)/.test(lines[l])) fence=!fence;
+        fence=fenceIsOpen(lines[l],fence);
         if(!fence&&/^#{1,4} /.test(lines[l])) hits.push(base+l);
       }
       for(var h=0;h<heads.length&&h<hits.length;h++){
@@ -1567,9 +1602,9 @@ function parseMarkdown(src, fx){
   }
   function buildOutline(){
     var lines=getText().split('\n');
-    var items=[], fence=false;
+    var items=[], fence=null;
     for(var i=0;i<lines.length;i++){
-      if(/^\s*(```|~~~)/.test(lines[i])) fence=!fence;
+      fence=fenceIsOpen(lines[i],fence);
       if(fence) continue;   /* fence 内 # 不是标题（与分块/锚点打标口径一致） */
       var m=lines[i].match(/^(#{1,6})[ ]+(.*)$/);
       if(m){items.push({lvl:m[1].length,text:m[2].trim(),line:i});}
@@ -2463,7 +2498,11 @@ function parseMarkdown(src, fx){
      此处一次性清理历史残留。 */
   try{localStorage.removeItem(STORE_KEY);}catch(e){}
   var hasFileParam=/[?&]file=/.test(location.search);
-  if(!hasFileParam){loadDefault();}   /* ?file= 模式：由 loadFromUrl 草稿感知载入 */
+  if(!hasFileParam){
+    /* 首启/直接打开：空白文档，不再自动载入内置《使用指南》
+       （指南仍可从「文件 → 最近文件 / 内置文档…」显式打开） */
+    updateFileIndicator('默认文档');
+  }   /* ?file= 模式：由 loadFromUrl 草稿感知载入 */
   var sv=null;try{sv=localStorage.getItem(VIEW_KEY);}catch(e){}
   if(sv)viewIdx=views.indexOf(sv);
   var st=null;try{st=localStorage.getItem(THEME_KEY);}catch(e){}
@@ -3262,7 +3301,7 @@ function parseMarkdown(src, fx){
       html+='<div class="fm-item'+cur+'" data-builtin="'+b+'"><b>'+BUILTIN_DOCS[b].name+'</b><div class="fm-sub">内置文档 · 点击载入（可编辑/另存为）</div></div>';
     }
     html+='<div class="fm-sub" style="padding:8px 4px 6px;font-weight:600;">最近文件</div>';
-    html+='<div class="fm-item" data-act="default"><b>默认文档（使用指南）</b><div class="fm-sub">回到初始示例状态</div></div>';
+    html+='<div class="fm-item" data-act="default"><b>使用指南（内置文档）</b><div class="fm-sub">打开内置使用指南</div></div>';
     for(var i=0;i<rec.length;i++){
       var r=rec[i];
       var cur=(r.path&&r.path===currentFile)?' cur':'';

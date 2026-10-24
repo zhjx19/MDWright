@@ -50,12 +50,16 @@ CASES = [
     "***\n\n- a\n- b\n",
     "para\n\n\n\n# H\nbody",
     "只有一段没有标题的正文\n第二行\n",
+    "~~~markdown\n```r\n# not heading\nplot(mtcars$wt)\n```\n~~~\n# real\nbody",
 ]
 
 
 def main():
     src = open(HTML, encoding="utf-8").read()
-    fns = extract_fn(src, "splitBlocks") + "\n" + extract_fn(src, "splitBlocksRaw")
+    fns = (extract_fn(src, "fenceMarker") + "\n" +
+           extract_fn(src, "fenceIsOpen") + "\n" +
+           extract_fn(src, "splitBlocks") + "\n" +
+           extract_fn(src, "splitBlocksRaw"))
     cases_js = ",\n".join('"%s"' % "".join(
         "\\n" if ch == "\n" else ("\\" + ch if ch in '"\\' else ch) for ch in c)
         for c in CASES)
