@@ -298,6 +298,17 @@
   }
   .markdown-body th{background:var(--code-bg); font-weight:650;}
   .markdown-body img{max-width:100%; border-radius:var(--radius); margin:.5em 0;}
+  /* ── 图片排版（v3.2.0）：独占一行的图不吃首行缩进；对齐是段落级属性 ──
+     选择器带 #preview 前缀是为了压过排版面板注入的 #preview p{text-indent}
+     （同为 !important 时比权重，ID+类 > 单个 ID）；类规则再压面板的对齐档。
+     ⚠ 导出链路（md_server.py 的 SYNTAX_CSS / 分页 / docx）**尚未同步**这三条，
+       本轮只保预览；同步时两处必须一一对应，改一处要改另一处。 */
+  #preview p.p-img,.markdown-body p.p-img{text-indent:0 !important; margin:.6em 0;}
+  #preview p.p-img.al-l,.markdown-body p.p-img.al-l{text-align:left !important;}
+  #preview p.p-img.al-c,.markdown-body p.p-img.al-c{text-align:center !important;}
+  #preview p.p-img.al-r,.markdown-body p.p-img.al-r{text-align:right !important;}
+  #preview .img-fill,.markdown-body .img-fill{display:grid; gap:.7em; align-items:start; margin:.8em 0;}
+  #preview .img-fill img,.markdown-body .img-fill img{width:100%; height:auto; margin:0;}
   .markdown-body .toc-anchor{color:var(--muted);}
   /* ── R1 新语法样式（与 md_server.py 的 SYNTAX_CSS 一一对应）──────
      两处必须同步：前端用 CSS 变量跟随主题，导出用固定色值（导出文档无变量）。 */
@@ -472,6 +483,7 @@
     </div>
   </nav>
   <div class="tb-group right">
+    <button id="btnResetSession" class="tb-btn" title="重置代码运行会话（清空 R / Python 变量）">⟳ 会话</button>
     <button id="btnSettings" class="tb-btn" title="设置：外观 / 保存 / 排版 / 分页 / 外部工具">设置</button>
   </div>
 </header>
@@ -555,6 +567,7 @@
         <div class="ts-row"><label>列表</label><select data-ts="li"></select><input data-tssz="li" type="number" min="6" max="72" step="0.5" placeholder="磅"><select data-algn="li"></select></div>
         <div class="ts-row"><label>表格</label><select data-ts="table"></select><input data-tssz="table" type="number" min="6" max="72" step="0.5" placeholder="磅"><select data-algn="table"></select></div>
         <div class="ts-row"><label>代码</label><select data-ts="code"></select><input data-tssz="code" type="number" min="6" max="72" step="0.5" placeholder="磅"><select data-algn="code"></select></div>
+        <div class="ts-row"><label>图片（独占一行的图）</label><select data-algn="img"></select></div>
         <div class="ts-row"><label>公式（KaTeX，字体固定）</label><input data-tssz="math" type="number" min="6" max="72" step="0.5" placeholder="磅"><select data-algn="math"></select></div>
         <div class="ts-sep"><span>段落缩进（按元素独立，字符数 × 当前字号自动换算）</span></div>
         <div class="ts-row"><label>正文</label><select data-ind="p"></select><input data-indchars="p" type="number" min="0" max="8" step="0.5" value="2"></div>
@@ -933,12 +946,31 @@ function parseInline(text, fx){
      （否则下划线文件名 20261015_181923_3419.png 会被 _.._ 改写成 <em>，图片必 404）。
      链接只占位开标签，链接文字仍参与行内格式化。 */
   var toks=[];
-  /* 图片宽度参数：![alt](src){30} → 版面宽度的 30%，等比缩放（仅设 width，height 自动）。
-     [1-9]\d{0,2} 捕获，>100 钳到 100；0/非数字不进参数组（后缀原样留在正文可见，fail-closed）。
+  /* 图片参数：`![alt](src){...}`。花括号里允许两种 token——宽度 [1-9]\d{0,2}
+     （>100 钳到 100）与对齐 c/l/r（大小写均可），各最多一个、顺序随意。
+     参数不合法（0、非数字、未知 token、重复、空组）时整组原样留在正文，fail-closed。
      参数组在 `)` 之外，保存时的路径改写只动括号内路径，天然不触碰后缀。 */
-  text=text.replace(/!\[([^\]]*)\]\(([^)]+?)(?:\s+"([^"]*)")?\)(?:\s*\{([1-9]\d{0,2})\})?/g,function(m,alt,src,title,wpct){
-    var w=wpct?(' style="width:'+Math.min(parseInt(wpct,10),100)+'%"'):'';
-    toks.push('<img src="'+escAttr(src)+'" alt="'+escAttr(alt)+'"'+(title?' title="'+escAttr(title)+'"':'')+w+'>');
+  text=text.replace(/!\[([^\]]*)\]\(([^)]+?)(?:\s+"([^"]*)")?\)(?:\s*\{([^{}]*)\})?/g,function(m,alt,src,title,prm){
+    var w='', al='';
+    if(prm!==undefined){
+      var ok=true, ps=prm.trim().split(/\s+/);
+      if(ps.length===1&&ps[0]==='')ps=[];
+      if(!ps.length)ok=false;
+      for(var pi=0;pi<ps.length;pi++){
+        var tk=ps[pi];
+        if(/^[1-9]\d{0,2}$/.test(tk)){ if(w)ok=false; else w=Math.min(parseInt(tk,10),100)+'%'; }
+        else if(/^[clrCLR]$/.test(tk)){ if(al)ok=false; else al=tk.toLowerCase(); }
+        else ok=false;
+      }
+      if(!ok){
+        /* 参数写坏：图照渲染，{..} 原样留在正文可见（CHANGELOG v2.0.0 口径）。
+           绝不能把整段交回文本——那样会被后面的链接正则吃掉，变成"链接+花括号"。 */
+        toks.push('<img src="'+escAttr(src)+'" alt="'+escAttr(alt)+'"'+(title?' title="'+escAttr(title)+'"':'')+'>');
+        return '\x00T'+(toks.length-1)+'\x00{'+prm+'}';
+      }
+    }
+    toks.push('<img src="'+escAttr(src)+'" alt="'+escAttr(alt)+'"'+(title?' title="'+escAttr(title)+'"':'')
+      +(w?' style="width:'+w+'"':'')+(al?' data-al="'+al+'"':'')+'>');
     return '\x00T'+(toks.length-1)+'\x00';
   });
   text=text.replace(/\[([^\]]+)\]\(([^)]+?)(?:\s+"([^"]*)")?\)/g,function(m,txt,href,title){
@@ -1098,6 +1130,38 @@ function parseFenceLang(raw){
   if(!m)return {lang:raw,width:0};
   return {lang:m[1], width:m[2]?Math.min(100,parseInt(m[2],10)):0};
 }
+/* 多图并排：`@@ begin fill {a|b[|c[|d]]}` … `@@ end fill`。
+   规则——2~4 栏；比例是相对权重（输出 fr，不必凑 100）；栏内只允许图片行（空行跳过），
+   且图片数必须等于栏数。任何一条不满足 → 返回 null，调用方把整段当普通段落原样显示
+   （fail-closed：不猜边界、不吞内容）。栏内图一律占满栏宽，自带 {N} 忽略。 */
+function parseFill(lines, start){
+  var bm=/^[ ]*@@[ ]*begin[ ]+fill[ ]*\{([^{}]*)\}[ ]*$/i.exec(lines[start]);
+  if(!bm)return null;
+  var parts=bm[1].split('|'), cols=[];
+  if(parts.length<2||parts.length>4)return null;
+  for(var c=0;c<parts.length;c++){
+    var t=parts[c].trim(), n=parseFloat(t);
+    if(!/^\d+(\.\d+)?$/.test(t)||!(n>0))return null;
+    cols.push(n);
+  }
+  var imgs=[], j=start+1, closed=false;
+  for(;j<lines.length;j++){
+    var ln=lines[j];
+    if(/^[ ]*@@[ ]*end[ ]+fill[ ]*$/i.test(ln)){closed=true;break;}
+    if(/^[ ]*$/.test(ln))continue;
+    var im=/^[ ]*!\[([^\]]*)\]\(([^)]+?)(?:\s+"([^"]*)")?\)(?:[ ]*\{[^{}]*\})?[ ]*$/.exec(ln);
+    if(!im)return null;                      /* 栏内出现非图片行 */
+    imgs.push(im);
+  }
+  if(!closed||imgs.length!==cols.length)return null;
+  var h='<div class="img-fill" style="grid-template-columns:'
+    +cols.map(function(v){return v+'fr';}).join(' ')+'">';
+  for(var k=0;k<imgs.length;k++){
+    h+='<div><img src="'+escAttr(imgs[k][2])+'" alt="'+escAttr(imgs[k][1])+'"'
+      +(imgs[k][3]?' title="'+escAttr(imgs[k][3])+'"':'')+' style="width:100%"></div>';
+  }
+  return {html:h+'</div>', next:j+1};
+}
 function parseMarkdown(src, fx){
   var lines=src.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');
   var html='';
@@ -1169,6 +1233,11 @@ function parseMarkdown(src, fx){
       var lst=parseList(lines,i,ind,olSeq,fx);
       html+=lst[0];i=lst[1];olSeq=lst[2];continue;
     }
+    /* 多图并排：不合法时落到下面的段落分支，整段原样显示 */
+    if(/^[ ]*@@[ ]*begin[ ]+fill[ ]*\{/i.test(line)){
+      var fl=parseFill(lines,i);
+      if(fl){html+=fl.html;i=fl.next;olSeq=0;continue;}
+    }
     /* 定义列表：段落分支之后统一判定（段落整体作术语），此处不再单判 */
     var para=[lines[i]]; i++;   /* 首行无条件吃下：本分支只在其他块语法都不匹配时到达，
                                    且下面的续行条件含 ": " 终止——若首行恰是 ": x"，
@@ -1183,7 +1252,16 @@ function parseMarkdown(src, fx){
       html+='<dl><dt>'+parseInline(para.join('\n'),fx).replace(/\n/g,'<br>')+'</dt>'+di.html+'</dl>';
       i=di.next; olSeq=0; continue;
     }
-    html+='<p>'+parseInline(para.join('\n'), fx).replace(/\n/g,'<br>')+'</p>';
+    /* 独占一行的图片：段落标 p-img，让首行缩进不落在图上（图不是文字，缩进只把它推歪）；
+       图自身带的 data-al 同时提升为段落类 al-c/al-l/al-r——对齐是段落级属性。 */
+    var pInner=parseInline(para.join('\n'), fx).replace(/\n/g,'<br>');
+    var imOnly=/^<img\b([^>]*)>$/.exec(pInner);
+    if(imOnly){
+      var imAl=/\sdata-al="([clr])"/.exec(imOnly[1]);
+      html+='<p class="p-img'+(imAl?' al-'+imAl[1]:'')+'">'+pInner+'</p>';
+    }else{
+      html+='<p>'+pInner+'</p>';
+    }
     olSeq=0;
   }
   return html;
@@ -2090,7 +2168,8 @@ function parseMarkdown(src, fx){
       pop.className='sub-pop'; pop.setAttribute('role','menu');
       for(var j=0;j<d.sub.length;j++) pop.appendChild(ctxItem(d.sub[j]));
       wrap.appendChild(pop);
-      wrap.addEventListener('mouseenter',function(){ openSub(this); });
+      /* 悬停开合走 ctxMenu 上的 mouseover 委托（见下），这里不再各自挂 mouseenter：
+         各自挂的结果是「只开不关」，两个 pop 会同时展开叠在一起。 */
       wrap.addEventListener('click',function(e){
         if(e.target.closest('.sub-pop')) return;      /* 点二级项交给主委托 */
         if(this.getAttribute('data-open')==='1') closeSub(this); else openSub(this);
@@ -2102,6 +2181,7 @@ function parseMarkdown(src, fx){
   function openSub(wrap){
     var pop=wrap.querySelector('.sub-pop');
     if(!pop) return;
+    closeSubs(wrap);              /* 二级互斥：开一个就收掉其它 */
     wrap.setAttribute('data-open','1');
     wrap.setAttribute('aria-expanded','true');
     /* 右边放不下就翻到左边，避免二级菜单跑出视口 */
@@ -2113,6 +2193,11 @@ function parseMarkdown(src, fx){
   function closeSub(wrap){
     wrap.removeAttribute('data-open');
     wrap.setAttribute('aria-expanded','false');
+  }
+  /* 收起除 keep 以外的所有二级菜单（keep 传 null 即全部收起） */
+  function closeSubs(keep){
+    var subs=ctxMenu.querySelectorAll('.ctx-sub');
+    for(var i=0;i<subs.length;i++){ if(subs[i]!==keep) closeSub(subs[i]); }
   }
   function hideCtxMenu(){
     ctxMenu.removeAttribute('data-open');
@@ -2154,6 +2239,17 @@ function parseMarkdown(src, fx){
     document.execCommand(kind);      /* undo / redo / cut / copy */
   }
   ctxMenu.addEventListener('mousedown',function(e){ e.preventDefault(); });
+  /* 一级行之间悬停切换：二级互斥（v3.1.1 修「两个下拉叠在一起」）。
+     mouseover 会冒泡，真实指针移动必发；mouseenter 不冒泡，无法在容器上委托。
+     二级 pop 内部的条目直接放行——否则指针还没落到条目上，pop 就被自己收起。 */
+  ctxMenu.addEventListener('mouseover',function(e){
+    if(e.target.closest('.sub-pop')) return;
+    var sub=e.target.closest('.ctx-sub');
+    if(sub){ openSub(sub); return; }
+    if(e.target.closest('.menu-item')) closeSubs(null);
+  });
+  /* 指针离开整个菜单（已展开的二级是 ctxMenu 的后代，算在内）→ 全部收起 */
+  ctxMenu.addEventListener('mouseleave',function(){ closeSubs(null); });
   ctxMenu.addEventListener('click',function(e){
     var b=e.target.closest('[data-ctx]');
     if(!b) return;
@@ -2952,7 +3048,7 @@ function parseMarkdown(src, fx){
   var ALGN_VALS=['','left','center','right','justify'];
   var ALGN_LBLS=['默认','左对齐','居中','右对齐','两端对齐'];
   var IND_VALS=['none','first','hang'],IND_LBLS=['无','首行缩进','悬挂缩进'];
-  var TS_KEYS=['p','h1','h2','h3','h4','quote','li','table','code','math'];
+  var TS_KEYS=['p','h1','h2','h3','h4','quote','li','table','code','math','img'];
   var IND_KEYS=['p','quote','li'];
   var TS_MAP={
     p:'#preview p, .markdown-body p',
@@ -2963,7 +3059,9 @@ function parseMarkdown(src, fx){
     quote:'#preview blockquote, .markdown-body blockquote',
     li:'#preview li, .markdown-body li',
     table:'#preview table, .markdown-body table',
-    code:'#preview pre, #preview code, .markdown-body pre, .markdown-body code'};
+    code:'#preview pre, #preview code, .markdown-body pre, .markdown-body code',
+    /* 图片档作用在"独占一行的图"所在段落上：对齐是段落属性，图只是行内元素 */
+    img:'#preview p.p-img, .markdown-body p.p-img'};
   var IND_SEL={
     p:'#preview p, .markdown-body p',
     quote:'#preview blockquote p, .markdown-body blockquote p',
@@ -2977,6 +3075,8 @@ function parseMarkdown(src, fx){
         headOn:!!(raw.table&&raw.table.headOn),headColor:(raw.table&&raw.table.headColor)||'#dbe5ff',
         colOn:!!(raw.table&&raw.table.colOn),colColor:(raw.table&&raw.table.colColor)||'#dbe5ff'}};
     for(var i=0;i<TS_KEYS.length;i++){var r=(raw.fonts&&raw.fonts[TS_KEYS[i]])||{};o.fonts[TS_KEYS[i]]={f:r.f||'',s:r.s||'',a:r.a||''};}
+    /* 图片默认居中：面板里「默认」一项对图片按居中处理（其余元素沿用"默认=不设"） */
+    if(!o.fonts.img.a)o.fonts.img.a='center';
     for(var j=0;j<IND_KEYS.length;j++){
       var kk=IND_KEYS[j],ri=(raw.indent&&raw.indent[kk])||null;
       var m=ri?ri.mode:'none';if(m!=='first'&&m!=='hang')m='none';
@@ -3216,7 +3316,85 @@ function parseMarkdown(src, fx){
       out.className='r-out'; out.hidden=true;
       wrap.parentNode.insertBefore(out, wrap.nextSibling);
     }
+    /* 渲染是逐块进行的：恢复输出统一防抖一次，避免每个块各发一条请求 */
+    if(!mountRunners._restoreTimer){
+      mountRunners._restoreTimer=setTimeout(function(){
+        mountRunners._restoreTimer=0;
+        restoreRunOutputs();
+      },400);
+    }
   }
+  /* 文档身份：有路径用路径，未命名用一个标签页内稳定的令牌。
+     服务端据此把"同一文档的多次运行"归到同一个解释器会话与同一份侧车。 */
+  function runDocKey(){
+    var doc=(typeof currentFile==='string'&&currentFile)?currentFile:'';
+    var token='';
+    try{
+      token=sessionStorage.getItem('md-doc-token')||'';
+      if(!token){ token='d'+Math.random().toString(36).slice(2,10);
+                  sessionStorage.setItem('md-doc-token',token); }
+    }catch(e){ token='d0'; }
+    return {doc:doc, token:token};
+  }
+  /* 输出渲染的唯一入口：实时运行、刷票恢复、会话重置后都走这里，样式只此一份。 */
+  function renderRunOut(out,j,lang){
+    var html='';
+    if(j&&j.ok){
+      if(j.stdout) html+='<pre class="r-out-txt">'+escapeHtml(j.stdout)+'</pre>';
+      if(j.image) html+='<img class="r-out-img" src="/img?path='+encodeURIComponent(j.image)+'">';
+      if(!j.stdout&&!j.image) html+='<div class="r-out-line">（执行完成，无输出）</div>';
+      /* Python 有两套运行时（随包内置 / 本机解释器），跑完标明是谁跑的，别让人猜 */
+      if(lang==='python'&&j.runtime){
+        html+='<div class="r-out-line">'+(j.runtime==='local'?'本地解释器':'随包内置')+
+              ' · '+escapeHtml(j.python||'Python')+'</div>';
+      }
+    }else{
+      html+='<pre class="r-out-err">'+escapeHtml((j&&j.error)||'执行失败')+'</pre>';
+      if(j&&j.stdout) html+='<pre class="r-out-txt">'+escapeHtml(j.stdout)+'</pre>';
+    }
+    if(!runDocKey().doc){
+      html+='<div class="r-out-line">当前文档未保存为 .md，运行结果只在本次使用期间保留</div>';
+    }
+    out.innerHTML=html;
+    out.hidden=false;
+  }
+  /* 从侧车恢复已存档的输出：按 (语言, 代码原文) 精确匹配，改过代码的块自然匹配不到。 */
+  function restoreRunOutputs(){
+    var k=runDocKey();
+    fetch('/api/run-outputs?doc='+encodeURIComponent(k.doc)+
+          '&token='+encodeURIComponent(k.token))
+      .then(function(r){return r.json();})
+      .then(function(j){
+        if(!j||!j.ok||!j.blocks||!j.blocks.length)return;
+        var map={};
+        for(var i=0;i<j.blocks.length;i++){
+          var b=j.blocks[i];
+          map[b.lang+'\u0000'+b.code]=b;
+        }
+        var wraps=document.querySelectorAll('#preview [data-runner]');
+        for(var w=0;w<wraps.length;w++){
+          var lang=wraps[w].getAttribute('data-runner');
+          var cd=wraps[w].querySelector('code');
+          var out=wraps[w].nextSibling;
+          if(!cd||!out||!out.classList||!out.classList.contains('r-out'))continue;
+          var hit=map[lang+'\u0000'+cd.textContent];
+          if(hit){
+            renderRunOut(out,{ok:!hit.error, stdout:hit.stdout, stderr:hit.stderr,
+                              error:hit.error, image:hit.imageAbs||'',
+                              runtime:hit.runtime, python:hit.python},lang);
+          }
+        }
+      })
+      .catch(function(){});
+  }
+  document.getElementById('btnResetSession').addEventListener('click',function(){
+    var k=runDocKey();
+    fetch('/api/run-reset',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(k)})
+      .then(function(r){return r.json();})
+      .then(function(j){ showToast(j&&j.ok?'代码运行会话已重置（变量已清空）':'重置失败'); })
+      .catch(function(){ showToast('重置失败'); });
+  });
   function runCodeBlock(wrap,btn,lang){
     var code=wrap.querySelector('code');
     var out=wrap.nextSibling;
@@ -3224,28 +3402,14 @@ function parseMarkdown(src, fx){
     btn.disabled=true; btn.textContent='运行中…';
     out.hidden=false;
     out.innerHTML='<div class="r-out-line">运行中…</div>';
+    var k=runDocKey();
     fetch(RUN_API[lang],{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({code:code.textContent})})
+      body:JSON.stringify({code:code.textContent, doc:k.doc, token:k.token})})
       .then(function(r){return r.json();})
       .then(function(j){
         btn.disabled=false; btn.textContent='▶ 运行';
-        var html='';
-        if(j&&j.ok){
-          if(j.stdout) html+='<pre class="r-out-txt">'+escapeHtml(j.stdout)+'</pre>';
-          if(j.image) html+='<img class="r-out-img" src="/img?path='+
-                            encodeURIComponent(j.image)+'">';
-          if(!j.stdout&&!j.image) html+='<div class="r-out-line">（执行完成，无输出）</div>';
-          /* Python 有两套运行时（随包内置 / 本机解释器），跑完标明是谁跑的，别让人猜 */
-          if(lang==='python'&&j.runtime){
-            html+='<div class="r-out-line">'+
-                  (j.runtime==='local'?'本地解释器':'随包内置')+' · '+
-                  escapeHtml(j.python||'Python')+'</div>';
-          }
-        }else{
-          html+='<pre class="r-out-err">'+escapeHtml((j&&j.error)||'执行失败')+'</pre>';
-          if(j&&j.stdout) html+='<pre class="r-out-txt">'+escapeHtml(j.stdout)+'</pre>';
-        }
-        out.innerHTML=html;
+        if(j&&j.restarted){ showToast('代码运行会话已重启，之前的变量已丢失'); }
+        renderRunOut(out,j,lang);
       })
       .catch(function(e){
         btn.disabled=false; btn.textContent='▶ 运行';
