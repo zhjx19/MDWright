@@ -7,7 +7,7 @@ MD 编辑器本地后端 + 系统托盘（纯标准库，零第三方依赖）
 - 仅在 127.0.0.1 监听，单实例（由 md_launch.pyw 负责端口占用检测）
 - 托盘用 ctypes 直接调用 Shell_NotifyIcon，无 pystray；失败则降级无托盘常驻
 - LLM 客户端（润色/注解）为纯标准库 urllib 实现，见 llm_client.py
-本文件与 markdown-editor.html 一同分发，配合内置 python/ 即可在任意 Windows 运行。
+本文件与 mdwright.html 一同分发，配合内置 python/ 即可在任意 Windows 运行。
 """
 import http.server
 import hashlib
@@ -64,8 +64,8 @@ except Exception as _e:
 
 PORT = 18766
 HERE = os.path.dirname(os.path.abspath(__file__))
-EDITOR_HTML = os.path.join(HERE, "markdown-editor.html")
-MD_SERVER_VERSION = 65  # 每次服务端路由/能力变更时 +1；md_launch 依此自愈换代
+EDITOR_HTML = os.path.join(HERE, "mdwright.html")
+MD_SERVER_VERSION = 66  # 每次服务端路由/能力变更时 +1；md_launch 依此自愈换代
 SETTINGS_PATH = os.path.join(HERE, "runtime", "settings.json")
 
 # .smd 自包含文档格式（v1.2.0）；导入失败落错误日志，相关路由返回明确错误而非静默
@@ -567,7 +567,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 ensure_ascii=False))
             return
         if u.path == "/favicon.ico":
-            ico = os.path.join(HERE, "md-editor.ico")
+            ico = os.path.join(HERE, "mdwright.ico")
             try:
                 with open(ico, "rb") as f:
                     self._send(200, f.read(), "image/x-icon",
@@ -1699,9 +1699,9 @@ def build_tray(server):
 
     hinst = kernel32.GetModuleHandleW(None)
     # 资源 ID 按 Windows 约定以 (LPWSTR)(UINT_PTR)id 形式传入
-    # 托盘图标：优先用工具自带 md-editor.ico，取不到才退回系统默认
+    # 托盘图标：优先用工具自带 mdwright.ico，取不到才退回系统默认
     hicon = None
-    _ico = os.path.join(HERE, "md-editor.ico")
+    _ico = os.path.join(HERE, "mdwright.ico")
     try:
         if os.path.exists(_ico):
             user32.LoadImageW.restype = wintypes.HANDLE
@@ -1744,7 +1744,7 @@ def build_tray(server):
                     if n > 0:
                         buf = ctypes.create_unicode_buffer(n + 1)
                         user32.GetWindowTextW(h, buf, n + 1)
-                        if ("MDEditor" in buf.value
+                        if ("MDWright" in buf.value
                                 or "Markdown 编辑器" in buf.value):
                             found.append(h)
                 except Exception:
@@ -1814,12 +1814,12 @@ def build_tray(server):
             cls.cbSize = ctypes.sizeof(cls)
             cls.lpfnWndProc = self._wndproc
             cls.hInstance = hinst
-            cls.lpszClassName = "MDViewerTrayWnd"
+            cls.lpszClassName = "MDWrightTrayWnd"
             atom = user32.RegisterClassExW(ctypes.byref(cls))
             if not atom:
                 raise ctypes.WinError(ctypes.get_last_error())
             self.hwnd = user32.CreateWindowExW(
-                0, "MDViewerTrayWnd", None, 0, 0, 0, 0, 0,
+                0, "MDWrightTrayWnd", None, 0, 0, 0, 0, 0,
                 None, None, hinst, None)
             if not self.hwnd:
                 raise ctypes.WinError(ctypes.get_last_error())
@@ -2088,7 +2088,7 @@ def _strip_export_artifacts(html):
 
 
 # R1 新语法样式（导出用固定色值：导出文档内未定义 CSS 变量；
-# 与 markdown-editor.html 主 <style> 中的同名规则一一对应，改一处必须同步改另一处）
+# 与 mdwright.html 主 <style> 中的同名规则一一对应，改一处必须同步改另一处）
 SYNTAX_CSS = (
     ".markdown-body mark{background:#f5d76e;color:inherit;padding:.05em .25em;border-radius:3px;}"
     ".markdown-body sup,.markdown-body sub{font-size:.72em;line-height:0;}"
@@ -2436,7 +2436,7 @@ _LAST_PING = [time.time()]          # 最近一次页面心跳时间
 _START_TIME = [time.time()]         # 服务启动时间（用于宽限期）
 _BYE_AT = [0.0]                     # 所有会话均已卸载的时间（0=无待退出）
 _LIVE_SESSIONS = {}                 # 活跃页面会话: token -> 最后心跳时间
-                                    # （token 由前端每标签生成，见 markdown-editor.html
+                                    # （token 由前端每标签生成，见 mdwright.html
                                     #  sessionToken；多窗口/多标签共享本服务）
 
 
@@ -2790,7 +2790,7 @@ def _idle_watchdog(grace=None, check=0.5):
     """只在【所有窗口/标签都确实关闭】时退出服务。
 
     多窗口/多标签共享本后端，会话以 token 区分（前端每标签生成，见
-    markdown-editor.html sessionToken；/api/ping、/api/bye 带 ?tok=）：
+    mdwright.html sessionToken；/api/ping、/api/bye 带 ?tok=）：
     - 主判定：全部会话都收到卸载通知(/api/bye，pagehide→sendBeacon)后
       进入宽限倒计时；宽限期内出现任何新会话心跳（刷新/重开）即撤销。
     - 保活：只要还有任一会话存活（_LIVE_SESSIONS 非空），服务绝不退出

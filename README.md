@@ -1,159 +1,186 @@
-# MDEditor — 本地 Markdown 编辑器
+# MDWright
 
-由 AI 辅助生成的单机版 Markdown 编辑器：左侧写作、右侧实时渲染，支持 KaTeX 数学公式、**图表渲染**（Mermaid / Graphviz / WaveDrom / Vega-Lite，全部本地）、本地/网络图片、排版定制（字体/字号/对齐/缩进/表格样式）、**分页导出**（纸张、页边距、页码、自动目录，Ctrl+P 直接出 PDF）、**选区批注**与 **AI 润色改写**（对接本地 LM Studio / Ollama）。除 AI 推理需本地模型服务外，全部功能**离线可用**。
+**Windows 上的单机 Markdown 写作台。** 左侧写、右侧即时渲染；排版、分页、导出、代码块运行全部在本地完成，断网照常用。
 
-## 第一次使用（只需一步）
+![写作与渲染](docs/screenshots/writing.png)
 
-双击 **`install.cmd`** ——它会：
+---
 
-1. 注册右键菜单：任意 `.md` 文件右键 →「Open with Markdown Editor」
-2. 关联 `.md` 双击打开（卸载时可还原）
-3. 在**桌面和开始菜单**创建「Markdown Editor」快捷方式（指向 `MarkdownEditor.exe`，带图标）
+## 它解决什么问题
 
-完成后的日常使用：**双击 .md 文件**、**右键 .md**、或**双击桌面快捷方式**，任选。
+用 Word 写技术文档，公式、代码、图表的排版会反复返工；用在线编辑器，稿子不在自己机器上，断网就干不了活。MDWright 把两件事分开：**写作体验按 Markdown 的来，输出质量按排版的来**——`.md` 是唯一事实来源，PDF / Word 是从它渲染出来的成品。
 
-> 不想装右键/关联？只双击 **`desktop-shortcut.cmd`**，仅在桌面创建快捷方式。
-> 打开编辑器后，点工具栏「**文件**」可查看内置文档与最近打开的文件并随时切换。
+- **零安装依赖**：程序自带便携 Python 运行时，双击即用，不需要另装解释器、不需要管理员权限。
+- **零联网依赖**：KaTeX、Paged.js、Mermaid、Graphviz、WaveDrom、Vega-Lite 全部随包内置，数学公式与图表离线渲染。
+- **零数据上传**：文档读写走本地后端（`127.0.0.1`），AI 润色默认接本地模型（LM Studio / Ollama）。
 
-## 正确的打开方式（重要）
+## 功能
 
-本工具运行于本地后台服务之上。**不要直接双击 `markdown-editor.html`**（file:// 方式没有后端，页面会自动引导你到正确入口）。有效入口只有三种：右键 .md、双击 .md、桌面快捷方式或 `MarkdownEditor.exe`。自包含文档 `.smd` 同理：右键 .smd、双击 .smd，或在编辑器里用「打开」按钮选择。
-
-## 文件清单
-
-### 核心必需（勿删）
-
-| 文件/目录 | 说明 |
+| 能力 | 说明 |
 |---|---|
-| `markdown-editor.html` | 编辑器界面与渲染（由后端服务提供，勿直接双击） |
-| `md_server.py` | 本地后端：页面服务、文件读写、图片代理、分页导出组装、批注存取、LLM 路由 |
-| `md_tools.py` | 外部工具探测：pandoc / Chromium 浏览器 / Rscript / quarto（缺失时导出按钮置灰并给安装指引） |
-| `md_pandoc.py` | Word 导出：方言→pandoc 预处理 + pandoc 调用（公式落为 Word 原生 OMML） |
-| `_cdp.py` | 最小 CDP 客户端（纯标准库）：PDF 直出时等分页完成再 `Page.printToPDF` |
-| `llm_client.py` | LLM 客户端：AI 润色 / 解释对接 LM Studio、Ollama、DeepSeek、OpenAI 兼容（纯 Python 标准库，零额外依赖） |
-| `md_launch.pyw` | 启动器：拉起/复用后端并打开浏览器；带版本自愈 |
-| `python/` | 便携 Python 3.11.9 运行时（无需安装 Python） |
-| `katex/` | KaTeX 0.16.21 公式渲染（本地部署，MIT） |
-| `pagedjs/` | Paged.js 0.4.3 分页引擎（本地部署，MIT） |
-| `mermaid/` | Mermaid 10.9.3 图表引擎（流程/时序/状态/甘特等，本地部署，MIT） |
-| `viz/` | viz-js 3.2.0（Graphviz 9.0.0 内嵌 WASM，`dot` 围栏渲染，MIT / EPL-1.0） |
-| `wavedrom/` | WaveDrom 3.7.0 时序波形引擎（本地部署，MIT） |
-| `vega/` | Vega 6.4.0 + Vega-Lite 6.5.0 + Vega-Embed 7.3.0 数据图表（本地部署，BSD-3） |
-| `highlight/` | highlight.js 11.11.1 代码语法高亮（36 语言含 R，本地部署，BSD-3-Clause） |
+| 实时渲染 | 分屏 / 仅编辑 / 仅预览 / 即时渲染（点段即改，块内直接写源码）四种模式显式切换 |
+| 数学公式 | KaTeX 离线渲染，行内 `$…$` 与块级 `$$…$$` |
+| 图表 | Mermaid（流程/时序/状态/类）、Graphviz `dot`、WaveDrom 时序图、Vega-Lite 数据图 |
+| 排版 | 逐元素字体/字号、段落缩进、对齐、表格样式、页面纸张与页边距，全部可视化配置 |
+| 分页导出 | Paged.js 组版，纸张、页边距、页码、自动目录、目录独占一页；「导出 → 打印（分页 HTML）」生成成品并交给系统浏览器，浏览器里打印或存为 PDF |
+| Word 导出 | 经 pandoc 转 `.docx`，保留标题层级与公式 |
+| PDF 直出 | 调本机 Chromium 内核浏览器（Edge / Chrome）无头打印，边距与页码按当前设置 |
+| 批注 | 选区批注，随文档保存，可逐条跳转 |
+| AI 润色 | 接本地 LM Studio / Ollama，也支持 OpenAI 兼容端点与 DeepSeek |
+| 可执行代码块 | ```` ```r ```` 与 ```` ```python ```` 代码块带「▶ 运行」，输出与图形显示在块下方 |
+| 自包含文档 | `.smd` 把正文、图片、批注打包成单个文件，跨机器取用要素齐全 |
+| 多开 | 多个窗口/标签共享一个后端进程，文件各自独立 |
 
-### 安装与维护
+![分页导出](docs/screenshots/paged-export.png)
 
-| 文件 | 说明 |
-|---|---|
-| `install.cmd` | 一键安装：右键菜单 + .md 关联 + 桌面/开始菜单快捷方式 |
-| `uninstall.cmd` | 卸载：还原右键与关联（删除手动创建的快捷方式需自行删除） |
-| `desktop-shortcut.cmd` | 仅创建桌面快捷方式（不装右键/关联） |
-| `md_stop.cmd` | 停止后台服务 |
-| `MarkdownEditor.exe` | 编辑器启动器（快捷方式的目标，双击即可打开编辑器） |
-| `MarkdownEditor.cs` | 上一项的 C# 源码 |
-| `md-editor.ico` | 应用图标 |
-| `_mklnk.ps1` | 快捷方式生成脚本（被 install / desktop-shortcut 调用） |
+## 安装
 
-### 生成物与文档
+### 方式一：安装包（推荐）
 
-| 文件 | 说明 |
-|---|---|
-| `document.paged.html` | 「分页」导出的产物示例（可删，随时可重新导出） |
-| `LICENSES/` | 第三方组件许可证全文（分发时请一并保留） |
+到 [Releases](../../releases) 下载 `MDWright-Setup-vX.Y.Z.exe`，双击安装。
 
-### 可删除（开发产物，不影响使用）
+- 默认装到 `%LOCALAPPDATA%\MDWright`，**不需要管理员权限**，可在向导里改路径。
+- 装完会自动注册：`.md` / `.smd` 右键菜单、双击关联、桌面与开始菜单快捷方式、「设置 → 应用」卸载条目。
+- 卸载用开始菜单里的「Uninstall MDWright」，或「设置 → 应用 → MDWright」。
 
-`gen_icon.py`（图标生成源码）。删除任何文件前建议先整体备份。
+### 方式二：绿色版 / 从仓库直接运行
 
-## 功能速览
+把整个仓库目录拷到任意位置（路径可含中文，但**不要放在需要管理员权限的目录**），然后：
 
-- **语法扩展**：脚注（文档级，编号按引用首次出现顺序）、Callout 提示块（NOTE/TIP/IMPORTANT/WARNING/CAUTION 五型）、行内高亮 `==…==` 与上下标、定义列表、YAML front matter（元数据不进正文，`title` 用作导出标题）
-- **代码高亮**：highlight.js 本地部署（36 种语言，含 **R**），按围栏语言着色、主题跟随明暗，代码块悬停可一键复制
-- **R 代码块**：` ```r ` 围栏点「▶ 运行」在本机执行，stdout 与 ggplot2 图形就地显示（需本机 R，路径可在设置里指定）
-- **公式**：行内 `$E=mc^2$` 与块级 `$$...$$`（KaTeX 本地渲染）
-- **列表方言**：`+` 实心圆点、`-` 空心圆圈（样式跟标记符走，缩进只管层级）；有序列表编号接力；`*` 不作列表标记。本工具为 Markdown 增强方言，特殊写法详见使用指南「语法速查与本工具的特殊写法」
-- **图表**：` ```mermaid `（流程/时序/状态/甘特等）、` ```dot `（Graphviz 依赖拓扑）、` ```wavedrom `（信号波形）、` ```vega `（数据图表）围栏本地渲染；预览滚动跟随可用工具栏开关随时启停
-- **图片**：网络 URL、本地盘符路径、相对路径（相对当前 .md 所在目录）三种写法；jpg / png / webp / gif / svg
-- **排版**：「排版」面板按元素设置字体 / 字号 / 对齐；首行缩进与悬挂缩进（字符数可调、随字号换算）；三线表与表头/首列底色
-- **保存**：编辑自动存缓存；可设自动落盘间隔（0~60 分钟）；「保存」立即写回原文件
-- **导出**：`.md` / `.html`（带排版与公式）/ **分页 HTML（Ctrl+P 存 PDF）** / **Word `.docx`（公式为 Word 原生公式，需本机 pandoc）** / **PDF 直出文件（需 Edge/Chrome，不开打印对话框）**
-- **批注**：选中文字加备注，正文以虚线标注呈现；标注**跟文本内容走**，编辑后自动同步；批注随文档保存（详见下节）
-- **AI 润色**：选中文字一键润色改写，预览对照、可微调、确认后才替换（本地 LM Studio / Ollama，或云端 DeepSeek / OpenAI 兼容 API，详见下节）
-- **自包含文档 `.smd`**：正文与图片打包为单文件，便于同步/发送/归档（详见下节）
-
-## 自包含文档格式 `.smd`（v1.2.0）
-
-### 是什么
-
-`.smd` 把 Markdown 正文和它的图片资源（普通文档里是 `<文档名>.assets/` 目录）打包成**一个文件**，解决 `.md + .assets/` 成对目录在网盘同步、邮件发送、移动归档时容易散的问题。右键 .smd 或双击 .smd 即可像普通 .md 一样打开编辑；粘贴图片自动进包；保存自动写回包内。
-
-### 内部结构
-
-`.smd` 本质是一个 **ZIP 容器**：
-
-```
-doc.md       正文（UTF-8）
-assets/…     图片资源（对应普通文档的 <文档名>.assets/）
-meta.json    格式版本标记
+```bat
+python\pythonw.exe md_launch.pyw
 ```
 
-### ZIP 逃逸（数据永远拿得回来）
+或者双击 `MDWright.exe`（它只是转发参数给内置 pythonw 的启动器）。
 
-`.smd` 不锁定数据：**把后缀改成 `.zip` 即可用任何解压工具打开**，里面的 `doc.md` 和 `assets/` 就是完整原文。反向也成立——把一个目录按此结构压成 zip、改后缀为 `.smd`，即可被本工具打开。不存在私有二进制格式，不依赖本工具存活。
+想让右键菜单、快捷方式、文件关联一并生效，再执行一次：
 
-### 保存机制与安全
+```bat
+install.cmd
+```
 
-- 保存为**增量追加**：只写入变化的正文/图片，不重压整包；图片较多时保存仍是瞬时完成。
-- 采用两阶段提交（副本上追加 → 原子替换）：保存途中断电/崩溃，**原文件完好无损**，最多丢最后一次未保存的编辑。
-- 包内死空间超过 30% 且文件大于 5MB 时自动整理（compact），体积回落、已删除图片彻底清除。
-- 解包前逐条校验压缩包内路径，拒绝任何形式的路径穿越。
+> **不要直接双击 `mdwright.html`**。这个文件由本地后端服务提供，`file://` 方式打开没有后端，页面会提示你走正确入口。
 
-### 边界（如实说明）
+## 外部工具路径：pandoc / 浏览器 / Rscript
 
-- 其他编辑器不识别 `.smd`（用上面的 ZIP 逃逸即可互通）。
-- 网络图片（http/https 链接）不打包，保持 URL 原样；需要把网络图固化进包时，先在浏览器里复制图片再粘贴进文档（会转为本地资源）。
-- 浏览器兜底入口（`<input type=file>`，仅拿得到文件名的场景）不支持 `.smd`，会明确提示而非读成乱码；通过右键菜单 / 双击关联 / 「打开」按钮（原生文件框）打开均正常。
+程序本身不需要任何外部工具就能写作和预览。三项功能依赖外部程序，**都支持手工指定路径**——装在不常见的位置、装了多个版本、或不想动 PATH，都填一下就行。
 
-### 合规
+### 在哪里设置
 
-ZIP 格式规范由 PKWARE 公开且免费使用（无专利约束，Deflate 算法亦无专利）；实现使用 Python 标准库 `zipfile`（PSF License，随 Python 分发，已在 `LICENSES/` 的 Python-PSF 条目覆盖）。本工具的 `.smd` 不使用 ZIP 加密特性，无额外许可义务；"自包含文档"为功能描述用语。**用 ZIP 做容器不构成侵权。**
+工具栏 **「设置」→「外部工具」** 页签。四个输入框，右边实时显示探测到的版本：
 
-## 批注与 AI 润色（v1.6.0）
+| 输入框 | 对应功能 | 典型路径 |
+|---|---|---|
+| **pandoc（Word 导出）** | 导出 `.docx` | `C:\Program Files\Pandoc\pandoc.exe` |
+| **浏览器（PDF 直出）** | 用 Chromium 内核无头打印 PDF | `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe` |
+| **Rscript（R 代码块）** | 运行 ```` ```r ```` 代码块、出图 | `C:\Program Files\R\R-4.4.1\bin\x64\Rscript.exe` |
+| **quarto（暂时不用）** | 预留位，本版没有功能消费 | — |
 
-### 批注：标注跟文本走，不跟位置走
+填的是**可执行文件的完整路径，带 `.exe`**，不要填目录。填完点「保存路径」。
 
-选中正文任意片段，浮动工具条点「**备注**」即可加批注，被标注的文字以**虚线 + 淡底色**呈现（与选区高亮区分），状态栏实时显示批注数。点正文中的虚线段可随时查看、编辑、删除，或让 **AI 解释**该片段。
+### 留空时怎么找
 
-标注的锚点是**文本内容本身**而非位置：后续编辑正文时，标注段会跟着文字移动——前后插入、增删段落都不丢；标注文字被删光时该批注自动失效。重开文档按内容快照重新锚定。
+留空 = 自动探测，顺序如下：
 
-批注数据随文档持久化：
+1. `runtime/settings.json` 里 `tools.*` 填的路径（即上表）；
+2. `PATH` 环境变量里的同名命令；
+3. 常见安装目录：
+   - pandoc：`%ProgramFiles%\Pandoc`、`%LOCALAPPDATA%\Pandoc`、`%ProgramData%\chocolatey\bin`，以及 **Quarto / RStudio 自带的 pandoc**（没单独装 pandoc 时最常命中）；
+   - 浏览器：`%ProgramFiles(x86)%` 与 `%ProgramFiles%` 下的 Edge、Chrome；
+   - R：注册表 `HKLM\SOFTWARE\R-core\R\<版本>\InstallPath` 登记的目录，再扫 `%ProgramFiles%\R\<最新版本>`。
+4. 都找不到 → 对应按钮置灰，鼠标悬停给出缺失原因。**不会导出半成品**。
 
-- 普通文档：`<文档名>.assets/annotations.json`（与图片资源同目录）
-- `.smd` 文档：包内 `assets/annotations.json`，随包同步分发，整理（compact）时保留
+R 走注册表这一条是有意的：R 常常装在 `D:\` 这类非系统盘，只扫 `C:\Program Files` 永远扫不到。
 
-### AI 润色与解释
+### 填错了会怎样
 
-- **润色**：选中片段，浮动工具条点「**润色**」，AI 改写结果先弹**预览对照**（原文在上），可先手动微调，点「替换」才写回正文——不会未经确认直接改动你的文字。
-- **AI 解释**：批注弹窗中的一键按钮，请 AI 解读当前标注片段，结果直接填入备注。
+**自动回落到自动探测**，不会把功能永久锁死——一次笔误不该让导出按钮消失。填的路径不存在时，输入框右侧不会显示版本号，这时点「重新检测」可确认实际生效的是哪个程序。
 
-### LLM 配置（工具栏「AI」按钮）
+### 直接改配置文件
 
-润色与解释依赖**本地 LLM 服务**，在工具栏「**AI**」设置面板中配置：
+设置面板写的就是这个文件，也可以用编辑器直接改：
 
-| 项 | 说明 |
+```
+<安装目录>\runtime\settings.json
+```
+
+```json
+{
+  "tools": {
+    "pandoc_path": "",
+    "rscript_path": "",
+    "quarto_path": "",
+    "browser_path": ""
+  }
+}
+```
+
+- 全部留空字符串 = 全部走自动探测；
+- 只认识这四个键，其余键在读入时丢弃；
+- 非字符串值会被归成空串，不会让程序崩；
+- 改完保存，回到设置面板点「重新检测」（或重启程序）生效。
+
+> 路径里的反斜杠要写成 `\\`（JSON 转义），例如 `"rscript_path": "D:\\R-4.6.1\\bin\\x64\\Rscript.exe"`。
+
+### 关于 Python
+
+**Python 路径不可配置，也不打算开放。** ```` ```python ```` 代码块固定使用随包内置的便携运行时（3.11.9）：
+
+- 只有标准库，**没有 pip**，装不了第三方包；
+- 只回显 `stdout` / `stderr`，不采集图形；
+- 需要画图、需要 `tidyverse` 之类，用 ```` ```r ```` 代码块——R 的图和输出会显示在代码块下方。
+
+这样设计是为了可复现：同一份 `.md` 换台机器打开，代码块的行为一致，不会因为谁的 `PATH` 里恰好有个装了半套包的 Python 而变样。
+
+## 常用操作
+
+| 操作 | 快捷键 / 入口 |
 |---|---|
-| 后端 | **LM Studio**（默认，`http://localhost:1234`）或 **Ollama**（`http://localhost:11434`） |
-| 模型 | 下拉自动拉取后端已加载的模型（也可手填） |
-| 参数 | 超时 / 最大生成长度 / 温度 |
-| 测试连接 | 一键验证后端与模型是否就绪 |
+| 新建 | `Ctrl+N` |
+| 保存 | `Ctrl+S`（无当前文件时弹另存为） |
+| 带页码目录的成品 | 「导出 → 打印（分页 HTML）」，在打开的浏览器里打印或存 PDF |
+| 内置文档 | 「文件」→ 内置文档 → 使用指南 |
+| 视图切换 | 工具栏「视图」菜单（分屏 / 仅编辑 / 仅预览 / 即时渲染） |
+| 退出后台 | 托盘图标右键，或 `md_stop.cmd` |
 
-本地推理需先启动 LM Studio / Ollama 并加载模型；AI 请求只发往设置中填写的后端地址（默认本机），不经过任何第三方。未配置或服务未启动时，批注等其余功能不受影响，仅润色与 AI 解释不可用。
+## 截图
 
-## 卸载
+![图表引擎](docs/screenshots/diagrams.png)
 
-双击 `uninstall.cmd` 还原右键与 .md 关联；`pythonw.exe` 进程可用 `md_stop.cmd` 或任务管理器结束。
+## 目录
+
+```
+md_launch.pyw          启动器：起后端、探活端口、拉起窗口
+md_server.py           本地后端：文件读写、导出组版、批注、AI 路由、代码块执行
+mdwright.html          编辑器界面（由后端提供，勿直接双击）
+md_tools.py            外部工具探测（pandoc / 浏览器 / Rscript / quarto）
+md_pandoc.py           Word 导出（pandoc 调用与预处理）
+_smd.py                .smd 自包含文档格式
+_splash.py             启动画面
+md_app.pyw             WebView2 内嵌窗口模式
+python/                内置便携 Python 运行时
+docs/                  使用指南、版权与开源组件声明
+katex/ pagedjs/ mermaid/ viz/ wavedrom/ vega/ highlight/   离线前端依赖
+installer/             安装包构建脚本（仅用系统自带 csc.exe）
+```
+
+## 自己构建安装包
+
+只需要 Windows 自带的 .NET Framework 编译器（`csc.exe`），没有第三方构建依赖：
+
+```bat
+python\python.exe installer\_build_installer.py
+```
+
+产物在 `_setup_out\MDWright-Setup-vX.Y.Z.exe`。版本号取自 `CHANGELOG.md` 的第一条 `## vX.Y.Z`。
 
 ## 许可
 
-- 本工具由 **AI 辅助生成**（见编辑器内置文档「版权与开源组件声明」）。编辑器自身代码以 **GNU AGPL-3.0-or-later** 发布，版权归 **wUwproject** 所有，全文见 **`LICENSE`**：任何人可使用、修改、再分发，但衍生作品（包括仅以网络/本地服务形式对外提供的修改版）必须同样以 AGPL-3.0-or-later 开源。
-- 随附的第三方组件（KaTeX、Paged.js、Python）按其原始许可证分发，全文见 **`LICENSES/`**。分发本工具时请一并保留该目录。
+本项目以 **GNU Affero General Public License v3.0 or later** 发布，© 2026 wUwproject，全文见 [LICENSE](LICENSE)。
+
+- 可以自由使用、学习、修改、再分发，修改后的版本须同样以 AGPL-3.0-or-later 开源。
+- 以网络服务方式向他人提供本程序或其修改版时，须按 AGPL 第 13 条向使用者提供对应源码。
+
+随包分发的第三方组件（KaTeX、Paged.js、Mermaid、viz-js、WaveDrom、Vega、highlight.js、Python、Pillow）各自的许可证与全文见 [docs/版权与开源组件声明.md](docs/版权与开源组件声明.md) 与 `LICENSES/`。
+
+变更历史见 [CHANGELOG.md](CHANGELOG.md)。

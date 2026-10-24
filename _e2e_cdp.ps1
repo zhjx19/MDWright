@@ -1,4 +1,4 @@
-﻿# MDEditor contenteditable + annotations + LLM e2e (CDP over PowerShell WebSocket) - v2
+﻿# MDWright contenteditable + annotations + LLM e2e (CDP over PowerShell WebSocket) - v2
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 

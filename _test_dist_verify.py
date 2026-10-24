@@ -27,7 +27,7 @@ def check(name, ok, extra=""):
 shutil.rmtree(DIST, ignore_errors=True)
 os.makedirs(DIST)
 FILES = ["md_launch.pyw", "_md_run.py", "md_server.py",
-         "markdown-editor.html", "md-editor.ico", "llm_client.py",
+         "mdwright.html", "mdwright.ico", "llm_client.py",
          "web_search.py", "rag_client.py", "_smd.py", "md_assets.py",
          "_splash.py", "_pickdir_modern.py", "_pickfile.py", "md_app.pyw",
          "md_tools.py", "md_pandoc.py", "_cdp.py", "_savefile.py",
@@ -86,7 +86,7 @@ check("version == %d with sessions" % EXPECT_VER, ver and ver.get("version") == 
 
 # --- 3) 页面与静态资源 ---
 body = get("/").decode("utf-8")
-check("page served", "MDEditor" in body and
+check("page served", "MDWright" in body and
       'defer src="/static/katex/katex.min.js"' in body,
       "%d bytes" % len(body))
 check("katex.min.js", len(get("/static/katex/katex.min.js")) > 200000)
@@ -110,7 +110,7 @@ check("favicon", len(get("/favicon.ico")) > 10000)
 
 # --- 4) 内置文档（默认文章 + 版权声明） ---
 d1 = json.loads(get("/doc?file=" + urllib.parse.quote(
-    "MDEditor 使用指南.md")).decode("utf-8"))
+    "MDWright 使用指南.md")).decode("utf-8"))
 check("default doc (使用指南)", d1.get("ok") and len(d1.get("content", "")) > 500,
       "%d chars" % len(d1.get("content", "")))
 d2 = json.loads(get("/doc?file=" + urllib.parse.quote(

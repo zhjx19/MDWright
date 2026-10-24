@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-# Generate uninstall-md.ico: source md-editor.ico pixel art with a red X
+# Generate uninstall-mdwright.ico: source mdwright.ico pixel art with a red X
 # badge overlaid at the bottom-right corner. Pure stdlib (no PIL):
 # reads 32bpp BMP frames from the source .ico, composes pixel-style X,
 # writes new .ico with frames at source sizes (nearest-neighbour scale).
@@ -233,8 +233,8 @@ def build_ico(frames):
 
 
 def main():
-    src = sys.argv[1] if len(sys.argv) > 1 else "md-editor.ico"
-    dst = sys.argv[2] if len(sys.argv) > 2 else "uninstall-md.ico"
+    src = sys.argv[1] if len(sys.argv) > 1 else "mdwright.ico"
+    dst = sys.argv[2] if len(sys.argv) > 2 else "uninstall-mdwright.ico"
     frames = read_ico(src)
     print("源帧:", [(f["w"], f["h"], f["bpp"]) for f in frames])
     out_frames = []

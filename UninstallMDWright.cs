@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// MDEditor uninstaller GUI. Compiled at install time by the system csc.exe
+// MDWright uninstaller GUI. Compiled at install time by the system csc.exe
 // (Windows built-in .NET Framework compiler). No third-party tools.
 //
 // Safety model (root-cause of the 2026-10-19 workspace-loss incident):
@@ -8,7 +8,7 @@
 //   - File deletion happens ONLY here, opt-in via checkbox, with a second
 //     explicit confirmation, and only after this GUI process exits.
 //
-// Compiled with: csc /target:winexe /win32icon:uninstall-md.ico UninstallMDEditor.cs
+// Compiled with: csc /target:winexe /win32icon:uninstall-mdwright.ico UninstallMDWright.cs
 using System;
 using System.Diagnostics;
 using System.Drawing;
@@ -17,7 +17,7 @@ using System.Text;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
-namespace MDEditorUninstall
+namespace MDWrightUninstall
 {
     static class Entry
     {
@@ -42,7 +42,7 @@ namespace MDEditorUninstall
             string dir = AppDomain.CurrentDomain.BaseDirectory;
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
 
-            Text = "卸载 MDEditor";
+            Text = "卸载 MDWright";
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterScreen;
             MaximizeBox = false;
@@ -51,7 +51,7 @@ namespace MDEditorUninstall
 
             var lblTitle = new Label
             {
-                Text = "卸载 MDEditor",
+                Text = "卸载 MDWright",
                 Font = new Font(FontFamily.GenericSansSerif, 14, FontStyle.Bold),
                 Location = new Point(20, 15),
                 Size = new Size(480, 30)
@@ -103,7 +103,7 @@ namespace MDEditorUninstall
 
         void Go(string dir)
         {
-            if (MessageBox.Show("开始卸载 MDEditor？（程序文件默认保留）",
+            if (MessageBox.Show("开始卸载 MDWright？（程序文件默认保留）",
                 "确认", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK)
                 return;
             _btnGo.Enabled = false;

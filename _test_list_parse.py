@@ -5,14 +5,14 @@
 - 有序/无序混排软换行不吸进同一列表（CommonMark：不同 marker 开新列表）
 - 有序列表保留首项起始序号（<ol start=N>）
 - 回归：纯列表、嵌套、task、空行分隔、反向混排
-从 markdown-editor.html 提取 /*PARSER_START*/../*PARSER_END*/ 段跑 node。"""
+从 mdwright.html 提取 /*PARSER_START*/../*PARSER_END*/ 段跑 node。"""
 import os
 import re
 import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HTML = os.path.join(HERE, "markdown-editor.html")
+HTML = os.path.join(HERE, "mdwright.html")
 JS = os.path.join(HERE, "_tmp_list_parse.js")
 RESULTS = []
 

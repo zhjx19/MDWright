@@ -6,7 +6,7 @@
 - 路径改写保留：_rewrite_assets_ref 只动括号内路径，){30} 后缀原样保留
 - 分页切片：切片决策基于调整后宽度（eff_w_mm = 版心 × pct）；条带透传同一宽度样式；
   调整后不超高则整图原子不切
-前端部分从 markdown-editor.html 提取 /*PARSER_START*/../*PARSER_END*/ 段跑 node。"""
+前端部分从 mdwright.html 提取 /*PARSER_START*/../*PARSER_END*/ 段跑 node。"""
 import os
 import re
 import subprocess
@@ -21,7 +21,7 @@ except Exception:
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HTML = os.path.join(HERE, "markdown-editor.html")
+HTML = os.path.join(HERE, "mdwright.html")
 RESULTS = []
 
 

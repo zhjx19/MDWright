@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""splitRow/parseTable 行为回归：从 markdown-editor.html 抽取真实函数源码执行（非副本）。"""
+"""splitRow/parseTable 行为回归：从 mdwright.html 抽取真实函数源码执行（非副本）。"""
 import io, re, subprocess, sys, os
 
-H = io.open('markdown-editor.html', encoding='utf-8').read()
+H = io.open('mdwright.html', encoding='utf-8').read()
 
 def grab(name):
     m = re.search(r'function %s\([\s\S]*?\n\}' % name, H)

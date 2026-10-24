@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 wUwproject. Licensed under GNU AGPL v3 (or later).
-"""MDEditor 内嵌窗口应用
+"""MDWright 内嵌窗口应用
 - pywebview 开原生窗口指向本地服务（无浏览器 UI）
 - 自带 WebView2 内核优先（runtime/WebView2），不存在则用系统内核
 - 暴露 py API 供页面直接调用（原生目录/保存对话框选路径、常用目录、窗口控制；
@@ -264,7 +264,7 @@ def main():
     import webview
     api = Api()
     w, h = load_window_size()
-    win = webview.create_window("MDEditor", "http://127.0.0.1:%d/%s" % (PORT, q),
+    win = webview.create_window("MDWright", "http://127.0.0.1:%d/%s" % (PORT, q),
                                 width=w, height=h, min_size=(900, 600),
                                 js_api=api)
     api.window = win
@@ -277,7 +277,7 @@ def main():
         log("disable_gpu settings -> software rendering")
 
 
-    webview.start(icon=os.path.join(HERE, "md-editor.ico"), args=start_args)
+    webview.start(icon=os.path.join(HERE, "mdwright.ico"), args=start_args)
     log("window closed")
     return 0
 

@@ -7,7 +7,7 @@
 - 普通引用块（无 [!TYPE]）行为不变
 - 标题与正文都走行内解析（可含强调/行内代码）
 - 代码块内的 > [!NOTE] 不生效
-前端部分从 markdown-editor.html 提取 /*PARSER_START*/../*PARSER_END*/ 段跑 node。
+前端部分从 mdwright.html 提取 /*PARSER_START*/../*PARSER_END*/ 段跑 node。
 """
 import os
 import re
@@ -22,7 +22,7 @@ except Exception:
     pass
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HTML = os.path.join(HERE, "markdown-editor.html")
+HTML = os.path.join(HERE, "mdwright.html")
 JS = os.path.join(HERE, "_tmp_callout.js")
 RESULTS = []
 

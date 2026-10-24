@@ -387,11 +387,11 @@
     #selTools button:disabled:hover{background:transparent;color:#d7dce6;}
     .sv-mini:disabled:hover{background:#262c38;color:#aab2c4;}
   </style>
-  <meta name="generator" content="MDEditor - AI-assisted (generated with an AI coding agent)">
+  <meta name="generator" content="MDWright - AI-assisted (generated with an AI coding agent)">
 </head>
 <body class="light">
 <header id="toolbar">
-  <div class="tb-group brand" title="本工具由 AI 辅助生成 (AI-assisted)">MDEditor</div>
+  <div class="tb-group brand" title="本工具由 AI 辅助生成 (AI-assisted)">MDWright</div>
   <nav id="menuBar">
     <div class="menu">
       <button class="tb-btn menu-label" data-menu="file" aria-haspopup="true" aria-expanded="false">文件</button>
@@ -1127,8 +1127,8 @@ function parseMarkdown(src, fx){
         +'<h2>请使用正确方式打开</h2>'
         +'<p>本页面被直接双击打开（file://），此方式<b>没有后端服务</b>，公式、图片、保存、导出均不可用。</p>'
         +'<p>正确打开方式（任选其一）：</p>'
-        +'<ol><li>右键任意 .md 文件 →「Open with Markdown Editor」</li>'
-        +'<li>双击工具目录中的 <b>MarkdownEditor.exe</b></li>'
+        +'<ol><li>右键任意 .md 文件 →「Open with MDWright」</li>'
+        +'<li>双击工具目录中的 <b>MDWright.exe</b></li>'
         +'<li>双击 .md 文件（已关联本编辑器）</li></ol>'
         +'<p>若点下方按钮无反应，说明后端服务未运行——先做上面第 2 步。</p>'
         +'<p><button onclick="location.href=\'http://127.0.0.1:18766/\'" style="padding:8px 20px;font-size:14px;cursor:pointer;">尝试连接编辑器服务</button></p>'
@@ -1150,7 +1150,7 @@ function parseMarkdown(src, fx){
   var SIZE_KEY='md-editor-base-size';
   var VIEW_KEY='md-editor-view';
   var FOLLOW_KEY='md-editor-follow';
-  var BUILTIN_DOCS=[{name:'使用指南',file:'MDEditor 使用指南.md'},
+  var BUILTIN_DOCS=[{name:'使用指南',file:'MDWright 使用指南.md'},
                     {name:'版权与开源组件声明',file:'版权与开源组件声明.md'}];
 
   /* ── contenteditable 纯文本内核 ─────────────────────────────
@@ -2087,7 +2087,7 @@ function parseMarkdown(src, fx){
     var f=fileInput.files[0];if(!f)return;
     if(/\.smd$/i.test(f.name)){
       /* 浏览器兜底拿不到完整路径也无法解包 ZIP：拒绝静默读成乱码 */
-      showToast('.smd 是自包含格式，请通过右键菜单/文件关联（MarkdownEditor.exe）打开，浏览器兜底不支持。');
+      showToast('.smd 是自包含格式，请通过右键菜单/文件关联（MDWright.exe）打开，浏览器兜底不支持。');
       fileInput.value='';
       return;
     }
@@ -3256,7 +3256,7 @@ function parseMarkdown(src, fx){
   function updateFileIndicator(p){
     var name=p?String(p).replace(/^.*[\\/]/,''):'默认文档';
     document.getElementById('statFile').textContent=name;
-    document.title=(name==='默认文档')?'MDEditor':'MDEditor - '+name;
+    document.title=(name==='默认文档')?'MDWright':'MDWright - '+name;
   }
   function loadFile(p){
     currentBuiltin=-1;

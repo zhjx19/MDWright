@@ -17,7 +17,7 @@ import re
 import subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HTML = os.path.join(HERE, "markdown-editor.html")
+HTML = os.path.join(HERE, "mdwright.html")
 
 
 def extract_fn(src, name):

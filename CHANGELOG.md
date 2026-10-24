@@ -1,4 +1,4 @@
-# MarkdownEditor 更新日志
+# MDWright 更新日志
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。  
 版本号遵循语义版本控制。
@@ -8,6 +8,24 @@
 
 文风：每段只写**现象、根因、修法、验证**四件事。不出现第一／二人称叙事，不写与代码行为  
 无关的产品定位论证，不用口语化措辞。技术结论直接陈述，不带情绪与元评价。
+
+---
+
+## v3.0.0（2026-10-24）
+
+**本次改动：项目更名 MDWright，外部工具路径可手工指定，清掉发布前的遗留文件**
+
+**变更**
+
+- **更名 MDEditor → MDWright**：程序名、桌面/开始菜单快捷方式、安装目录（`%LOCALAPPDATA%\MDWright`）、卸载条目、文件关联 ProgID（`MDWright.md` / `MDWright.smd`）、窗口类名（`MDWrightTrayWnd` / `MDWrightSplash2`）、启动器（`MDWright.exe`）、主界面（`mdwright.html`）、安装包（`MDWright-Setup-vX.Y.Z.exe`）与两份文档文件名统一。旧版与本版可并存；**不做自动迁移**——旧安装目录、旧 ProgID（`MDViewer.md`）需先用旧版卸载脚本清掉，再装本版。
+- **图标改用 `carved` 款**：浅底 `#f7f9fc` 上的实底渐变圆角瓷砖（青绿 → 蓝 → 紫 → 品红）+ 镂空 M；八档尺寸 16/20/24/32/48/64/128/256 逐档按自身尺寸重绘（小尺寸加粗、放大、去细节），不做大图等比缩小。卸载图标由同一母版加红色 X 徽标生成，同源同形。
+- **外部工具路径可手工指定**：设置 → 外部工具，四个输入框（pandoc / 浏览器 / Rscript / quarto）。留空 = 自动探测（`settings.json` 显式路径 → PATH → 常见安装目录；R 额外走注册表 `HKLM\SOFTWARE\R-core\R\<ver>\InstallPath`）；填错回落自动探测，不把功能锁死。配置文件 `runtime/settings.json` 的 `tools.*` 可直接手改。
+- **清理发布前遗留**：删除深色底图标转换脚本 `_make_icon_light.py`（已被 `_make_icon_mdwright.py` 取代）、`installer/icon_backup/`、`installer/icon-preview.png`、`.mdinstall.bak` 与 `docs/宣传图/_check3.png`。
+
+**说明**
+
+- Python 代码块固定使用内置便携运行时（3.11.9，无 pip、不开放路径配置）；只回 stdout/stderr，需要绘图请用 R 代码块。
+- 前端 `localStorage` 键名（`md-editor-*`）保持不变：它是存储命名空间而非产品名，改名会让既有草稿与排版配置集体失联。
 
 ---
 
@@ -46,7 +64,7 @@
 
 - **点段编辑框更好用**：源码框最小高度由 3.2em 提到 8em，并按内容**自动撑高**（不再是个两行小窗口）；字号从"编辑区字号−1"提到**正文字号**（默认 15px），行高 1.85，内边距加大。
 - **主编辑区字号与正文字号一致**：原来编辑区固定比正文小 1 磅（14px），已改为跟随「正文字号」（默认 15px）；`#mirror` 测量层同步改 `var(--editor-font)`，分屏联动的锚点不失准。
-- **图标换浅色**：`md-editor.ico` / `uninstall-md.ico` 由深底改为浅底（`#f7f9fc`），保留原"点阵 MD"排布，点阵渐变改成浅底上更清楚的青绿→蓝→紫→品红；卸载图标沿用原脚本从新主图标派生（红叉徽标不变）。该图标同时用于 exe / 安装器 / 托盘 / 启动闪屏 / 网页 favicon，一处换全换。生成脚本 `installer/_make_icon_light.py`（构建期用 Pillow，运行时不增依赖），原图标备份在 `installer/icon_backup/`。
+- **图标换浅色**：`mdwright.ico` / `uninstall-mdwright.ico` 由深底改为浅底（`#f7f9fc`），保留原"点阵 MD"排布，点阵渐变改成浅底上更清楚的青绿→蓝→紫→品红；卸载图标沿用原脚本从新主图标派生（红叉徽标不变）。该图标同时用于 exe / 安装器 / 托盘 / 启动闪屏 / 网页 favicon，一处换全换。生成脚本 `installer/_make_icon_light.py`（构建期用 Pillow，运行时不增依赖），原图标备份在 `installer/icon_backup/`。
 
 **测试**
 
@@ -295,7 +313,7 @@
 **测试**
 
 - **`_test_dist_verify.py` 22/22 PASS**：干净目录组装 + junction 9 目录 + 真实服务 + 6 vendor 路由与双皮肤路由断言；版本断言改动态读 `MD_SERVER_VERSION`（原硬编码 52 系 v1.11.4 时期漏同步）。
-- **指南围栏与语法校验**：5 个围栏提取成功，wavedrom/vega `JSON.parse` PASS；`markdown-editor.html` 内嵌 JS 与双 vendor `node --check` PASS。
+- **指南围栏与语法校验**：5 个围栏提取成功，wavedrom/vega `JSON.parse` PASS；`mdwright.html` 内嵌 JS 与双 vendor `node --check` PASS。
 
 **说明**
 
@@ -324,7 +342,7 @@
 
 **修复**
 
-- **有序/无序列表软换行混排 + 有序列表起始序号丢失**：现象——① 软回车（单换行）连续输入时 `1.` 后跟 `-`、`-`，无序行被吸进同一有序列表，渲染成序号 2.、3.（标记被吞）；② 单独出现的 `2.` 起始有序列表被强制从 1. 计数显示。根因——`parseList` 把同缩进下所有列表标记行收进同一列表，容器类型由首项决定，不区分标记类型；`<ol>` 输出不带 `start` 属性。修法——`markdown-editor.html` 的 `parseList`：① 同缩进下标记类型切换（有序↔无序）即收口当前列表，由外层块循环开新列表（与 CommonMark「不同 marker 不合并」一致）；② 有序列表按首项原始数字输出 `<ol start="N">`（N=1 时省略属性）。验证：新增 `_test_list_parse.py`（提取解析器段跑 node）13/13 PASS——混排切分、空行分隔、`2.` 保留 start、反向混排（无序→有序）、三标记连续混切、纯列表/星号/加号/嵌套/task/大数起始序号/列表后段落不吞全部覆盖；表格回归 8/8、解析器段 `node --check` 通过。
+- **有序/无序列表软换行混排 + 有序列表起始序号丢失**：现象——① 软回车（单换行）连续输入时 `1.` 后跟 `-`、`-`，无序行被吸进同一有序列表，渲染成序号 2.、3.（标记被吞）；② 单独出现的 `2.` 起始有序列表被强制从 1. 计数显示。根因——`parseList` 把同缩进下所有列表标记行收进同一列表，容器类型由首项决定，不区分标记类型；`<ol>` 输出不带 `start` 属性。修法——`mdwright.html` 的 `parseList`：① 同缩进下标记类型切换（有序↔无序）即收口当前列表，由外层块循环开新列表（与 CommonMark「不同 marker 不合并」一致）；② 有序列表按首项原始数字输出 `<ol start="N">`（N=1 时省略属性）。验证：新增 `_test_list_parse.py`（提取解析器段跑 node）13/13 PASS——混排切分、空行分隔、`2.` 保留 start、反向混排（无序→有序）、三标记连续混切、纯列表/星号/加号/嵌套/task/大数起始序号/列表后段落不吞全部覆盖；表格回归 8/8、解析器段 `node --check` 通过。
 
 ---
 
@@ -396,7 +414,7 @@
 **修复**
 
 - **载入文档后状态栏统计不刷新**：现象——通过 `?file=` / 最近文件 / 内置文档载入后，字数/行数停在 0 直到首次输入。根因——`applyDocWithDraft` 只调 `render()` 不调 `updateStats()`（启动时序在文档异步载入前已跑过一次统计）。修法——`applyDocWithDraft` 两个分支（含"用磁盘版本"回退）在 `render()` 后补 `updateStats()`。验证：CDP e2e 载入 97 字文档状态栏即时显示。
-- **浏览器标签页无图标**：现象——浏览器模式与打印导出页标签页 404 favicon。修法——`GET /favicon.ico` 路由返回 `md-editor.ico`（Cache-Control 86400）。验证：HTTP 200 image/x-icon，页面控制台零 404。
+- **浏览器标签页无图标**：现象——浏览器模式与打印导出页标签页 404 favicon。修法——`GET /favicon.ico` 路由返回 `mdwright.ico`（Cache-Control 86400）。验证：HTTP 200 image/x-icon，页面控制台零 404。
 - **润色替换按钮偶发无效果**：现象——预览 Modal 点「替换原文」后原文未变（开发期 CDP 测试捕获）。根因——处理器内 `closeRw()` 先置 `rwCtx=null`，下一行仍读 `rwCtx.text` 抛 TypeError 中断。修法——先捕获 `orig=rwCtx.text` 再 `closeRw()`。验证：修复后 e2e 对应断言通过。
 
 **变更**
@@ -428,7 +446,7 @@
 
 **修复**
 
-- **表格幽灵列（多余单元格被切出）**：现象——打印导出与预览中，表格右侧多出一列孤立单元格，仅个别行有内容，且该行原单元格尾部残留 `\`、新列起首残留反引号；窄列被挤压成一字一行竖排。根因——前端表格解析器 `splitRow` 对行做裸 `split('|')`，不识别 GFM 转义：单元格内行内代码 `` `\|` `` 中的竖线被当作列分隔符，该行被多切出一格。修法——切分前将 `\|` 替换为占位符、切分后还原为字面竖线（GFM 规范：表格单元格内 `\|` 恒为字面竖线，行内代码内也不例外）；正文行列数对齐表头——超出的单元格合并进本行前一列（以 `|` 接回，内容不丢失），不足的补空单元格使列边框对齐。预览与打印导出共用同一解析器，一处修复两处生效。验证：`_test_table_split.py` 8/8 PASS（测试对象为从 markdown-editor.html 抽取的真实函数源码），浏览器实测同构 9 列表格导出 8 列严丝合缝、行内代码竖线原样保留。
+- **表格幽灵列（多余单元格被切出）**：现象——打印导出与预览中，表格右侧多出一列孤立单元格，仅个别行有内容，且该行原单元格尾部残留 `\`、新列起首残留反引号；窄列被挤压成一字一行竖排。根因——前端表格解析器 `splitRow` 对行做裸 `split('|')`，不识别 GFM 转义：单元格内行内代码 `` `\|` `` 中的竖线被当作列分隔符，该行被多切出一格。修法——切分前将 `\|` 替换为占位符、切分后还原为字面竖线（GFM 规范：表格单元格内 `\|` 恒为字面竖线，行内代码内也不例外）；正文行列数对齐表头——超出的单元格合并进本行前一列（以 `|` 接回，内容不丢失），不足的补空单元格使列边框对齐。预览与打印导出共用同一解析器，一处修复两处生效。验证：`_test_table_split.py` 8/8 PASS（测试对象为从 mdwright.html 抽取的真实函数源码），浏览器实测同构 9 列表格导出 8 列严丝合缝、行内代码竖线原样保留。
 
 **变更**
 
@@ -485,7 +503,7 @@
 - **另存为格式选择器**：现象——`.smd` 与 `.md` 的选择依赖手输文件名后缀，易误存。修法——保存对话框新增格式下拉（`Markdown 文档（.md）` / `自包含文档（.smd）`），文件名输入框不再携带后缀，提交时统一剥离用户误填后缀并拼接所选格式；打开对话框时按当前文档格式预选。验证：`node --check` 通过；服务端按后缀识别逻辑不变，前端规范化后两种格式落点正确。
 - **内嵌另存为弹框类型限定**：现象——内嵌窗口模式「另存为」的原生保存对话框（pywebview SAVE_DIALOG）未传 `file_types`，文件类型显示“所有文件 (*.*)”。修法——`md_app.pyw` 的 `pick_save_path` 传入 `file_types=(“Markdown (*.md;*.smd)”,)`（pywebview 6.x 每个元素须为完整“描述 (通配)”格式；多元素交替对写法触发`ValueError: not a valid file filter`，异常被外层捕获后静默返回，表现为按钮点开无反应）；另加两层可用性兜底——过滤参数任何异常先记 `runtime/md_app.log` 再回退无过滤调用，保证按钮永远可弹。验证：两版 `py_compile` 通过；以本机嵌入式 Python 实测 `parse_file_type`——新格式解析为(`Markdown`, `*.md;*.smd`) 通过、旧错误格式复现与日志一致的 ValueError，根因闭环。
 - **「打开」按钮过滤修复（内嵌与浏览器模式同时生效）**：现象——「打开」弹框无 `.smd` 类型（仅 .md/.txt/所有文件）。根因——两版 `md_server.py` 的 `/api/open-file` 路由调用 `_pick_file_subprocess`，但该函数定义缺失（历史清理误删），每次点击即 `NameError`→500→前端兜底 WebView2 内置文件框（无类型过滤）。修法——补回 `_pick_file_subprocess(initdir)`：子进程执行 `_pickfile.py`（GetOpenFileNameW，过滤器第一组即 `Markdown (*.md;*.smd)`），`hwndOwner=GetForegroundWindow()` 置前，路径经临时文件回传；`MD_SERVER_VERSION` 44→45 / 52→53 触发版本自愈换代。验证：两版 `py_compile` 通过；嵌入式 Python 实测 `import md_server` 后函数存在、签名为 `(initdir='')`。
-- **安全与关联**：解包前逐条校验 ZIP entry 名，拒绝绝对路径/盘符/`..` 穿越（实测构造恶意包被拒）；`install.cmd` 注册 `.smd` 关联（`MDViewer.smd` ProgID + shim 转发，纯 ASCII 断言 PASS）；原生打开框过滤器加 `*.smd`；浏览器兜底入口（拿不到完整路径）对 `.smd` 明确提示拒绝而非读成乱码。
+- **安全与关联**：解包前逐条校验 ZIP entry 名，拒绝绝对路径/盘符/`..` 穿越（实测构造恶意包被拒）；`install.cmd` 注册 `.smd` 关联（`MDWright.smd` ProgID + shim 转发，纯 ASCII 断言 PASS）；原生打开框过滤器加 `*.smd`；浏览器兜底入口（拿不到完整路径）对 `.smd` 明确提示拒绝而非读成乱码。
 - **跨容器资产双向换算**：现象——普通 `.md` 另存 `.smd`、`.smd` 改名另存 `.md` 时，磁盘契约 `<文档名>.assets/` 与包内契约 `assets/` 互不对认，图片必然断链。修法——服务端新增 `_rewrite_assets_ref` 助手（左边界断言防误伤）：打包时把 `<文档名>.assets/` 引用统一改写为 `assets/` 后进包；导出时反向改写并把图片落盘到目标目录；资产源三级解析（`base/assets` → 源文档同目录 `<文档名>.assets` → 手写图收编）。验证：单测 T10/T11 + 真实服务 E2E（另存→改名导出→图片数量一致）。
 - **手写图保存时收编进容器**：现象——用户手写绝对路径引用（如 `C:/user/x.png`），`.smd` 打包时原样进包，包不自包含，换机碎图。修法——`md_assets.materialize_into` 核心抽取（落盘目录与引用前缀参数化），`.smd` 打包与增量保存前统一物化：真实存在的本地图收编进容器、引用改写为容器契约；不存在的原样保留破图可见（fail-closed）；网络图维持外链不收编。验证：T12 + E2E F2/F3。
 - **保存回传正文同步编辑区**：现象——服务端收编/契约改写后编辑区仍显示旧引用，所见非所存。修法——`/api/file` 与 `/api/save-as` 响应回传新正文，前端 `applySavedContent` 三处共享（Ctrl+S／自动保存／另存为）。验证：E2E F1/U1/U4。
@@ -525,7 +543,7 @@
 **修复**
 
 - **文件名含下划线的图片被改写为斜体标记**：现象——粘贴图片（文件名恒为 `20261015_181923_3419.png` 三段下划线）及一切含下划线的图片、链接路径，预览不生成 `<img>`／`<a>`，或 `src` 被改写为 `20261015<em>181923</em>3419.png` 后请求 404。根因——`parseInline` 先将图片／链接替换为 HTML 标签、后执行强调替换 `_([^_]+)_`，属性值内的下划线被当作强调语法。修法——图片／链接生成的开标签先进占位符（`\x00T` 词元），行内格式化仅作用于占位符之外的纯文本，末尾统一还原；链接只占位开标签，链接文字仍参与加粗与强调。验证：真实浏览器实测两张下划线图片 `src` 干净、链接 `href` 干净、链接内文字的强调照常渲染。
-- **文件名含空格的图片语法整段不渲染**：现象——`![说明](MDEditor 使用指南.assets/内嵌示例图.png)` 之类带空格路径，预览裸露原始标记。根因——内联图片／链接正则的 URL 段为 `[^) ]+`，不允许空格。修法——URL 段改为 `([^)]+?)` 非贪婪匹配（兼容可选标题语法），图片与链接两条正则同步。验证：默认文档（使用指南）图片 `naturalWidth > 0` 实测加载成功。
+- **文件名含空格的图片语法整段不渲染**：现象——`![说明](MDWright 使用指南.assets/内嵌示例图.png)` 之类带空格路径，预览裸露原始标记。根因——内联图片／链接正则的 URL 段为 `[^) ]+`，不允许空格。修法——URL 段改为 `([^)]+?)` 非贪婪匹配（兼容可选标题语法），图片与链接两条正则同步。验证：默认文档（使用指南）图片 `naturalWidth > 0` 实测加载成功。
 - **保存报 500 `cannot access local variable 'added'`，实为假失败**：现象——分发包内保存报 500，但内容实际已写盘；界面报错、草稿不清除、自动落盘静默失效。根因——`md_assets.py` 缺失时懒导入将 `materialize_images` 置 `None`，`/api/file` 与 `/api/save-as` 的 `if materialize_images:` 为假跳过赋值，响应构造引用未绑定的 `added` 抛 `UnboundLocalError`；`write` 在该异常之前执行，数据无损失。修法——两处调用点前补 `added = []` 兜底（`MD_SERVER_VERSION` 35 → 36）。验证：py_compile 通过，包内复测无 500。
 - **引用块跟随正文缩进**：现象——正文设置首行缩进后，引用块内段落一并缩进。根因——缩进规则选择器 `#preview p` 命中 blockquote 内的 `<p>`（松散列表 `li>p` 同理），而引用、列表设为「无」时不生成任何规则，正文规则随之泄漏。修法——引用、列表为「无」时生成中性化规则（`text-indent:0 !important`、`padding-left:0 !important`），引用与列表的缩进设置和正文彻底隔离。验证：生成的样式表含两条中性化规则，引用段不受正文缩进影响实测。
 - **图片刷新后陈旧，须强制刷新才更新**：现象——磁盘图片已替换，普通刷新（F5）仍显示旧图，仅 Ctrl+F5 可见新图。根因——`/img` 响应 `Cache-Control: max-age=3600` 且 URL 稳定，浏览器将图片缓存一小时；文字内容走 `/api/file`（no-store）故仅图片陈旧。修法——改为协商缓存：响应携带 `ETag`（mtime-size）与 `Cache-Control: no-cache`，`If-None-Match` 命中返回 304 不重传，文件变更即 200 返回新图（服务端 v35）。验证：真实浏览器 F5 后六张配图全部带 `If-None-Match` 回源，未变更时 304。
@@ -535,7 +553,7 @@
 **变更**
 
 - **启动一律载入默认文档，旧全局缓存退役**：现象——启动显示陈旧的指南快照，图片位置与当前版本不符且全部 404。根因——初始化保留「全局缓存键 `md-editor-content-v1` 优先」的历史路径，陈旧快照遮蔽默认文档；该状态下无文件上下文，相对路径图片丢失基址（`/img` 按工具根目录兜底解析必然 404）。修法——启动一律走默认文档的草稿感知载入，旧键一次性清除；`scheduleSave` 的无文件分支同步退役，草稿存储收敛为按文件路径的单一来源。验证：种入旧值启动后显示真指南、旧键清除、图片加载成功；无旧值常规启动回归通过。
-- **死代码清理**：`md_server.py` 的 `do_POST` 内 `/api/save-as`、`/api/paste-image` 路由各重复三次，后两次不可达，删除 112 行；`markdown-editor.html` 中 `katexCssText` 的重复 fetch 两处删除；`md_launch.pyw` 的 `if False else` 残留与孤立 `import io` 移除。验证：py_compile 通过，`grep` 路由计数归一。
+- **死代码清理**：`md_server.py` 的 `do_POST` 内 `/api/save-as`、`/api/paste-image` 路由各重复三次，后两次不可达，删除 112 行；`mdwright.html` 中 `katexCssText` 的重复 fetch 两处删除；`md_launch.pyw` 的 `if False else` 残留与孤立 `import io` 移除。验证：py_compile 通过，`grep` 路由计数归一。
 - **授权落定为 GNU AGPL-3.0-or-later**：新增 `LICENSE`（GNU 官方全文）与全部源码 SPDX 头（Copyright 2026 wUwproject），《版权与开源组件声明》与 README 许可节同步改写；与随附第三方组件（KaTeX、Paged.js MIT，Python PSF）兼容，`LICENSES/` 目录保留。分发仓库同步设为公开。
 
 ## v1.0.6
@@ -593,7 +611,7 @@
 **变更**
 
 - **放弃内嵌窗口，还原浏览器模式**：卡点定位在 pywebview WinForms 宿主层——Python 心跳无阻塞记录、页面探针未收到任何输入事件、Windows 事件日志无崩溃、内核完整、软件渲染无效、合成输入（含真实滚轮/按键消息）无法复现。按决策 `settings.json` 设 `embed_window: false`，内嵌代码全部保留仅由开关控制。实测：进程只剩 `md_server` 一个，浏览器自动打开，服务 v27。
-- **移除系统托盘**：托盘（`md_server.py` 内纯 ctypes `Shell_NotifyIconW`，窗口类 `MDViewerTrayWnd`）的最小化/新建/退出菜单动作实测不可靠，移除 `build_tray()` 调用改纯常驻；托盘类保留不删。验证：重启后 `FindWindowW('MDViewerTrayWnd')` 返回 0，退出方式为 `md_stop.cmd`（按命令行匹配 `md_server.py`，纯 ASCII）。
+- **移除系统托盘**：托盘（`md_server.py` 内纯 ctypes `Shell_NotifyIconW`，窗口类 `MDWrightTrayWnd`）的最小化/新建/退出菜单动作实测不可靠，移除 `build_tray()` 调用改纯常驻；托盘类保留不删。验证：重启后 `FindWindowW('MDWrightTrayWnd')` 返回 0，退出方式为 `md_stop.cmd`（按命令行匹配 `md_server.py`，纯 ASCII）。
 
 ---
 
@@ -628,7 +646,7 @@
 
 - **纯 ctypes 目录/文件对话框**：现象——"浏览"目录弹窗在服务线程与子进程两版 tkinter 实现下均弹不出。根因——便携嵌入式 Python 根本不含 tkinter（`import tkinter` 即 `No module named`），与线程无关。修法——`_pickdir.py` 纯 ctypes 调 `shell32.SHBrowseForFolderW`（`restype=c_void_p` 防 64 位指针截断、子进程 `CoInitializeEx(STA)`、路径经临时文件回传）。另修保存弹窗按钮样式（独立 `.sv-btn`，原蹭工具栏样式字大框小）。
 - **Win32 启动画面 `_splash.py`**：纯 ctypes/GDI 绘制（图标 `LoadImageW`+`DrawIconEx`、圆角 `SetWindowRgn`、淡入淡出 `SetLayeredWindowAttributes`），splash 自起线程轮询 `/api/version`，版本就绪后 0.45 秒触发淡出，启动器 `WM_CLOSE` 兜底。关键实现约束：全部句柄/指针参数显式 `argtypes`，否则 64 位句柄按 int 截断（定时器失效、文字画不出）。
-- **托盘图标加载与窗口管理**：托盘图标改 `LoadImageW` 从 `md-editor.ico` 加载 16×16（失败降级默认）；左键单击 toggle 编辑器窗口（`EnumWindows` 匹配标题，最小化恢复/前台最小化/后台前置），右键菜单（新建/退出），退出先对所有编辑器窗口 `PostMessageW(WM_CLOSE)` 再删图标停服务。
+- **托盘图标加载与窗口管理**：托盘图标改 `LoadImageW` 从 `mdwright.ico` 加载 16×16（失败降级默认）；左键单击 toggle 编辑器窗口（`EnumWindows` 匹配标题，最小化恢复/前台最小化/后台前置），右键菜单（新建/退出），退出先对所有编辑器窗口 `PostMessageW(WM_CLOSE)` 再删图标停服务。
 
 **修复**
 
@@ -668,7 +686,7 @@
 **变更**
 
 - **目录清理**：删除调试产物（`.playwright-cli/`、`_patch17*`、`_s0.js`、`.mdinstall.bak`、两个误建空目录、`icon-preview.png`）；`document.paged.html` 保留作导出样例。
-- **`desktop-shortcut.cmd`**：独立桌面快捷方式脚本（目标 `MarkdownEditor.exe` + 图标），不装右键关联也能像传统应用双击使用；`_mklnk.ps1` 同步重写（快捷方式目标从 pythonw+pyw 改为 exe+图标）。
+- **`desktop-shortcut.cmd`**：独立桌面快捷方式脚本（目标 `MDWright.exe` + 图标），不装右键关联也能像传统应用双击使用；`_mklnk.ps1` 同步重写（快捷方式目标从 pythonw+pyw 改为 exe+图标）。
 - **双平台建仓与发布注册**：Gitee `wUwproject/maby_tool` + GitHub `Ldxs001/maby_tool` 双 remote（gitee https / origin ssh 443）；仓库根 `MarkdownEditor/` 子目录 217 文件与源一致，`git status` 干净；git-sync `config.json` + `manifest` 注册（source_path/repo_path/version 1.0.0），双端 push 通过。exe 重编译单独 commit。
 
 ---
@@ -783,8 +801,8 @@
 
 **新增**
 
-- **`MarkdownEditor.cs` → `MarkdownEditor.exe` shim**：现象——`.md` 右键/打开方式列表显示 "Python"（Win11 选择器对无 FriendlyTypeName 的 ProgID 显示 command 里 exe 的 FileDescription；command 直连 pythonw.exe 则 FriendlyTypeName 也治不了，ASSOCSTR_FRIENDLYAPPNAME 解析链实证）。修法——install.cmd 自动用系统自带 csc（Framework64 v4.0.30319）编译 shim（AssemblyDescription="Markdown Editor"），功能为转发 .md 路径给便携 pythonw；右键 verb/双击关联/兜底 ProgID 三处 command 全部改指 shim，并注册 `Applications\MarkdownEditor.exe`。用户实测选择器显示 "Markdown Editor"。
-- **程序化图标 `gen_icon.py`**：PIL 纯程序化生成 `md-editor.ico`（256~16 七尺寸）——点阵拼 "MD"、青→紫→粉色相渐变圆角色块、深色圆角底，零字体零素材。接入三处 `DefaultIcon` + csc `/win32icon` 内嵌。
+- **`MDWright.cs` → `MDWright.exe` shim**：现象——`.md` 右键/打开方式列表显示 "Python"（Win11 选择器对无 FriendlyTypeName 的 ProgID 显示 command 里 exe 的 FileDescription；command 直连 pythonw.exe 则 FriendlyTypeName 也治不了，ASSOCSTR_FRIENDLYAPPNAME 解析链实证）。修法——install.cmd 自动用系统自带 csc（Framework64 v4.0.30319）编译 shim（AssemblyDescription="MDWright"），功能为转发 .md 路径给便携 pythonw；右键 verb/双击关联/兜底 ProgID 三处 command 全部改指 shim，并注册 `Applications\MDWright.exe`。用户实测选择器显示 "MDWright"。
+- **程序化图标 `gen_icon.py`**：PIL 纯程序化生成 `mdwright.ico`（256~16 七尺寸）——点阵拼 "MD"、青→紫→粉色相渐变圆角色块、深色圆角底，零字体零素材。接入三处 `DefaultIcon` + csc `/win32icon` 内嵌。
 
 ---
 
@@ -797,7 +815,7 @@
 - **右键菜单"没出现"（两层）**：①Win11 新右键菜单隐藏传统 shell 项——install.cmd 默认启用旧版菜单（`HKCU\...\CLSID\{86ca1aa0-...}\InprocServer32` 空值），传 `nolegacy` 才不启用；②command 值引号嵌套被 reg 剥引号致命令损坏——改为 `%PYW% %HERE%\md_launch.pyw "%%1"`（路径无空格仅 %1 加引号）。
 - **cmd 脚本编码事故（终极方案纯 ASCII）**：UTF-8 无 BOM 的 .cmd 按 GBK 逐字节读取，中文尾字节与语法字符配对成乱码致引号/括号失配、脚本崩溃——先试 GBK 转码仍乱码（与磁盘真实状态脱节），终态三个 .cmd 全部重写纯 ASCII（英文提示），字节级验证 max byte ≤ 126，任何代码页下字节相同。铁律：交付双击运行的 .cmd/.bat 一律纯 ASCII，中文提示需求改由 Python/PowerShell 实现。
 - **UserChoice 删除被 ACL 拦截（多层定位）**：`FileExts\.md\UserChoice` 有显式 `SetValue|Deny` ACE（Windows 防关联劫持），reg.exe 静默失败；`RegDeleteKeyW` P/Invoke 亦失败。修法——改 .NET `Registry.CurrentUser.DeleteSubKey`（权限检查在父键）成功；并以双保险在 `HKCU\Classes` 补建孤儿 ProgID "Markdown Document" 实体（该键原指向不存在的 ProgID）。终态：UserChoice cleared、双击归位。
-- **「打开方式」列表残留 pythonw**：OpenWithList 历史 pythonw 条目删除+MRUList 重写，Classes 与 FileExts 两层 `OpenWithProgids` 注册 `MDViewer.md`。实测重跑后列表与图标归位。
+- **「打开方式」列表残留 pythonw**：OpenWithList 历史 pythonw 条目删除+MRUList 重写，Classes 与 FileExts 两层 `OpenWithProgids` 注册 `MDWright.md`。实测重跑后列表与图标归位。
 
 ---
 
@@ -822,7 +840,7 @@
 
 **新增**
 
-- **`markdown-editor.html`**：单文件编辑器，解析内核为纯手写正则（`parseInline`/`parseList`/`parseTable`/`parseMarkdown`），不引 marked.js/markdown-it。
+- **`mdwright.html`**：单文件编辑器，解析内核为纯手写正则（`parseInline`/`parseList`/`parseTable`/`parseMarkdown`），不引 marked.js/markdown-it。
 - **`md_server.py`**：标准库 http.server 后端，`/api/file` 路由读写本地文件（绕开 `file://` 禁止 JS 读盘的限制），前端加 `?file=` 注入适配层（解析内核零改动，仅 UI 段新增保存按钮）；可选 pystray 托盘（缺失降级常驻）。
 - **安装器**：`install.cmd`/`uninstall.cmd`（HKCU 注册 .md 右键菜单+默认关联+快捷方式，无需管理员可逆）、`md_launch.pyw`（Explorer 传路径，启动/复用后端开浏览器）、`md_stop.cmd`、`_mklnk.ps1`。
 

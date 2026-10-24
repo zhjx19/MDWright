@@ -8,7 +8,7 @@
 - 定义可多行（续行缩进 4 空格），空行终止
 - 引用与定义可分处不同块（文档级语义）
 - 代码块内的 [^x] 不参与解析
-前端部分从 markdown-editor.html 提取 /*PARSER_START*/../*PARSER_END*/ 段跑 node。
+前端部分从 mdwright.html 提取 /*PARSER_START*/../*PARSER_END*/ 段跑 node。
 """
 import os
 import re
@@ -23,7 +23,7 @@ except Exception:
     pass
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HTML = os.path.join(HERE, "markdown-editor.html")
+HTML = os.path.join(HERE, "mdwright.html")
 JS = os.path.join(HERE, "_tmp_footnote.js")
 RESULTS = []
 

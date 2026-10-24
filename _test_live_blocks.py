@@ -3,7 +3,7 @@
 # Copyright (C) 2026 wUwproject. Licensed under GNU AGPL v3 or later.
 """即时渲染的块映射单测（v2.6.1）：
 
-把 markdown-editor.html 里的 splitBlocks / splitBlocksRaw 抽出来跑 node，
+把 mdwright.html 里的 splitBlocks / splitBlocksRaw 抽出来跑 node，
 验证"预览块序号 i ↔ 原文区间 i"这条铁律：
 
 - splitBlocks(text).join('\\n') === text          （切块是原文的精确分区）
@@ -18,7 +18,7 @@ import re
 import subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HTML = os.path.join(HERE, "markdown-editor.html")
+HTML = os.path.join(HERE, "mdwright.html")
 
 
 def extract_fn(src, name):

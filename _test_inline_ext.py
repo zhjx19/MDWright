@@ -7,7 +7,7 @@
 - 行内代码段内的 ~ ^ = 不生效（代码段优先）
 - 链接 URL 里的 ~ 不被当成下标定界符
 - 图床常见写法：H~2~O、x^2^、==重点==
-前端部分从 markdown-editor.html 提取 /*PARSER_START*/../*PARSER_END*/ 段跑 node。
+前端部分从 mdwright.html 提取 /*PARSER_START*/../*PARSER_END*/ 段跑 node。
 """
 import os
 import re
@@ -22,7 +22,7 @@ except Exception:
     pass
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HTML = os.path.join(HERE, "markdown-editor.html")
+HTML = os.path.join(HERE, "mdwright.html")
 JS = os.path.join(HERE, "_tmp_inline_ext.js")
 RESULTS = []
 

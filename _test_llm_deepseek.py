@@ -127,7 +127,7 @@ def main():
     check("笔误后端回落到默认", n2["backend"] == md_server.LLM_DEFAULTS["backend"], n2["backend"])
 
     # ---- 前端：选项与模型预设 ----
-    html = open(os.path.join(HERE, "markdown-editor.html"), encoding="utf-8").read()
+    html = open(os.path.join(HERE, "mdwright.html"), encoding="utf-8").read()
     check("前端有 DeepSeek 后端选项", 'value="deepseek"' in html)
     check("前端给出 deepseek-chat 预设", "deepseek-chat" in html)
     check("前端给出 deepseek-reasoner 预设", "deepseek-reasoner" in html)

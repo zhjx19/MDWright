@@ -241,7 +241,7 @@ def close_splash():
         u.FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
         u.PostMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint,
                                    ctypes.c_size_t, ctypes.c_ssize_t]
-        h = u.FindWindowW("MDEditorSplash2", None)
+        h = u.FindWindowW("MDWrightSplash2", None)
         if h:
             u.PostMessageW(ctypes.c_void_p(h), 0x0010, 0, 0)
     except Exception:

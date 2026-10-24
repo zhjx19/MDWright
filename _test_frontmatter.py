@@ -6,7 +6,7 @@
 - 极简子集：嵌套 map、列表、标量（字符串去引号 / 数字 / 布尔 / null）
 - 未闭合、非法 YAML、非首行触发 → 一律 meta=null 且正文完整（fail-closed，不吞内容）
 - 重复键视为非法
-前端部分从 markdown-editor.html 提取 /*PARSER_START*/../*PARSER_END*/ 段跑 node。
+前端部分从 mdwright.html 提取 /*PARSER_START*/../*PARSER_END*/ 段跑 node。
 """
 import os
 import re
@@ -21,7 +21,7 @@ except Exception:
     pass
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HTML = os.path.join(HERE, "markdown-editor.html")
+HTML = os.path.join(HERE, "mdwright.html")
 JS = os.path.join(HERE, "_tmp_frontmatter.js")
 RESULTS = []
 

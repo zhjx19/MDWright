@@ -6,14 +6,14 @@
 - 代码段内反斜杠保持字面（CommonMark：代码段优先于转义）
 - 转义经 escapeHtml 还原（\\< → &lt;，不产生真标签）
 - 无反斜杠的正常图片/强调完全不受影响（回归）
-前端部分从 markdown-editor.html 提取 /*PARSER_START*/../*PARSER_END*/ 段跑 node。
+前端部分从 mdwright.html 提取 /*PARSER_START*/../*PARSER_END*/ 段跑 node。
 """
 import os
 import re
 import subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HTML = os.path.join(HERE, "markdown-editor.html")
+HTML = os.path.join(HERE, "mdwright.html")
 
 
 def js_part():
@@ -41,9 +41,9 @@ for (const [input, expect] of cases) {
   console.log('FAIL ' + JSON.stringify(input) + ' -> ' + out + ' (expect ' + expect + ')'); fails++;
 }
 /* 端到端：指南示例整行走块解析，不得产生链接/图片/反斜杠残留 */
-const md = parseMarkdown("\\!\\[内嵌示例图\\](MDEditor 使用指南.assets/内嵌示例图.png)\n");
+const md = parseMarkdown("\\!\\[内嵌示例图\\](MDWright 使用指南.assets/内嵌示例图.png)\n");
 if (md.indexOf('<a ') >= 0 || md.indexOf('<img') >= 0 || md.indexOf('\\') >= 0
-    || md.indexOf('![内嵌示例图](MDEditor 使用指南.assets/内嵌示例图.png)') < 0) {
+    || md.indexOf('![内嵌示例图](MDWright 使用指南.assets/内嵌示例图.png)') < 0) {
   console.log('FAIL md guide-style -> ' + md.slice(0, 200)); fails++;
 } else console.log('PASS md guide-style literal');
 console.log('JS-FAILS=' + fails);

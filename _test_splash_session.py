@@ -42,7 +42,7 @@ def check(name, ok, extra=""):
 
 
 def splash_alive():
-    return bool(u.FindWindowW("MDEditorSplash2", None))
+    return bool(u.FindWindowW("MDWrightSplash2", None))
 
 
 def start_splash(life):

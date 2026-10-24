@@ -134,7 +134,7 @@ def main():
               str(os.listdir(tmp)))
 
         # 内置文档（安装目录 docs/）不得直接导出
-        builtin = os.path.join(HERE, "docs", "MDEditor 使用指南.md")
+        builtin = os.path.join(HERE, "docs", "MDWright 使用指南.md")
         if os.path.isfile(builtin):
             j5 = post("/api/export-pdf", {"path": builtin, "bodyHtml": "<p>x</p>",
                                           "tsCss": "", "cfg": {}})

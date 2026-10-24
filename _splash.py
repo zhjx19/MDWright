@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 wUwproject. Licensed under GNU AGPL v3 (or later).
 """启动画面（纯 ctypes/Win32，无 tkinter）
-- 工具图标（md-editor.ico）+ MDEditor + 动态"正在启动..."
+- 工具图标（mdwright.ico）+ MDWright + 动态"正在启动..."
 - 淡入显示；收到关闭信号后淡出退出；超时兜底
 用法: python _splash.py <信号文件> [超时秒]
       信号文件出现内容 "close" → 淡出退出
@@ -165,7 +165,7 @@ def _draw(hwnd):
         gdi32.SetTextColor(hdc, C_TXT)
         of = gdi32.SelectObject(hdc, f1)
         r1 = wintypes.RECT(112, 46, W - 24, 92)
-        user32.DrawTextW(hdc, "MDEditor", -1, ctypes.byref(r1),
+        user32.DrawTextW(hdc, "MDWright", -1, ctypes.byref(r1),
                          DT_CENTER | DT_VCENTER | DT_SINGLELINE)
         gdi32.SetTextColor(hdc, C_SUB)
         gdi32.SelectObject(hdc, f2)
@@ -262,7 +262,7 @@ def main():
         threading.Thread(target=_poll_ready, daemon=True).start()
 
     here = os.path.dirname(os.path.abspath(__file__))
-    ico = os.path.join(here, "md-editor.ico")
+    ico = os.path.join(here, "mdwright.ico")
     hinst = kernel32.GetModuleHandleW(None)
     if os.path.exists(ico):
         try:
@@ -274,12 +274,12 @@ def main():
     wc.lpfnWndProc = WNDPROC(_proc)
     wc.hInstance = hinst
     wc.hCursor = user32.LoadCursorW(None, 32512)
-    wc.lpszClassName = "MDEditorSplash2"
+    wc.lpszClassName = "MDWrightSplash2"
     user32.RegisterClassW(ctypes.byref(wc))
     sw, sh = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
     hwnd = user32.CreateWindowExW(
         WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED,
-        "MDEditorSplash2", "MDEditor", WS_POPUP,
+        "MDWrightSplash2", "MDWright", WS_POPUP,
         (sw - W) // 2, (sh - H) // 2, W, H, None, None, hinst, None)
     try:
         rgn = gdi32.CreateRoundRectRgn(0, 0, W + 1, H + 1, 30, 30)

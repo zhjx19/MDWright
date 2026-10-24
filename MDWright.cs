@@ -2,12 +2,12 @@ using System;
 using System.Diagnostics;
 using System.IO;
 
-[assembly: System.Reflection.AssemblyTitle("Markdown Editor")]
-[assembly: System.Reflection.AssemblyProduct("Markdown Editor")]
-[assembly: System.Reflection.AssemblyDescription("Markdown Editor")]
+[assembly: System.Reflection.AssemblyTitle("MDWright")]
+[assembly: System.Reflection.AssemblyProduct("MDWright")]
+[assembly: System.Reflection.AssemblyDescription("MDWright")]
 
 // Tiny launcher shim: forwards the .md path to the bundled portable pythonw.
-// Exists only so the Win11 Open With picker shows "Markdown Editor"
+// Exists only so the Win11 Open With picker shows "MDWright"
 // (it reads FileDescription of the command exe) instead of "Python".
 static class M
 {

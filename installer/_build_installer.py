@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""MDEditor installer builder (system csc.exe only, zero third-party).
+"""MDWright installer builder (system csc.exe only, zero third-party).
 
 Stages the dist-checklist minimum set, packs payload.zip (UTF-8 entry names),
 compiles a WinForms single-file installer with the Windows built-in C#
@@ -8,7 +8,7 @@ compiler, then (optionally) runs the built exe with --smoke and asserts the
 extraction result.
 
 Usage:
-  python installer/_build_installer.py            # build MDEditor-Setup-vX.Y.Z.exe
+  python installer/_build_installer.py            # build MDWright-Setup-vX.Y.Z.exe
   python installer/_build_installer.py --smoke    # smoke build + self-check first
 """
 import json
@@ -28,15 +28,15 @@ SMOKE_REPORT = os.path.join(tempfile.gettempdir(), "md_setup_smoke_report.txt")
 # dist checklist minimum set (sections 1+2+3+4). Keep in sync with docs checklist.
 DIST_DIRS = ["python", "katex", "pagedjs", "LICENSES",
              "mermaid", "viz", "wavedrom", "vega", "highlight"]
-DIST_DOCS_FILES = ["MDEditor 使用指南.md", "版权与开源组件声明.md"]
-DIST_DOCS_DIRS = ["MDEditor 使用指南.assets"]
-DIST_FILES = ["md_launch.pyw", "_md_run.py", "md_server.py", "markdown-editor.html",
-              "md-editor.ico", "uninstall-md.ico", "llm_client.py", "web_search.py",
+DIST_DOCS_FILES = ["MDWright 使用指南.md", "版权与开源组件声明.md"]
+DIST_DOCS_DIRS = ["MDWright 使用指南.assets", "screenshots"]
+DIST_FILES = ["md_launch.pyw", "_md_run.py", "md_server.py", "mdwright.html",
+              "mdwright.ico", "uninstall-mdwright.ico", "llm_client.py", "web_search.py",
               "rag_client.py", "_smd.py", "md_assets.py", "_splash.py",
               "md_tools.py", "md_pandoc.py", "_cdp.py", "_savefile.py",
               "_pickdir_modern.py", "_pickfile.py", "md_app.pyw", "LICENSE", "README.md",
-              "install.cmd", "MarkdownEditor.cs", "MarkdownEditor.exe", "_mklnk.ps1",
-              "uninstall.cmd", "UninstallMDEditor.cs", "desktop-shortcut.cmd", "md_stop.cmd"]
+              "install.cmd", "MDWright.cs", "MDWright.exe", "_mklnk.ps1",
+              "uninstall.cmd", "UninstallMDWright.cs", "desktop-shortcut.cmd", "md_stop.cmd"]
 
 
 def detect_version():
@@ -103,7 +103,7 @@ def compile_installer(ver, out_name):
         os.remove(exe)
     args = [find_csc(), "/nologo", "/target:winexe", "/platform:anycpu",
             "/out:" + exe,
-            "/win32icon:" + os.path.join(SRC, "md-editor.ico"),
+            "/win32icon:" + os.path.join(SRC, "mdwright.ico"),
             "/r:System.IO.Compression.dll",
             "/r:System.IO.Compression.FileSystem.dll",
             "/r:System.Windows.Forms.dll",
@@ -139,7 +139,7 @@ def run_smoke(exe):
     checks = [
         ("payload extracted", int(rep.get("total_files", "0")) > 500, rep.get("total_files", "?")),
         ("guide md exists (exact Chinese name)",
-         rep.get("guide_md_exists") == "1" and "MDEditor 使用指南.md" in rep.get("docs_listing", ""),
+         rep.get("guide_md_exists") == "1" and "MDWright 使用指南.md" in rep.get("docs_listing", ""),
          rep.get("docs_listing", "")[:200]),
         ("license doc exists", rep.get("license_doc_exists") == "1", ""),
         ("uninstall icon in payload", rep.get("uninstall_icon_exists") == "1", ""),
@@ -202,7 +202,7 @@ def main():
     print("staging ready: %d files (v%s)" % (n, ver))
     if not verify_staging():
         raise SystemExit("FAIL staging 缺少必需文件（见上）")
-    out_name = "_setup_smoke.exe" if smoke_mode else "MDEditor-Setup-v%s.exe" % ver
+    out_name = "_setup_smoke.exe" if smoke_mode else "MDWright-Setup-v%s.exe" % ver
     exe, zsize = compile_installer(ver, out_name)
     print("BUILD OK: %s (%d KB, payload.zip %d KB)"
           % (exe, os.path.getsize(exe) // 1024, zsize // 1024))

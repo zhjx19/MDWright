@@ -7,7 +7,7 @@
 - 定义的续行缩进 4 空格并入同一条定义
 - 定义后紧跟的普通段落必须独立成 <p>（不得被并进 <dd>）
 - 行首 ": " 但上一行不是术语 → 按普通段落处理（不凭空造 dl）
-前端部分从 markdown-editor.html 提取 /*PARSER_START*/../*PARSER_END*/ 段跑 node。
+前端部分从 mdwright.html 提取 /*PARSER_START*/../*PARSER_END*/ 段跑 node。
 """
 import os
 import re
@@ -22,7 +22,7 @@ except Exception:
     pass
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HTML = os.path.join(HERE, "markdown-editor.html")
+HTML = os.path.join(HERE, "mdwright.html")
 JS = os.path.join(HERE, "_tmp_deflist.js")
 RESULTS = []
 

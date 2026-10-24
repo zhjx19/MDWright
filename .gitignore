@@ -26,3 +26,6 @@ _tmp_*
 # 安装包构建产物（installer/ 源码入库；staging 与 Setup.exe 产物不入库，仅挂 Release）
 /_setup_staging/
 /_setup_out/
+
+# 图标候选图与放大实测图（生成器 installer/_make_icon_mdwright.py 已入库，产物可随时重建）
+/installer/icon-candidates/

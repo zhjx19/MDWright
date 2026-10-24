@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// MDEditor installer (WinForms). Compiled at packaging time by the system
+// MDWright installer (WinForms). Compiled at packaging time by the system
 // csc.exe (Windows built-in .NET Framework compiler). No third-party tools.
 //
 // Embedded resources (added by _build_installer.py):
 //   payload.zip  - dist checklist minimum set (UTF-8 entry names, python zipfile)
 //   ver.txt      - installer/app version string
 //
-// Usage:  MDEditor-Setup-vX.Y.Z.exe            (installer GUI)
-//         MDEditor-Setup-vX.Y.Z.exe --smoke    (headless self-check, writes
+// Usage:  MDWright-Setup-vX.Y.Z.exe            (installer GUI)
+//         MDWright-Setup-vX.Y.Z.exe --smoke    (headless self-check, writes
 //                                               %TEMP%\md_setup_smoke_report.txt)
 using System;
 using System.Collections.Generic;
@@ -20,7 +20,7 @@ using System.Linq;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
-namespace MDEditorSetup
+namespace MDWrightSetup
 {
     static class Setup
     {
@@ -145,7 +145,7 @@ namespace MDEditorSetup
             try
             {
                 using (var k = Registry.CurrentUser.OpenSubKey(
-                    @"Software\Microsoft\Windows\CurrentVersion\Uninstall\MDEditor", true))
+                    @"Software\Microsoft\Windows\CurrentVersion\Uninstall\MDWright", true))
                 {
                     if (k == null)
                     {
@@ -154,7 +154,7 @@ namespace MDEditorSetup
                     }
                     k.SetValue("DisplayVersion", Version);
                     k.SetValue("EstimatedSize", (int)Math.Min(DirSize(target) / 1024, (long)int.MaxValue), RegistryValueKind.DWord);
-                    log("卸载条目已就绪：设置 → 应用 → \"MDEditor (Markdown Editor)\"。");
+                    log("卸载条目已就绪：设置 → 应用 → \"MDWright\"。");
                 }
             }
             catch (Exception ex) { log("[!] 卸载条目补充失败: " + ex.Message); }
@@ -187,7 +187,7 @@ namespace MDEditorSetup
                 WriteArpExtras(target, log);
                 log("");
                 log("安装完成：" + target);
-                log("右键 .md 文件可用 MDEditor 打开。");
+                log("右键 .md 文件可用 MDWright 打开。");
             };
             bw.RunWorkerAsync();
         }
@@ -199,12 +199,12 @@ namespace MDEditorSetup
             var lines = new List<string>();
             ExtractTo(tmp, null);
             string docs = Path.Combine(tmp, "docs");
-            string guide = Path.Combine(docs, "MDEditor 使用指南.md");
+            string guide = Path.Combine(docs, "MDWright 使用指南.md");
             string lic = Path.Combine(docs, "版权与开源组件声明.md");
             string dll = Path.Combine(tmp, @"python\Lib\site-packages\pythonnet\runtime\Python.Runtime.dll");
             string fonts = Path.Combine(tmp, @"katex\fonts");
-            string uico = Path.Combine(tmp, "uninstall-md.ico");
-            string ucs = Path.Combine(tmp, "UninstallMDEditor.cs");
+            string uico = Path.Combine(tmp, "uninstall-mdwright.ico");
+            string ucs = Path.Combine(tmp, "UninstallMDWright.cs");
             string mjs = Path.Combine(tmp, @"mermaid\mermaid.min.js");
             string vjs = Path.Combine(tmp, @"viz\viz-standalone.js");
             string wjs = Path.Combine(tmp, @"wavedrom\wavedrom.min.js");
@@ -246,7 +246,7 @@ namespace MDEditorSetup
 
         public SetupForm()
         {
-            Text = "MDEditor v" + Setup.Version + " 安装程序";
+            Text = "MDWright v" + Setup.Version + " 安装程序";
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterScreen;
             MaximizeBox = false;
@@ -254,7 +254,7 @@ namespace MDEditorSetup
 
             var lblTitle = new Label
             {
-                Text = "MDEditor v" + Setup.Version + " 安装程序",
+                Text = "MDWright v" + Setup.Version + " 安装程序",
                 Font = new Font(FontFamily.GenericSansSerif, 14, FontStyle.Bold),
                 Location = new Point(20, 15),
                 Size = new Size(580, 30)
@@ -268,7 +268,7 @@ namespace MDEditorSetup
             _lblWv2.Size = new Size(580, 22);
 
             var lblDir = new Label { Text = "安装目录：", Location = new Point(22, 88), Size = new Size(76, 22) };
-            _txtDir.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MDEditor");
+            _txtDir.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MDWright");
             _txtDir.Location = new Point(100, 85);
             _txtDir.Size = new Size(400, 23);
 
@@ -277,7 +277,7 @@ namespace MDEditorSetup
             _btnBrowse.Size = new Size(90, 26);
             _btnBrowse.Click += (s, e) =>
             {
-                using (var d = new FolderBrowserDialog { Description = "选择 MDEditor 安装目录", SelectedPath = _txtDir.Text })
+                using (var d = new FolderBrowserDialog { Description = "选择 MDWright 安装目录", SelectedPath = _txtDir.Text })
                     if (d.ShowDialog(this) == DialogResult.OK) _txtDir.Text = d.SelectedPath;
             };
 
