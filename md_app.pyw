@@ -129,11 +129,22 @@ class Api:
     def pick_save_path(self, default_name="", last_dir=""):
         """另存为：只弹原生保存对话框选路径，写盘由页面统一走服务端
         /api/save-as（SSOT——物化/契约改写/回传只在服务端一份实现）。
-        返回完整路径；取消返回空串。缺后缀补 .md，已带 .md/.smd 尊重用户。"""
+        返回完整路径；取消返回空串。缺后缀补 .md，已带 .md/.smd 尊重用户。
+
+        起始目录不能留空：留空时系统会退到**进程工作目录**（安装目录），
+        用户一路回车就把稿子存进了 Program Files。优先上次目录 → 文档 → 主目录。
+        """
+        start = last_dir if last_dir and os.path.isdir(last_dir) else ""
+        if not start:
+            for cand in (os.path.join(os.path.expanduser("~"), "Documents"),
+                         os.path.expanduser("~")):
+                if cand and os.path.isdir(cand):
+                    start = cand
+                    break
         try:
             import webview
             kwargs = dict(
-                directory=last_dir if last_dir and os.path.isdir(last_dir) else "",
+                directory=start,
                 save_filename=default_name or "未命名.md")
             # 文件类型限定为 .md/.smd（pywebview 6.x：每个元素须为完整 '描述 (通配)' 格式）
             try:

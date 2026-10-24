@@ -625,7 +625,7 @@
   <div id="aboutBox" role="dialog" aria-modal="true" aria-label="关于 MDWright">
     <img src="mdwright.ico" alt="" width="40" height="40">
     <div class="ab-name">MDWright</div>
-    <div class="ab-ver">版本 <span id="aboutVer">3.2.0</span></div>
+    <div class="ab-ver">版本 <span id="aboutVer">3.2.1</span></div>
     <div class="ab-desc">Windows 单机 Markdown 写作台：写作照 Markdown 的来，输出照排版的来。</div>
     <div class="ab-lic">AGPL-3.0-or-later · 衍生自 MDEditor v2.0</div>
     <div class="ab-btns">
@@ -3095,11 +3095,15 @@ function parseMarkdown(src, fx){
   var tsCfg=(function(){
     var raw={};try{raw=JSON.parse(localStorage.getItem(TS_KEY)||'{}');}catch(e){}
     var ch0=parseFloat(raw.indent&&raw.indent.chars);if(isNaN(ch0))ch0=2;ch0=Math.max(0,Math.min(8,ch0));
+    /* 三线表与表头底色默认开：中文文稿默认就是三线表，没存过设置的新用户直接是成品样子；
+       用户手动取消过（存了 false）则尊重，不再强开。 */
+    var rawT=raw.table||{};
     var o={autoSaveMin:Math.max(0,Math.min(60,parseInt(raw.autoSaveMin,10)||0)),
       fonts:{},indent:{},
-      table:{three:!!(raw.table&&raw.table.three),
-        headOn:!!(raw.table&&raw.table.headOn),headColor:(raw.table&&raw.table.headColor)||'#dbe5ff',
-        colOn:!!(raw.table&&raw.table.colOn),colColor:(raw.table&&raw.table.colColor)||'#dbe5ff'}};
+      table:{three:(rawT.three===undefined?true:!!rawT.three),
+        headOn:(rawT.headOn===undefined?true:!!rawT.headOn),
+        headColor:rawT.headColor||'#dbe5ff',
+        colOn:!!rawT.colOn,colColor:rawT.colColor||'#dbe5ff'}};
     for(var i=0;i<TS_KEYS.length;i++){var r=(raw.fonts&&raw.fonts[TS_KEYS[i]])||{};o.fonts[TS_KEYS[i]]={f:r.f||'',s:r.s||'',a:r.a||''};}
     /* 图片默认居中：面板里「默认」一项对图片按居中处理（其余元素沿用"默认=不设"） */
     if(!o.fonts.img.a)o.fonts.img.a='center';
@@ -3616,6 +3620,7 @@ function parseMarkdown(src, fx){
         currentFile = j.path;
         currentBase = j.smd ? j.base : null;
         lastDir = dir;
+        addRecent(j.path, name);   /* 刚保存的文件必须进「最近文件」，否则用户找不到 */
         setDraft(currentFile,undefined);
         try { localStorage.setItem('md-lastdir', lastDir); } catch(e) {}
         document.getElementById('svOverlay').hidden = true;

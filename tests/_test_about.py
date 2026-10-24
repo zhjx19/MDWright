@@ -48,20 +48,26 @@ PROBE = r"""
       out.text = ov ? ov.textContent : '';
       var ver = q('#aboutVer');
       out.ver = ver ? ver.textContent.trim() : '';
-      document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}));
-      setTimeout(function(){
-        out.closedByEsc = !!ov && ov.hidden;
-        var recent = document.getElementById('btnRecent');
-        if(recent) recent.click();
+      fetch('/api/version').then(function(r){ return r.json(); }).then(function(v){
+        out.serverApp = v && v.app ? v.app : '';
+        document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}));
         setTimeout(function(){
-          var fm = q('#fmOverlay');
-          out.recentMode = fm ? fm.getAttribute('data-mode') : '';
-          out.recentHasBuiltin = !!q('#fmList [data-builtin]');
-          out.recentHasList = !!q('#fmList .fm-item');
-          if(fm) fm.hidden = true;
-          resolve(out);
-        }, 400);
-      }, 300);
+          out.closedByEsc = !!ov && ov.hidden;
+          var recent = document.getElementById('btnRecent');
+          if(recent) recent.click();
+          setTimeout(function(){
+            var fm = q('#fmOverlay');
+            out.recentMode = fm ? fm.getAttribute('data-mode') : '';
+            out.recentHasBuiltin = !!q('#fmList [data-builtin]');
+            out.recentHasList = !!q('#fmList .fm-item');
+            if(fm) fm.hidden = true;
+            resolve(out);
+          }, 400);
+        }, 300);
+      }).catch(function(){
+        document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}));
+        setTimeout(function(){ out.closedByEsc = !!ov && ov.hidden; resolve(out); }, 300);
+      });
     }, 700);
   });
 })()
@@ -78,7 +84,13 @@ def main():
     check("不再有合并项「最近文件 / 内置文档」",
           not any("/" in x and "最近文件" in x for x in items), str(items))
     check("关于窗口能打开", r.get("open") is True, str(r.get("open")))
-    check("关于显示版本 3.2.0", r.get("ver") == "3.2.0", str(r.get("ver")))
+    ver = r.get("ver")
+    check("关于显示的版本与服务端一致（不写死）",
+          bool(ver) and ver == (r.get("serverApp") or ""), "ui=%r server=%r" % (
+              ver, r.get("serverApp")))
+    import re as _re
+    check("版本号是 x.y.z",
+          bool(ver) and _re.match(r"^\d+\.\d+\.\d+$", ver) is not None, str(ver))
     text = r.get("text") or ""
     check("关于含许可与上游说明", "AGPL" in text and "MDEditor" in text, text[:120])
     check("Esc 关闭关于", r.get("closedByEsc") is True, str(r.get("closedByEsc")))

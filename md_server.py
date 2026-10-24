@@ -73,10 +73,10 @@ except Exception as _e:
 PORT = int(os.environ.get("MD_PORT") or 18766)
 HERE = os.path.dirname(os.path.abspath(__file__))
 EDITOR_HTML = os.path.join(HERE, "mdwright.html")
-MD_SERVER_VERSION = 67  # 每次服务端路由/能力变更时 +1；md_launch 依此自愈换代
+MD_SERVER_VERSION = 68  # 每次服务端路由/能力变更时 +1；md_launch 依此自愈换代
 # 应用版本号（「关于」窗口显示）：单一来源在这里，/api/version 带出 app 字段。
 # 发版时必须与 CHANGELOG 首段、MD_SERVER_VERSION 同步（见 AGENTS.md「发布必改三处」）。
-APP_VERSION = "3.2.0"
+APP_VERSION = "3.2.1"
 SETTINGS_PATH = os.path.join(HERE, "runtime", "settings.json")
 
 # .smd 自包含文档格式（v1.2.0）；导入失败落错误日志，相关路由返回明确错误而非静默
@@ -973,6 +973,27 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if not d or not os.path.isdir(d):
                     self._send(400, json.dumps({"ok": False,
                         "error": "目录不存在"}, ensure_ascii=False))
+                    return
+                # 文件名必须是裸名：带路径/盘符的名字会被 os.path.join 当成绝对路径，
+                # 表现为「文件名多了个 D:」并写到了别处。
+                if (name.startswith("..") or ":" in name or os.sep in name
+                        or (os.altsep and os.altsep in name)):
+                    self._send(400, json.dumps({"ok": False,
+                        "error": "文件名不能包含路径或盘符，请在「目录」里选位置"},
+                        ensure_ascii=False))
+                    return
+                # 不许写进软件安装目录：升级会覆盖，且文件不在用户手里。
+                # 首次另存为时原生对话框以进程工作目录为起点，正是安装目录，
+                # 不拦就会把稿子默默存进 Program Files。
+                try:
+                    rp_dir, rp_here = os.path.realpath(d), os.path.realpath(HERE)
+                    inside = os.path.commonpath([rp_dir, rp_here]) == rp_here
+                except Exception:
+                    inside = False
+                if inside:
+                    self._send(400, json.dumps({"ok": False,
+                        "error": "不能保存到软件安装目录（升级会覆盖）。请点「浏览…」换一个目录"},
+                        ensure_ascii=False))
                     return
                 to_smd = _smd is not None and name.lower().endswith(".smd")
                 if not to_smd and not name.lower().endswith(".md"):
