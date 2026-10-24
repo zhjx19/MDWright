@@ -55,9 +55,11 @@
 
 | 文档形态 | 侧车 | R 出图 |
 |---|---|---|
-| `.md` | `<doc>.assets/run-outputs.json` | `<doc>.assets/run-<hash>.png` |
-| `.smd` | 包内条目 `run-outputs.json` | 包内 `assets/run-<hash>.png` |
+| `.md` | `<doc>.md.assets/runs/run-outputs.json` | `<doc>.md.assets/runs/run-<hash>.png` |
+| `.smd` | 包内条目 `runs/run-outputs.json` | 包内 `runs/run-<hash>.png` |
 | 未命名 | `runtime/tmp/runs/<token>/run-outputs.json` | 同目录 |
+
+> 为什么单开 `runs/` 而不是塞进 `assets/`：`.smd` 的 `save_from_dir()` 会**删除 `assets/` 里没被正文引用的孤儿资产**（`PROTECTED` 只保 `annotations.json`）。运行图的引用写在侧车里、不在正文里，放进 `assets/` 会被下一次保存静默清掉。独立 `runs/` 目录不参与该清理，也不会污染用户的图片目录。
 
 格式（数组而非字典：**按代码原文匹配**，前端无需实现哈希）：
 
@@ -89,6 +91,8 @@
 | 端点 | 入参 | 出参 |
 |---|---|---|
 | `POST /api/run-r`、`/api/run-py` | `{code, doc, token}` | `{ok, stdout, stderr, error, image, runtime, python, restarted}`；成功后**顺带写侧车** |
+
+> 兼容口径：请求里**没有** `doc` 也没有 `token` 时按一次性执行（不建会话、不写侧车），保持既有调用方与 `_test_run_r` / `_test_run_py` 的行为不变。真实界面永远带 `token` 或 `doc`。
 | `GET /api/run-outputs` | `?doc=&token=` | `{ok, blocks:[...]}` |
 | `POST /api/run-reset` | `{doc, token, lang?}` | `{ok, killed:[...]}` |
 | `POST /api/export-docx` | 新增 `threeLine: bool` | 原有出参 |
