@@ -32,6 +32,8 @@ import urllib.request
 import webbrowser
 import html as html_module
 
+import md_runs
+
 try:
     if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -1182,9 +1184,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._send(500, json.dumps({"ok": False, "error": str(e)},
                                            ensure_ascii=False))
             return
-        if u.path == "/api/run-py":
-            # 执行 Python 代码块。运行时二选一：留空走内置便携运行时，
-            # 填了本机解释器路径则走本地（见「设置 → 外部工具」）。
+        if u.path in ("/api/run-r", "/api/run-py"):
+            # 代码块执行：带 doc/token 时走常驻会话（变量跨块），否则一次性执行后即杀。
+            # 跑的是**用户自己的代码**（UI 已明示），只在本机执行。
             try:
                 length = int(self.headers.get("Content-Length", 0))
                 obj = json.loads(self.rfile.read(length).decode("utf-8"))
@@ -1193,43 +1195,33 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     self._send(400, json.dumps({"ok": False, "error": "代码为空"},
                                                ensure_ascii=False))
                     return
-                settings = _load_json(SETTINGS_PATH, {})
-                cfg = settings.get("tools") if isinstance(settings, dict) else {}
-                cfg = cfg if isinstance(cfg, dict) else {}
-                py = ""
-                v = cfg.get("python_path")
-                if isinstance(v, str) and v.strip().lower().endswith(".exe"):
-                    py = v.strip()
-                self._send(200, json.dumps(_run_py_code(code, py or None),
-                                           ensure_ascii=False))
+                lang = "r" if u.path.endswith("-r") else "python"
+                key = md_runs.doc_key_of((obj.get("doc") or "").strip(),
+                                         (obj.get("token") or "").strip())
+                try:
+                    timeout = max(1, min(600, int(obj.get("timeout") or 60)))
+                except Exception:
+                    timeout = 60
+                res = md_runs.run_code(lang, code, key, timeout=timeout)
+                if res.get("busy"):
+                    self._send(409, json.dumps({"ok": False, "error": res["error"]},
+                                               ensure_ascii=False))
+                    return
+                self._send(200, json.dumps(res, ensure_ascii=False))
             except Exception as e:
                 self._send(500, json.dumps({"ok": False, "error": str(e)},
                                            ensure_ascii=False))
             return
-        if u.path == "/api/run-r":
-            # 执行 R 代码块。跑的是**用户自己的代码**（UI 已明示），只在本机执行。
+        if u.path == "/api/run-reset":
+            # 清空某文档的代码运行会话（变量随之丢失）。
             try:
                 length = int(self.headers.get("Content-Length", 0))
-                obj = json.loads(self.rfile.read(length).decode("utf-8"))
-                code = obj.get("code") or ""
-                if not code.strip():
-                    self._send(400, json.dumps({"ok": False, "error": "代码为空"},
-                                               ensure_ascii=False))
-                    return
-                settings = _load_json(SETTINGS_PATH, {})
-                cfg = settings.get("tools") if isinstance(settings, dict) else {}
-                cfg = cfg if isinstance(cfg, dict) else {}
-                import md_tools
-                rscript = md_tools.find_r(md_tools._cfg(cfg, "rscript_path", "rscript"))
-                if not rscript:
-                    self._send(400, json.dumps({"ok": False,
-                        "error": "未检测到 R 运行时（Rscript.exe）：请安装 R，"
-                                 "或在「设置 → 外部工具」里指定 Rscript 路径"},
-                        ensure_ascii=False))
-                    return
-                res = _run_r_code(code, rscript)
-                res["ok"] = bool(res.get("ok"))
-                self._send(200, json.dumps(res, ensure_ascii=False))
+                obj = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                key = md_runs.doc_key_of((obj.get("doc") or "").strip(),
+                                         (obj.get("token") or "").strip())
+                killed = md_runs.reset(key or None, obj.get("lang") or None)
+                self._send(200, json.dumps({"ok": True, "killed": killed},
+                                           ensure_ascii=False))
             except Exception as e:
                 self._send(500, json.dumps({"ok": False, "error": str(e)},
                                            ensure_ascii=False))
@@ -2120,6 +2112,21 @@ SYNTAX_CSS = (
     ".markdown-body .footnotes li{margin:.3em 0;}"
     ".markdown-body .fn-back{text-decoration:none;margin-left:.3em;}"
     ".markdown-body .fn-sep{border-top:1px solid #ddd;}"
+    # 图片排版（v3.2.0，与 mdwright.html 主样式一一对应）：
+    # 对齐给两套——text-align 管行内图（独立 HTML 的 img 是行内元素），
+    # margin 管块级图（分页基础样式把图设成 display:block，块级元素不吃 text-align）。
+    # 缺任何一套都会有一条链路失效，别"优化"成其中一种。
+    ".markdown-body p.p-img{text-indent:0 !important;}"
+    ".markdown-body p.p-img.al-l{text-align:left !important;}"
+    ".markdown-body p.p-img.al-c{text-align:center !important;}"
+    ".markdown-body p.p-img.al-r{text-align:right !important;}"
+    ".markdown-body p.p-img.al-l img{margin-left:0;margin-right:auto;}"
+    ".markdown-body p.p-img.al-c img{margin-left:auto;margin-right:auto;}"
+    ".markdown-body p.p-img.al-r img{margin-left:auto;margin-right:0;}"
+    ".markdown-body .img-fill{display:grid;gap:8px;align-items:start;margin:.8em 0;"
+    "break-inside:avoid;}"
+    ".markdown-body .img-fill div{min-width:0;}"
+    ".markdown-body .img-fill img{width:100%;height:auto;margin:0;}"
 )
 
 
@@ -2909,6 +2916,18 @@ def main():
     srv = Server()
     srv.start()
     atexit.register(srv.stop)
+    # 代码运行会话：退出时全部杀掉（别留僵尸解释器），空闲则由后台线程回收
+    atexit.register(md_runs.shutdown_all)
+
+    def _run_gc():
+        while True:
+            time.sleep(300)
+            try:
+                md_runs.gc_idle()
+            except Exception:
+                pass
+
+    threading.Thread(target=_run_gc, name="run-session-gc", daemon=True).start()
     # 空闲自动退出：页面关闭后无人使用，服务自行结束（无需手动 md_stop）
     threading.Thread(target=_idle_watchdog, daemon=True).start()
     ev = threading.Event()
