@@ -13,6 +13,7 @@
 import argparse
 import io
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -49,8 +50,41 @@ def tail(text, n=12):
     return "\n".join(lines[-n:])
 
 
+# 用例会自己 bind 这几个端口（18766 后端 / 18777 浏览器级 / 18790 截图流水线）。
+# 上一个用例的进程刚被 kill 时端口可能还没真正释放，下一个用例 bind 上去要么
+# 失败、要么请求被路由到即将退出的旧进程——实测会造成「与代码无关的 FAIL」。
+# 所以每个用例开跑前等端口安静下来；等不到就明确说一句，别让失败原因靠猜。
+PORTS = (18766, 18777, 18790)
+
+
+def _port_busy(port):
+    s = socket.socket()
+    s.settimeout(0.25)
+    try:
+        return s.connect_ex(("127.0.0.1", port)) == 0
+    except Exception:
+        return False
+    finally:
+        try:
+            s.close()
+        except Exception:
+            pass
+
+
+def wait_ports_free(timeout=15.0):
+    end = time.time() + timeout
+    busy = [p for p in PORTS if _port_busy(p)]
+    while busy and time.time() < end:
+        time.sleep(0.3)
+        busy = [p for p in PORTS if _port_busy(p)]
+    return busy
+
+
 def run_one(name, timeout):
     path = os.path.join(HERE, name)
+    busy = wait_ports_free()
+    if busy:
+        print("        端口仍被占用：%s（用例可能因此失败）" % busy)
     started = time.time()
     try:
         r = subprocess.run([PY, path], cwd=ROOT, capture_output=True, timeout=timeout,

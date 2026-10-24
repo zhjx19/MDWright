@@ -112,7 +112,12 @@ for backend, keyerr in (("tavily", "Tavily API Key"), ("bing", "Bing API Key"),
           str(r.get("error")))
 
 r = web_search.WebSearch({"enabled": True, "backend": "bogus", "max_results": 99}).search("q")
-check("ws bogus backend falls back to duckduckgo", r["error"] != "联网搜索已关闭")
+# 断言的是「没被当成『联网搜索已关闭』」——bogus 后端要回落到 DuckDuckGo：
+# 联网通了就是 success=True，不通就是网络类 error，两者都算回落成功；
+# 只有「已关闭」才算失败（旧写法直接取 r["error"]，成功时没有这个键就 KeyError）。
+check("ws bogus backend 回落到 duckduckgo",
+      bool(r.get("success")) or (r.get("error") and r["error"] != "联网搜索已关闭"),
+      str(r)[:160])
 
 fmt = web_search.format_results([{"title": "T1", "url": "http://a", "snippet": "S1"},
                                  {"title": "", "url": "", "snippet": "x" * 500}])

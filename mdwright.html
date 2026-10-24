@@ -72,6 +72,17 @@
     box-shadow:0 14px 34px rgba(0,0,0,.38);
   }
   #ctxMenu[data-open="1"]{display:block;}
+  #ctxMenu .ctx-hint{margin-left:26px; font-size:11px; color:var(--muted);}
+  #ctxMenu .ctx-sub{position:relative; user-select:none;}
+  #ctxMenu .ctx-arrow{margin-left:auto; padding-left:20px; font-size:11px; opacity:.7;}
+  #ctxMenu .sub-pop{
+    position:absolute; left:calc(100% - 2px); top:-5px; z-index:81;
+    min-width:150px; padding:5px; display:none;
+    background:var(--panel); border:1px solid var(--border); border-radius:9px;
+    box-shadow:0 14px 34px rgba(0,0,0,.38);
+  }
+  #ctxMenu .ctx-sub[data-open="1"] > .sub-pop{display:block;}
+  #ctxMenu .ctx-sub[data-open="1"]{background:var(--accent-soft);}
   /* ── 后端断连提示：底部居中的常驻条（不挡工具栏，也不挡正文）─── */
   #offlineBar{
     position:fixed; left:50%; transform:translateX(-50%); bottom:44px; z-index:90;
@@ -465,6 +476,7 @@
   </div>
 </header>
 <div id="ctxMenu" role="menu" aria-hidden="true"></div>
+<input type="file" id="imgPicker" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
 <div id="offlineBar" hidden>
   <span id="offlineTxt">本地后端已断开</span>
   <button id="offlineRetry" type="button">重试</button>
@@ -524,7 +536,9 @@
         <div class="ts-row"><label>主题</label><select id="setTheme"><option value="light">亮色（GitHub 浅色）</option><option value="dark">暗色（GitHub 深色）</option></select></div>
         <div class="ts-row"><label>正文字号（预览与编辑区，磅）</label><input id="setBaseSize" type="number" min="12" max="24" step="1" placeholder="15"></div>
         <div class="ts-row"><label>预览跟随编辑区滚动（仅分屏模式）</label><input id="setFollow" type="checkbox"></div>
-        <p class="set-note">主题与跟随也可在「视图」菜单里快速切换，两边始终同步。逐元素的字体/字号在「排版」页签里设置（优先级高于这里的正文字号）。</p>
+        <div class="ts-sep" style="margin-top:14px;"><span>编辑</span></div>
+        <div class="ts-row"><label>插入代码块的默认语言</label><select id="setCodeLang"><option value="r">R</option><option value="python">Python</option></select></div>
+        <p class="set-note">主题与跟随也可在「视图」菜单里快速切换，两边始终同步。逐元素的字体/字号在「排版」页签里设置（优先级高于这里的正文字号）。默认语言只决定「插入代码块」往文档里写哪种围栏，已有代码块不受影响。</p>
       </section>
       <section class="set-sec" data-sec="save" hidden>
         <div class="ts-row"><label>自动落盘间隔（分钟，0=仅手动）</label><input id="tsAuto" type="number" min="0" max="60" step="1"></div>
@@ -1275,6 +1289,17 @@ function parseMarkdown(src, fx){
 
   var STORE_KEY='md-editor-content-v1';
   var THEME_KEY='md-editor-theme';
+  var CODELANG_KEY='md-editor-code-lang';
+  /* 插入代码块的默认语言（设置 → 外观 → 编辑）：只影响「编辑 → 插入代码块」
+     与右键菜单里的同一项，不改已有代码块的标记。 */
+  var codeLang=(function(){
+    try{ var v=localStorage.getItem(CODELANG_KEY); return v==='python'?'python':'r'; }
+    catch(e){ return 'r'; }
+  })();
+  function setCodeLang(v){
+    codeLang=(v==='python')?'python':'r';
+    try{ localStorage.setItem(CODELANG_KEY,codeLang); }catch(e){}
+  }
   var SIZE_KEY='md-editor-base-size';
   var VIEW_KEY='md-editor-view';
   var FOLLOW_KEY='md-editor-follow';
@@ -1986,10 +2011,12 @@ function parseMarkdown(src, fx){
     document.getElementById('selRagPolish').click();
   });
 
-  /* 编辑菜单尾部：插入类（代码块 / 脚注）——与格式项同源，避免菜单结构分两处维护 */
+  /* 编辑菜单尾部：插入类（公式 / 图片 / 代码块 / 脚注 / 运行）——与格式项同源，避免菜单结构分两处维护 */
   (function(){
     var sp=document.createElement('div'); sp.className='menu-sep'; fmtBtns.appendChild(sp);
-    var defs=[['btnInsCode','插入代码块'],['btnInsFootnote','插入脚注'],
+    var defs=[['btnInsMathIn','插入行内公式'],['btnInsMathBlock','插入行间公式'],
+              ['btnInsImage','插入图片'],
+              ['btnInsCode','插入代码块'],['btnInsFootnote','插入脚注'],
               ['btnRunSel','运行选中代码']];
     defs.forEach(function(d){
       var b=document.createElement('button');
@@ -1999,31 +2026,99 @@ function parseMarkdown(src, fx){
     });
   })();
 
-  /* ── 编辑区右键菜单：基础编辑 + Markdown 快捷 ─────────────────
-     与工具栏「编辑」菜单共用 applyFormat / fmtDefs，不另写一套语法处理。
+  /* ── 编辑区右键菜单：基础编辑 + 「编辑」菜单的全部能力 ─────────
+     与工具栏「编辑」菜单共用 applyFormat / fmtDefs / insertFormula 等同一套实现，
+     不另写语法处理。同类项收进二级菜单（标题 / 强调 / 块 / 插入），主菜单只留六行。
      mousedown 一律 preventDefault：点菜单不能把编辑区的选区弄丢，
      否则「加粗」套上去的是空选区（与一级菜单踩过的坑同一个）。 */
   var ctxMenu=document.getElementById('ctxMenu');
-  var CTX_BTNS=[
-    {t:'撤销',k:'undo'},{t:'重做',k:'redo'},{sep:1},
-    {t:'剪切',k:'cut'},{t:'复制',k:'copy'},{t:'粘贴',k:'paste'},
-    {t:'全选',k:'selectAll'},{sep:1},
-    {t:'加粗',k:'fmt:B'},{t:'斜体',k:'fmt:I'},{t:'行内代码',k:'fmt:</>'},
-    {t:'链接',k:'fmt:链接'},{t:'表格',k:'fmt:表格'},{t:'行内公式',k:'formula'}
+  var CTX_MENU=[
+    {t:'撤销',k:'undo',hint:'Ctrl+Z'},
+    {t:'恢复',k:'redo',hint:'Ctrl+Y'},
+    {sep:1},
+    {t:'剪切',k:'cut',hint:'Ctrl+X'},
+    {t:'复制',k:'copy',hint:'Ctrl+C'},
+    {t:'粘贴',k:'paste',hint:'Ctrl+V'},
+    {sep:1},
+    {t:'标题',sub:[
+      {t:'一级标题',k:'fmt:H1'},
+      {t:'二级标题',k:'fmt:H2'}]},
+    {t:'强调',sub:[
+      {t:'加粗',k:'fmt:B'},
+      {t:'斜体',k:'fmt:I'},
+      {t:'删除线',k:'fmt:S'},
+      {t:'行内代码',k:'fmt:</>'}]},
+    {t:'块',sub:[
+      {t:'引用块',k:'fmt:引用'},
+      {t:'无序列表',k:'fmt:列表'},
+      {t:'有序列表',k:'fmt:序号'},
+      {t:'任务列表',k:'fmt:任务'}]},
+    {t:'插入',sub:[
+      {t:'链接',k:'fmt:链接'},
+      {t:'表格',k:'fmt:表格'},
+      {t:'行内公式',k:'math:in'},
+      {t:'行间公式',k:'math:block'},
+      {t:'图片',k:'insImage'},
+      {t:'代码块',k:'insCode'},
+      {t:'脚注',k:'insFootnote'}]},
+    {sep:1},
+    {t:'运行选中代码',k:'runSel'}
   ];
+  function ctxItem(d){
+    var b=document.createElement('button');
+    b.type='button'; b.className='menu-item'; b.setAttribute('role','menuitem');
+    b.setAttribute('data-ctx',d.k); b.textContent=d.t;
+    if(d.hint){
+      var h=document.createElement('span'); h.className='ctx-hint'; h.textContent=d.hint;
+      b.appendChild(h);
+    }
+    return b;
+  }
   (function buildCtxMenu(){
-    for(var i=0;i<CTX_BTNS.length;i++){
-      var d=CTX_BTNS[i];
+    for(var i=0;i<CTX_MENU.length;i++){
+      var d=CTX_MENU[i];
       if(d.sep){ var sp=document.createElement('div'); sp.className='menu-sep'; ctxMenu.appendChild(sp); continue; }
-      var b=document.createElement('button');
-      b.type='button'; b.className='menu-item'; b.setAttribute('role','menuitem');
-      b.setAttribute('data-ctx',d.k); b.textContent=d.t;
-      ctxMenu.appendChild(b);
+      if(!d.sub){ ctxMenu.appendChild(ctxItem(d)); continue; }
+      /* 二级菜单：父项不是 button（里面要嵌按钮，button 套 button 不合法） */
+      var wrap=document.createElement('div');
+      wrap.className='menu-item ctx-sub'; wrap.setAttribute('role','menuitem');
+      wrap.setAttribute('aria-haspopup','true'); wrap.setAttribute('aria-expanded','false');
+      wrap.appendChild(document.createTextNode(d.t));
+      var arrow=document.createElement('span'); arrow.className='ctx-arrow'; arrow.textContent='▸';
+      wrap.appendChild(arrow);
+      var pop=document.createElement('div');
+      pop.className='sub-pop'; pop.setAttribute('role','menu');
+      for(var j=0;j<d.sub.length;j++) pop.appendChild(ctxItem(d.sub[j]));
+      wrap.appendChild(pop);
+      wrap.addEventListener('mouseenter',function(){ openSub(this); });
+      wrap.addEventListener('click',function(e){
+        if(e.target.closest('.sub-pop')) return;      /* 点二级项交给主委托 */
+        if(this.getAttribute('data-open')==='1') closeSub(this); else openSub(this);
+        e.stopPropagation();
+      });
+      ctxMenu.appendChild(wrap);
     }
   })();
+  function openSub(wrap){
+    var pop=wrap.querySelector('.sub-pop');
+    if(!pop) return;
+    wrap.setAttribute('data-open','1');
+    wrap.setAttribute('aria-expanded','true');
+    /* 右边放不下就翻到左边，避免二级菜单跑出视口 */
+    pop.style.left=''; pop.style.right='';
+    var b=pop.getBoundingClientRect();
+    if(b.right>window.innerWidth-8) pop.style.left='auto', pop.style.right='calc(100% - 2px)';
+    if(b.bottom>window.innerHeight-8) pop.style.top='auto', pop.style.bottom='-5px';
+  }
+  function closeSub(wrap){
+    wrap.removeAttribute('data-open');
+    wrap.setAttribute('aria-expanded','false');
+  }
   function hideCtxMenu(){
     ctxMenu.removeAttribute('data-open');
     ctxMenu.setAttribute('aria-hidden','true');
+    var subs=ctxMenu.querySelectorAll('.ctx-sub');
+    for(var i=0;i<subs.length;i++) closeSub(subs[i]);
   }
   function ctxFmt(label){
     for(var i=0;i<fmtDefs.length;i++){ if(fmtDefs[i].label===label) return fmtDefs[i]; }
@@ -2035,14 +2130,14 @@ function parseMarkdown(src, fx){
       if(d) applyFormat(d);
       return;
     }
-    if(kind==='formula'){
-      var r=getSel(), val=getText();
-      var txt=val.substring(r.s,r.e)||'x';
-      setText(val.substring(0,r.s)+'$'+txt+'$'+val.substring(r.e));
-      setSel(r.s+1,r.s+1+txt.length);
-      editor.focus(); scheduleRender(); scheduleSave();
+    if(kind==='math:in'||kind==='math:block'){
+      insertFormula(kind==='math:block');
       return;
     }
+    if(kind==='insCode'){ insertBlockCode(); return; }
+    if(kind==='insImage'){ insertImage(); return; }
+    if(kind==='insFootnote'){ insertFootnote(); return; }
+    if(kind==='runSel'){ document.getElementById('btnRunSel').click(); return; }
     if(kind==='paste'){
       /* 127.0.0.1 是安全上下文，可以读剪贴板；readText 需要用户手势，这里就在点击里调用 */
       if(!(navigator.clipboard&&navigator.clipboard.readText)){
@@ -2056,11 +2151,11 @@ function parseMarkdown(src, fx){
       return;
     }
     editor.focus();
-    document.execCommand(kind);      /* undo / redo / cut / copy / selectAll */
+    document.execCommand(kind);      /* undo / redo / cut / copy */
   }
   ctxMenu.addEventListener('mousedown',function(e){ e.preventDefault(); });
   ctxMenu.addEventListener('click',function(e){
-    var b=e.target.closest('.menu-item');
+    var b=e.target.closest('[data-ctx]');
     if(!b) return;
     var kind=b.getAttribute('data-ctx');
     hideCtxMenu();
@@ -2080,7 +2175,8 @@ function parseMarkdown(src, fx){
   });
   document.addEventListener('keydown',function(e){ if(e.key==='Escape') hideCtxMenu(); });
 
-  function insertBlockCode(){    var lang='r';
+  function insertBlockCode(){
+    var lang=codeLang==='python'?'python':'r';
     var ins='\n```'+lang+'\n\n```\n';
     var r=getSel(), val=getText();
     setText(val.substring(0,r.s)+ins+val.substring(r.e));
@@ -2088,6 +2184,57 @@ function parseMarkdown(src, fx){
     setSel(pos,pos);
     editor.focus(); scheduleRender(); scheduleSave();
   }
+  /* 公式：行内 $...$ / 行间 $$...$$。有选中就把选中内容包进去，没有就留占位符 */
+  function insertFormula(block){
+    var r=getSel(), val=getText(), sel=val.substring(r.s,r.e);
+    var body=sel||'公式';
+    if(block){
+      var ins='\n$$\n'+body+'\n$$\n';
+      var at=r.s;
+      setText(val.substring(0,at)+ins+val.substring(r.e));
+      var sp=at+ins.indexOf(body);
+      setSel(sp,sp+body.length);
+    }else{
+      var ins2='$'+body+'$';
+      setText(val.substring(0,r.s)+ins2+val.substring(r.e));
+      setSel(r.s+1,r.s+1+body.length);
+    }
+    editor.focus(); scheduleRender(); scheduleSave();
+  }
+  /* 插入图片：选本地图片 → 服务端按容器落位（.md→<stem>.assets/，.smd→包内 assets/）
+     → 在光标处写 `![](相对路径)`。落盘走与「粘贴截图」同一个 /api/paste-image，
+     不另开一条写盘路径（两条路径迟早会走样）。 */
+  function insertImage(){
+    if(!currentFile){
+      showToast('插入图片前请先保存文档：图片会存进同名 .assets 目录');
+      openSaveAs();
+      return;
+    }
+    var picker=document.getElementById('imgPicker');
+    picker.value='';
+    picker.click();
+  }
+  document.getElementById('imgPicker').addEventListener('change',function(){
+    var f=this.files&&this.files[0];
+    if(!f) return;
+    var name=(f.name||'').replace(/\.[^.]+$/,'').replace(/[\[\]()\r\n]/g,' ').trim();
+    var caret=getSel();
+    var fr=new FileReader();
+    fr.onload=function(){
+      fetch('/api/paste-image',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({docPath:currentFile,dataUrl:fr.result})})
+        .then(function(r){return r.json();})
+        .then(function(j){
+          if(!(j&&j.ok)){ showToast('图片保存失败：'+((j&&j.error)||'未知错误')); return; }
+          var ins='!['+name+']('+j.rel+')';
+          setSel(caret.e,caret.e);
+          insertPlainText(ins);
+        })
+        .catch(function(er){ showToast('图片保存失败：'+er.message); });
+    };
+    fr.readAsDataURL(f);
+  });
+
   function insertFootnote(){
     var val=getText();
     var used={}, re=/\[\^([^\]\s]+)\]/g, m;
@@ -2105,6 +2252,9 @@ function parseMarkdown(src, fx){
   }
   document.getElementById('btnInsCode').addEventListener('click',insertBlockCode);
   document.getElementById('btnInsFootnote').addEventListener('click',insertFootnote);
+  document.getElementById('btnInsMathIn').addEventListener('click',function(){ insertFormula(false); });
+  document.getElementById('btnInsMathBlock').addEventListener('click',function(){ insertFormula(true); });
+  document.getElementById('btnInsImage').addEventListener('click',insertImage);
   function applyFormat(d){
     var selR=getSel();
     var s=selR.s,e=selR.e;
@@ -2962,6 +3112,7 @@ function parseMarkdown(src, fx){
     document.getElementById('setBaseSize').value =
       (function(){try{return parseInt(localStorage.getItem(SIZE_KEY),10)||15;}catch(e){return 15;}})();
     document.getElementById('setFollow').checked = !!followOn;
+    document.getElementById('setCodeLang').value = codeLang;
     setTab('appearance');
     fillTools(false);
     document.getElementById('tsOverlay').hidden=false;
@@ -3408,6 +3559,7 @@ function parseMarkdown(src, fx){
     if((wantTheme==='light')!==document.body.classList.contains('light')) applyTheme(wantTheme);
     var wantFollow=document.getElementById('setFollow').checked;
     if(!!followOn!==wantFollow){ followOn=wantFollow; applyFollow(); }
+    setCodeLang(document.getElementById('setCodeLang').value);
     applyBaseSize(document.getElementById('setBaseSize').value);
     applyTypeset();resetAutoDisk();
     document.getElementById('tsOverlay').hidden=true;

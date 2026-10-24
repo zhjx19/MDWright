@@ -21,7 +21,9 @@
 - **中文与英文/数字之间自动补空格**：照 `按Esc退出` / `v3.0.0版本` 的写法，预览里显示为 `按 Esc 退出` / `v3.0.0 版本`。实现要点：`cjkSpace()` 只匹配「汉字紧贴 ASCII 字母/数字」，幂等；调用点在 `parseInline()` 中代码段/转义占位之后、`escapeHtml` 之前，因此行内代码、代码块、公式、URL 一律不碰；Word 导出另走 `cjkSpaceMarkdown()`（跳过围栏与行内代码后套同一函数），保证预览与四种导出物一致。**源文与落盘内容一个字节都不改。**
 - **R 代码块改为控制台语义**：`_R_WRAPPER` 不再整段 `eval`，改成 `parse()` 后逐表达式 `withVisible(eval(...))`、可见值自动 `print`。`1:10`、`mtcars`、`mpg |> count(class)`、`library(tidyverse)` 后的裸管道结果都与 R 控制台一致；赋值、`library()`、`invisible()` 不出声；ggplot 对象照旧出图。用户此前只能在文档里手写 `print()`，那是脚本语义。
 - **Python 代码块支持两条运行时**：`/api/run-py` 读 `tools.python_path`——留空用随包内置 3.11.9（只有标准库），填了且文件存在则用本机解释器（pandas 等第三方包可用）。响应新增 `runtime` / `python`，输出块下方标明「随包内置 · Python 3.11.9」或「本地解释器 · Python 3.14.5」。路径填错回落内置；**不做 PATH 自动探测**（同一份 `.md` 换台机器会跑出不同结果）。`md_tools.py` 的 `TOOLS_KEYS` 由 4 个键扩到 5 个（新增 `python_path`），设置面板同步多一个输入框。
-- **编辑区右键菜单**：撤销 / 重做 / 剪切 / 复制 / 粘贴 / 全选 + 加粗 / 斜体 / 行内代码 / 链接 / 表格 / 行内公式。Markdown 项直接复用工具栏「编辑」菜单的 `applyFormat(fmtDefs[i])`，不另写一套；`mousedown` 一律 `preventDefault` 保住选区；粘贴走 `navigator.clipboard.readText()` + `insertText`（127.0.0.1 是安全上下文），被拒时提示改用 `Ctrl+V`。
+- **编辑区右键菜单**：撤销 / 恢复 / 剪切 / 复制 / 粘贴 + 标题 / 强调 / 块 / 插入四个二级菜单（覆盖「编辑」菜单的全部格式项与插入项，含行内公式、行间公式、图片、代码块、脚注）+ 运行选中代码。Markdown 项直接复用工具栏「编辑」菜单的 `applyFormat(fmtDefs[i])`，不另写一套；`mousedown` 一律 `preventDefault` 保住选区；粘贴走 `navigator.clipboard.readText()` + `insertText`（127.0.0.1 是安全上下文），被拒时提示改用 `Ctrl+V`。
+- **编辑菜单补三项插入能力**：插入行内公式（`$…$`）、插入行间公式（`$$…$$` 独占一块）、插入图片（系统文件框选图 → 写进文档同名 `.assets/` → 正文写相对路径，落盘复用「粘贴截图」的 `/api/paste-image`，不另开写盘路径）。有选中内容时公式把选中内容包进去，没有就填占位符并选中，直接打字覆盖。
+- **插入代码块的默认语言可配置**：设置 → 外观 → 编辑，「插入代码块的默认语言」选 R 或 Python（默认 R，存 `localStorage: md-editor-code-lang`）。只影响「插入代码块」写哪种围栏，已有代码块不受影响。
 
 **修复**
 
@@ -32,13 +34,17 @@
 
 - 新增 `tests/_test_cjk_space.py`：从 `mdwright.html` 抽 `cjkSpace` / `cjkSpaceMarkdown` 真源码跑 node，12 条断言（补空格、幂等、全角标点、行内代码、围栏代码、波浪围栏）。
 - `tests/_test_run_r.py` 补 4 条控制台语义断言（`1:10`、`mtcars`、赋值不打印、`invisible` 不打印）；`tests/_test_tools.py` 工具键由 4 个改为 5 个；`tests/_test_table_split.py` 抽取的函数清单补上 `cjkSpace`（`parseInline` 现在依赖它）。
+- `tests/_test_menu_ui.py` 跟着菜单改：编辑菜单 15 → 18 项，新增「行内/行间公式写入正确记号」「含插入图片」「代码块默认语言为 R」三条断言。
+- `tests/run_all.py` 每个用例开跑前等 18766 / 18777 / 18790 安静下来（最多 15s），等不到就先打一行提示——之前 `_test_keepalive` / `_test_dist_verify` 偶发失败正是上一个用例的端口没退干净，与代码无关。
+- `tests/_test_llm_websearch.py` 的「bogus 后端回落 DuckDuckGo」用例改了断言：原来直接取 `r["error"]`，联网通、搜索真成功时该键不存在 → KeyError 假失败；现在按「不是『联网搜索已关闭』」判定，成功与网络错误都算回落成立。
 
 **验证**
 
-- 全套串行跑一遍（44 个用例、单文件 300s 超时，用时 420s）：**38 PASS / 5 SKIP / 1 FAIL**。
+- 全套串行跑一遍（44 个用例、单文件 300s 超时，用时 584s）：**38 PASS / 5 SKIP / 1 FAIL**。
   - 5 个 SKIP 是本机未装 playwright（按约定返回 77）；
-  - 1 个 FAIL 是 `_test_rag_e2e`：需本机配置 `rag-assistant` 路径，本机未部署，与本次改动无关。
-- 另用无头 Edge 逐个实跑确认：工具栏无品牌字样；`cjkSpace('按Esc退出')` → `按 Esc 退出`、`cjkSpaceMarkdown` 不碰围栏与行内代码；右键菜单 12 项、点「加粗」源文变 `**abc**`；R 的 `library(tidyverse)` + 裸管道打印出 tibble；Python 留空 `runtime=builtin`、填本地路径 `runtime=local` 且 pandas 可用、填假路径回落内置；把后端进程杀掉后底部出现断连提示，重启后端自动消失。
+  - 唯一稳定 FAIL 是 `_test_rag_e2e`：需本机配置 `rag-assistant` 路径，本机未部署，与本次改动无关。
+- 另用无头 Edge 逐个实跑确认：工具栏无品牌字样；`cjkSpace('按Esc退出')` → `按 Esc 退出`、`cjkSpaceMarkdown` 不碰围栏与行内代码；右键菜单主项 6 项 + 4 个二级菜单（标题 2 / 强调 4 / 块 4 / 插入 7），点「加粗」源文变 `**abc**`，点「行间公式」写入 `$$\n…\n$$`；插入图片在无文档时先提示保存、有文档时 POST `/api/paste-image` 并写入 `![名](x.assets/…)`；代码块默认语言默认 R，设置里切 Python 后插入 ```python 围栏；R 的 `library(tidyverse)` + 裸管道打印出 tibble；Python 留空 `runtime=builtin`、填本地路径 `runtime=local` 且 pandas 可用、填假路径回落内置；把后端进程杀掉后底部出现断连提示，重启后端自动消失。
+- 打包产物冒烟（解 `payload.zip` 从包里直接起后端）：562 个文件、`/api/version` 66、页面含断连提示/中英空格/右键菜单且无品牌字样、R `1:10` 正常打印、Python `runtime=builtin`、`/api/tools` 五键齐全。
 
 **说明**
 

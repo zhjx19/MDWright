@@ -157,6 +157,9 @@ PROBE_EDIT = r"""
   out.insCode=!!document.getElementById('btnInsCode');
   out.insFoot=!!document.getElementById('btnInsFootnote');
   out.runSel=!!document.getElementById('btnRunSel');
+  out.mathIn=!!document.getElementById('btnInsMathIn');
+  out.mathBlock=!!document.getElementById('btnInsMathBlock');
+  out.insImage=!!document.getElementById('btnInsImage');
   out.light=document.body.classList.contains('light');
   out.baseFont=getComputedStyle(document.documentElement)
       .getPropertyValue('--base-font').trim();
@@ -173,6 +176,12 @@ PROBE_EDIT = r"""
   ed.textContent='正文'; selectAll();
   document.getElementById('btnInsFootnote').click();
   out.afterFoot=ed.textContent;
+  ed.textContent='E'; selectAll();
+  document.getElementById('btnInsMathIn').click();
+  out.afterMathIn=ed.textContent;
+  ed.textContent='abc'; selectAll();
+  document.getElementById('btnInsMathBlock').click();
+  out.afterMathBlock=ed.textContent;
   return out;
 })()
 """
@@ -211,7 +220,7 @@ def main():
     check("有「设置」按钮", r.get("settingsBtn") is True)
     check("旧的平铺按钮已收进下拉", (r.get("flatBtns") or 0) <= 1, str(r.get("flatBtns")))
     check("编辑菜单有 12 个格式项", r.get("fmtCount") == 12, str(r.get("fmtCount")))
-    check("编辑菜单共 15 项（含插入类）", r.get("fmtTotal") == 15, str(r.get("fmtTotal")))
+    check("编辑菜单共 18 项（含插入类）", r.get("fmtTotal") == 18, str(r.get("fmtTotal")))
     check("点击菜单标签展开", r.get("openAfterClick") == "true" and r.get("popVisible") is True,
           "expanded=%r visible=%r" % (r.get("openAfterClick"), r.get("popVisible")))
     check("加粗项包裹选中文字", r.get("afterBold") == "**abc**", str(r.get("afterBold")))
@@ -255,6 +264,15 @@ def main():
     check("编辑菜单含插入代码块", re_.get("insCode") is True, str(re_))
     check("编辑菜单含插入脚注", re_.get("insFoot") is True, str(re_))
     check("编辑菜单含运行选中代码", re_.get("runSel") is True, str(re_))
+    check("编辑菜单含行内/行间公式",
+          re_.get("mathIn") is True and re_.get("mathBlock") is True, str(re_))
+    check("编辑菜单含插入图片", re_.get("insImage") is True, str(re_))
+    check("行内公式写入 $…$", (re_.get("afterMathIn") or "") == "$E$",
+          repr(re_.get("afterMathIn")))
+    check("行间公式写入 $$ 块",
+          "$$\n" in (re_.get("afterMathBlock") or "")
+          and (re_.get("afterMathBlock") or "").count("$$") >= 2,
+          repr(re_.get("afterMathBlock")))
     check("默认主题为亮色", re_.get("light") is True, str(re_))
     check("正文字号变量已生效", (re_.get("baseFont") or "") == "15px", str(re_.get("baseFont")))
     check("插入代码块写入围栏",
@@ -263,6 +281,8 @@ def main():
     check("插入脚注写入引用与定义",
           "[^1]" in (re_.get("afterFoot") or "") and "[^1]: " in (re_.get("afterFoot") or ""),
           str(re_.get("afterFoot")))
+    check("代码块默认语言默认为 R",
+          "```r" in (re_.get("afterCode") or ""), str(re_.get("afterCode")))
 
     # ---- Word 导出：先选路径再导出 ----
     tmp = tempfile.mkdtemp(prefix="mdmenu-")
