@@ -33,7 +33,7 @@ DIST_DOCS_DIRS = ["MDWright 使用指南.assets", "screenshots"]
 DIST_FILES = ["md_launch.pyw", "_md_run.py", "md_server.py", "mdwright.html",
               "mdwright.ico", "uninstall-mdwright.ico", "llm_client.py", "web_search.py",
               "rag_client.py", "_smd.py", "md_assets.py", "_splash.py",
-              "md_tools.py", "md_pandoc.py", "_cdp.py", "_savefile.py",
+              "md_tools.py", "md_pandoc.py", "md_runs.py", "_cdp.py", "_savefile.py",
               "_pickdir_modern.py", "_pickfile.py", "md_app.pyw", "LICENSE", "README.md",
               "install.cmd", "MDWright.cs", "MDWright.exe", "_mklnk.ps1",
               "uninstall.cmd", "UninstallMDWright.cs", "desktop-shortcut.cmd", "md_stop.cmd"]

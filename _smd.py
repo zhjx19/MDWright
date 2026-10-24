@@ -202,6 +202,41 @@ def _fsync_file(path):
         os.close(fd)
 
 
+# 运行产物目录（包内 runs/）：刻意与 assets/ 分开——assets 里的孤儿会被
+# save_from_dir 清理，而运行图只被侧车引用、不在正文里，放 assets 会被静默删掉。
+RUNS_DIR = "runs"
+
+
+def _runs_files(base_dir):
+    d = os.path.join(base_dir, RUNS_DIR)
+    out = []
+    if os.path.isdir(d):
+        for root, _dirs, files in os.walk(d):
+            for fn in files:
+                out.append(os.path.join(root, fn))
+    return out
+
+
+def write_runs_entries(smd_path, base_dir, paths):
+    """把 runs/ 下的文件按相对路径追加进包；只接受 base_dir/runs/ 内的文件。"""
+    entries = []
+    for p in paths:
+        try:
+            rel = os.path.relpath(p, base_dir).replace(os.sep, "/")
+        except Exception:
+            continue
+        if rel.startswith(RUNS_DIR + "/") and os.path.isfile(p):
+            entries.append((rel, p))
+    if not entries:
+        return 0
+    _append_entries(smd_path, entries)
+    try:
+        _write_sig(smd_path, os.path.join(base_dir, ".source.json"))
+    except Exception:
+        pass
+    return len(entries)
+
+
 def save_from_dir(smd_path, base_dir):
     """增量保存（两阶段提交）：
 
@@ -268,6 +303,9 @@ def compact(smd_path, base_dir):
     pack_from_dir(smd_path,
                   os.path.join(base_dir, DOC_NAME),
                   os.path.join(base_dir, ASSETS_DIR))
+    # pack_from_dir 只打 doc + assets；runs/ 不参与孤儿清理，必须显式补回去，
+    # 否则"整理一次就丢运行结果"（compact 在孤儿清理与体积阈值两条路径上都会触发）。
+    write_runs_entries(smd_path, base_dir, _runs_files(base_dir))
     sig_file = os.path.join(base_dir, ".source.json")
     _write_sig(smd_path, sig_file)
 

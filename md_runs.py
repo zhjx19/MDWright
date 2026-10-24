@@ -24,6 +24,8 @@ import sys
 import threading
 import time
 
+import _smd
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 _NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 _SESS = {}                    # (doc_key, lang) -> _Session
@@ -296,3 +298,128 @@ def shutdown_all():
         for s in list(_SESS.values()):
             s.kill()
         _SESS.clear()
+
+
+# ── 运行结果侧车 ────────────────────────────────────────────────
+# 落点：.md → <doc>.md.assets/runs/；.smd → 包内 runs/；未命名 → runtime/tmp/runs/<token>/
+# 单开 runs/ 而不是塞进 assets/：.smd 的 save_from_dir 会清掉 assets 里没被正文
+# 引用的孤儿资产，运行图的引用写在侧车里、不在正文，放 assets 会被下一次保存静默删掉。
+RUNS_DIR = "runs"
+_DOC_SUFFIX = ".assets"
+
+
+def _store_dir(doc_path, token=""):
+    """侧车所在目录（绝对）。.smd 用解包目录，未命名用临时区。"""
+    if doc_path:
+        try:
+            if _smd.is_smd(doc_path):
+                return os.path.join(_smd.base_dir_for(doc_path), RUNS_DIR)
+        except Exception:
+            pass
+        return os.path.join(os.path.dirname(os.path.abspath(doc_path)),
+                            os.path.basename(doc_path) + _DOC_SUFFIX, RUNS_DIR)
+    return os.path.join(HERE, "runtime", "tmp", "runs", token or "untitled")
+
+
+def _load_list(store_json):
+    try:
+        with io.open(store_json, encoding="utf-8") as f:
+            data = json.load(f)
+        blocks = data.get("blocks") if isinstance(data, dict) else None
+        return blocks if isinstance(blocks, list) else []
+    except Exception:
+        return []
+
+
+def _write_list(store_json, blocks):
+    os.makedirs(os.path.dirname(store_json), exist_ok=True)
+    payload = json.dumps({"version": 1, "blocks": blocks}, ensure_ascii=False, indent=1)
+    if len(payload.encode("utf-8")) > 2 * 1024 * 1024:
+        return False
+    tmp = store_json + ".part"
+    with io.open(tmp, "w", encoding="utf-8", newline="\n") as f:
+        f.write(payload)
+    os.replace(tmp, store_json)
+    return True
+
+
+def _img_name(code):
+    return "run-" + hashlib.sha1(code.encode("utf-8")).hexdigest()[:10] + ".png"
+
+
+def save_output(lang, code, res, doc_path="", token=""):
+    """把一次运行结果写进侧车；返回写入的条目（image 为 runs/ 内文件名）。"""
+    if not doc_path and not token:
+        return {}
+    store_dir = _store_dir(doc_path, token)
+    try:
+        os.makedirs(store_dir, exist_ok=True)
+    except Exception:
+        return {}
+    entry = {"lang": lang, "code": code,
+             "stdout": (res.get("stdout") or "")[:20000],
+             "stderr": (res.get("stderr") or "")[:20000],
+             "error": res.get("error") or "",
+             "image": "", "runtime": res.get("runtime") or "",
+             "python": res.get("python") or "",
+             "ranAt": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    src_png = res.get("image") or ""
+    if src_png and os.path.isfile(src_png):
+        name = _img_name(code)
+        try:
+            shutil.copy2(src_png, os.path.join(store_dir, name))
+            entry["image"] = name
+        except Exception:
+            entry["image"] = ""
+    store = os.path.join(store_dir, "run-outputs.json")
+    blocks = [b for b in _load_list(store)
+              if (b.get("lang"), b.get("code")) != (lang, code)]
+    blocks.append(entry)
+    _write_list(store, blocks)
+    if doc_path and _is_smd(doc_path):
+        try:
+            _smd.write_runs_entries(doc_path, _smd.base_dir_for(doc_path),
+                                    [store] + ([os.path.join(store_dir, entry["image"])]
+                                               if entry["image"] else []))
+        except Exception:
+            pass
+    return entry
+
+
+def image_abs(doc_path="", token="", name=""):
+    """侧车里的图片文件名 → 绝对路径（不存在则空串）。"""
+    if not name:
+        return ""
+    try:
+        p = os.path.join(_store_dir(doc_path, token), name)
+    except Exception:
+        return ""
+    return p if os.path.isfile(p) else ""
+
+
+def read_outputs(doc_path="", token=""):
+    """读侧车；image 相对文件名解析成 imageAbs（绝对路径，可直接给 /img?path=）。"""
+    if not doc_path and not token:
+        return []
+    try:
+        store_dir = _store_dir(doc_path, token)
+    except Exception:
+        return []
+    blocks = _load_list(os.path.join(store_dir, "run-outputs.json"))
+    out = []
+    for b in blocks:
+        if not isinstance(b, dict) or "code" not in b:
+            continue
+        b = dict(b)
+        rel = b.get("image") or ""
+        abs_p = os.path.join(store_dir, rel) if rel else ""
+        b["imageAbs"] = abs_p if (abs_p and os.path.isfile(abs_p)) else ""
+        out.append(b)
+    return out
+
+
+def _is_smd(path):
+    try:
+        return _smd.is_smd(path)
+    except Exception:
+        return False

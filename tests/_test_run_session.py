@@ -15,11 +15,15 @@ for _p in (_HERE, _ROOT):
     if _p not in _sys.path:
         _sys.path.insert(0, _p)
 
+import io
 import json
+import os
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 try:
@@ -108,6 +112,18 @@ def main():
     post("/api/run-r", {"code": "z <- 1"})
     r5, _ = post("/api/run-r", {"code": "exists('z')"})
     check("无 doc 时退化为一次性执行", "FALSE" in (r5.get("stdout") or ""), str(r5)[:200])
+
+    # ---- 运行结果落盘，并能从 HTTP 读回（重开文档靠它恢复）----
+    tdir = tempfile.mkdtemp(prefix="mdses-")
+    tdoc = os.path.join(tdir, "s.md")
+    io.open(tdoc, "w", encoding="utf-8").write("# t\n")
+    post("/api/run-r", {"code": "1 + 1", "doc": tdoc})
+    with urllib.request.urlopen(
+            "http://127.0.0.1:%d/api/run-outputs?doc=%s"
+            % (PORT, urllib.parse.quote(tdoc)), timeout=20) as r:
+        j = json.loads(r.read().decode("utf-8"))
+    check("HTTP 读回已存档输出",
+          any(b.get("code") == "1 + 1" for b in (j.get("blocks") or [])), str(j)[:200])
 
     # ---- 空代码仍按原样拒绝 ----
     e, sec = post("/api/run-r", {"code": "   ", "doc": DOC})

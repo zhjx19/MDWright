@@ -498,6 +498,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                  "sessions": len(_LIVE_SESSIONS)},
                 ensure_ascii=False))
             return
+        if u.path == "/api/run-outputs":
+            # 读回某文档已存档的运行结果（重开文档/刷新页面后恢复输出用）
+            try:
+                q = urllib.parse.parse_qs(u.query)
+                blocks = md_runs.read_outputs((q.get("doc") or [""])[0],
+                                              (q.get("token") or [""])[0])
+                self._send(200, json.dumps({"ok": True, "blocks": blocks},
+                                           ensure_ascii=False))
+            except Exception as e:
+                self._send(500, json.dumps({"ok": False, "error": str(e)},
+                                           ensure_ascii=False))
+            return
         if u.path == "/api/tools":
             # 外部工具探测（pandoc / 浏览器 / R / quarto）：前端据 found 决定按钮置灰，
             # 缺失时给安装指引而不是让导出中途炸掉。
@@ -1207,6 +1219,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     self._send(409, json.dumps({"ok": False, "error": res["error"]},
                                                ensure_ascii=False))
                     return
+                if key:
+                    doc_arg = (obj.get("doc") or "").strip()
+                    token_arg = (obj.get("token") or "").strip()
+                    entry = md_runs.save_output(lang, code, res, doc_arg, token_arg)
+                    if entry:
+                        res["image"] = md_runs.image_abs(doc_arg, token_arg,
+                                                         entry.get("image") or "")
+                        res["saved"] = True
                 self._send(200, json.dumps(res, ensure_ascii=False))
             except Exception as e:
                 self._send(500, json.dumps({"ok": False, "error": str(e)},
