@@ -62,7 +62,7 @@ except Exception as _e:
     except Exception:
         pass
 
-PORT = 18766
+PORT = int(os.environ.get("MD_PORT") or 18766)
 HERE = os.path.dirname(os.path.abspath(__file__))
 EDITOR_HTML = os.path.join(HERE, "mdwright.html")
 MD_SERVER_VERSION = 66  # 每次服务端路由/能力变更时 +1；md_launch 依此自愈换代
@@ -1183,7 +1183,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                            ensure_ascii=False))
             return
         if u.path == "/api/run-py":
-            # 执行 Python 代码块（内置便携运行时；只回 stdout/stderr）
+            # 执行 Python 代码块。运行时二选一：留空走内置便携运行时，
+            # 填了本机解释器路径则走本地（见「设置 → 外部工具」）。
             try:
                 length = int(self.headers.get("Content-Length", 0))
                 obj = json.loads(self.rfile.read(length).decode("utf-8"))
@@ -1192,7 +1193,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     self._send(400, json.dumps({"ok": False, "error": "代码为空"},
                                                ensure_ascii=False))
                     return
-                self._send(200, json.dumps(_run_py_code(code), ensure_ascii=False))
+                settings = _load_json(SETTINGS_PATH, {})
+                cfg = settings.get("tools") if isinstance(settings, dict) else {}
+                cfg = cfg if isinstance(cfg, dict) else {}
+                py = ""
+                v = cfg.get("python_path")
+                if isinstance(v, str) and v.strip().lower().endswith(".exe"):
+                    py = v.strip()
+                self._send(200, json.dumps(_run_py_code(code, py or None),
+                                           ensure_ascii=False))
             except Exception as e:
                 self._send(500, json.dumps({"ok": False, "error": str(e)},
                                            ensure_ascii=False))
@@ -2566,14 +2575,26 @@ con_err <- file(err_txt, open = "wt", encoding = "UTF-8")
 sink(out_txt, split = FALSE)
 sink(con_err, type = "message")
 err <- NULL
-res <- NULL
 png(out_png, width = 1200, height = 800, res = 150)
-res <- tryCatch(withVisible(eval(parse(text = code), envir = globalenv())),
-                error = function(e) { err <<- conditionMessage(e); NULL })
-if (is.null(err)) {
-  v <- res$value
-  if (inherits(v, "ggplot")) print(v)
-  else if (is.function(v)) v()
+# 控制台语义：逐条表达式求值，**可见**的结果自动打印。
+# 整段 eval 只能拿到最后一个值，于是 mtcars / 1:10 / mpg |> count(class) 都不出声，
+# 逼用户在文档里手写 print()——那是脚本语义，不是 R 的交互语义。
+exprs <- tryCatch(parse(text = code), error = function(e) { err <<- conditionMessage(e); NULL })
+if (!is.null(exprs)) {
+  for (i in seq_along(exprs)) {
+    if (!is.null(err)) break
+    r <- tryCatch(withVisible(eval(exprs[[i]], envir = globalenv())),
+                  error = function(e) { err <<- conditionMessage(e); NULL })
+    if (is.null(err) && !is.null(r)) {
+      v <- r$value
+      # 兼容历史写法：整块就是一个 function(){...} 时直接调用它
+      if (is.function(v)) {
+        tryCatch(v(), error = function(e) err <<- conditionMessage(e))
+      } else if (isTRUE(r$visible)) {
+        print(v)
+      }
+    }
+  }
 }
 invisible(dev.off())
 sink(type = "message"); sink()
@@ -2695,16 +2716,30 @@ def _run_r_code(code, rscript, timeout=60):
             _prune_r_pngs()
 
 
-def _run_py_code(code, timeout=60):
-    """跑用户 Python 代码（用**内置便携运行时**，零额外依赖）。
+def _run_py_code(code, python_exe=None, timeout=60):
+    """跑用户 Python 代码：两套运行时，返回 {ok, stdout, stderr, error, runtime, python}。
 
-    只返回 stdout/stderr：打包运行时里没有 matplotlib，画图不在支持范围内，
-    不假装支持（要画图请用 R 代码块）。
+    - 默认用**随包内置运行时**（3.11.9，只有标准库）：同一份 .md 换台机器行为一致；
+    - 在「设置 → 外部工具」填了本机 Python 路径、且文件存在时，改用那个解释器，
+      于是 `import pandas` 这类第三方包可用。
+    两条路线都只回 stdout/stderr；Python 块不支持出图（要画图用 R 代码块）。
     """
     d = os.path.join(HERE, "runtime", "tmp", "py")
     os.makedirs(d, exist_ok=True)
     uid = uuid.uuid4().hex[:12]
     script = os.path.join(d, uid + ".py")
+    exe = sys.executable
+    runtime = "builtin"
+    if python_exe and os.path.isfile(python_exe):
+        exe = python_exe
+        runtime = "local"
+    version = ""
+    try:
+        import md_tools
+        version = md_tools.version_of(exe) or ("Python %s" % ".".join(
+            map(str, sys.version_info[:3])))
+    except Exception:
+        version = "Python %s" % ".".join(map(str, sys.version_info[:3]))
     try:
         with open(script, "w", encoding="utf-8", newline="\n") as f:
             f.write(code)
@@ -2712,19 +2747,22 @@ def _run_py_code(code, timeout=60):
         env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONUTF8"] = "1"
         try:
-            r = subprocess.run([sys.executable, "-X", "utf8", script],
+            r = subprocess.run([exe, "-X", "utf8", script],
                                capture_output=True, text=True, encoding="utf-8",
                                errors="replace", timeout=timeout, cwd=d, env=env,
                                creationflags=0x08000000)
         except subprocess.TimeoutExpired:
-            return {"ok": False, "stdout": "", "stderr": "",
-                    "error": "执行超时（%d 秒）：代码可能陷入死循环" % timeout}
+            return {"ok": False, "stdout": "", "stderr": "", "error":
+                    "执行超时（%d 秒）：代码可能陷入死循环" % timeout,
+                    "runtime": runtime, "python": version}
         so = (r.stdout or "")[:20000]
         se = (r.stderr or "")[:20000]
         if r.returncode != 0:
-            return {"ok": False, "stdout": so, "stderr": se,
+            return {"ok": False, "stdout": so, "stderr": se, "runtime": runtime,
+                    "python": version,
                     "error": (se.strip().splitlines() or ["执行失败"])[-1][:600]}
-        return {"ok": True, "stdout": so, "stderr": se, "error": ""}
+        return {"ok": True, "stdout": so, "stderr": se, "error": "",
+                "runtime": runtime, "python": version}
     finally:
         try:
             if os.path.exists(script):

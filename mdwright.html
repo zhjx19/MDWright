@@ -46,7 +46,6 @@
   }
   .tb-group{display:flex; align-items:center; gap:4px;}
   .tb-group.right{margin-left:auto;}
-  .brand{font-weight:600; letter-spacing:.5px; color:var(--accent); margin-right:8px; font-size:14px;}
   .tb-btn{
     background:transparent; color:var(--text); border:1px solid transparent;
     border-radius:7px; padding:5px 10px; font-size:13px; cursor:pointer;
@@ -66,6 +65,27 @@
     box-shadow:0 14px 34px rgba(0,0,0,.38);
   }
   .menu[data-open="1"] .menu-pop{display:block;}
+  /* ── 编辑区右键菜单：与下拉菜单同一套视觉，位置跟鼠标走 ────── */
+  #ctxMenu{
+    position:fixed; z-index:80; min-width:196px; padding:5px; display:none;
+    background:var(--panel); border:1px solid var(--border); border-radius:9px;
+    box-shadow:0 14px 34px rgba(0,0,0,.38);
+  }
+  #ctxMenu[data-open="1"]{display:block;}
+  /* ── 后端断连提示：底部居中的常驻条（不挡工具栏，也不挡正文）─── */
+  #offlineBar{
+    position:fixed; left:50%; transform:translateX(-50%); bottom:44px; z-index:90;
+    display:flex; align-items:center; gap:14px;
+    padding:9px 16px; font-size:13px; border-radius:10px;
+    background:#7a3d12; color:#ffe9d6; border:1px solid #a4551a;
+    box-shadow:0 12px 30px rgba(0,0,0,.35);
+  }
+  #offlineBar[hidden]{display:none;}
+  #offlineBar button{
+    background:rgba(255,255,255,.14); color:#fff; border:1px solid rgba(255,255,255,.35);
+    border-radius:6px; padding:3px 12px; font-size:12px; cursor:pointer; font-family:var(--sans);
+  }
+  #offlineBar button:hover{background:rgba(255,255,255,.26);}
   .menu-item{
     display:flex; align-items:center; justify-content:space-between; gap:18px;
     width:100%; padding:7px 10px; border:none; border-radius:6px; cursor:pointer;
@@ -391,7 +411,6 @@
 </head>
 <body class="light">
 <header id="toolbar">
-  <div class="tb-group brand" title="本工具由 AI 辅助生成 (AI-assisted)">MDWright</div>
   <nav id="menuBar">
     <div class="menu">
       <button class="tb-btn menu-label" data-menu="file" aria-haspopup="true" aria-expanded="false">文件</button>
@@ -445,6 +464,11 @@
     <button id="btnSettings" class="tb-btn" title="设置：外观 / 保存 / 排版 / 分页 / 外部工具">设置</button>
   </div>
 </header>
+<div id="ctxMenu" role="menu" aria-hidden="true"></div>
+<div id="offlineBar" hidden>
+  <span id="offlineTxt">本地后端已断开</span>
+  <button id="offlineRetry" type="button">重试</button>
+</div>
 <main id="main">
   <aside id="outline" class="pane"></aside>
   <section id="editorPane" class="pane">
@@ -544,9 +568,10 @@
         <div class="ts-row"><label>pandoc（Word 导出）</label><input class="set-tool-inp" id="setPathPandoc" placeholder="留空=自动探测"><span class="set-tool-val" id="setToolPandoc">检测中…</span></div>
         <div class="ts-row"><label>浏览器（PDF 直出）</label><input class="set-tool-inp" id="setPathBrowser" placeholder="留空=自动探测"><span class="set-tool-val" id="setToolBrowser">检测中…</span></div>
         <div class="ts-row"><label>Rscript（R 代码块）</label><input class="set-tool-inp" id="setPathR" placeholder="留空=自动探测"><span class="set-tool-val" id="setToolR">检测中…</span></div>
+        <div class="ts-row"><label>Python（Python 代码块）</label><input class="set-tool-inp" id="setPathPy" placeholder="留空=用随包内置运行时"><span class="set-tool-val" id="setToolPy">检测中…</span></div>
         <div class="ts-row"><label>quarto（暂时不用）</label><input class="set-tool-inp" id="setPathQuarto" placeholder="留空=自动探测"><span class="set-tool-val" id="setToolQuarto">检测中…</span></div>
         <div class="ts-row"><label></label><button class="sv-mini" id="setToolsSave">保存路径</button><button class="sv-mini" id="setToolsRefresh">重新检测</button></div>
-        <p class="set-note">自动探测顺序：设置里的路径 → PATH → 常见安装目录（含 Quarto / RStudio 自带的 pandoc、注册表登记的 R）。填错会自动回落到自动探测，不会把功能锁死。</p>
+        <p class="set-note">自动探测顺序：设置里的路径 → PATH → 常见安装目录（含 Quarto / RStudio 自带的 pandoc、注册表登记的 R）。填错会自动回落到自动探测，不会把功能锁死。<br>Python 是唯一例外：<b>留空就用随包内置运行时（3.11.9，只有标准库）</b>，填了本机解释器路径才走本地（可用 pandas 等第三方包，输出块会标明是谁跑的）。</p>
       </section>
     </div>
     <div class="ts-foot"><button id="tsApply">应用</button></div>
@@ -846,6 +871,36 @@ function sanitizeUrl(u){
   if(/^data:/.test(t) && !/^data:image\//i.test(t)) return '#';
   return t;
 }
+/* 中文与英文/数字之间自动补一个空格（渲染期补，源文一个字节都不改）。
+   只匹配「汉字紧贴 ASCII 字母/数字」这一种情况：
+   - 已经有空格的天然不匹配，所以函数幂等，重复渲染不会越补越多；
+   - 全角标点（，。「」）不在 ASCII 字母/数字范围内，不会被推开；
+   - 行内代码/公式/URL 在调用点已被占位符隔断，进不来。 */
+function cjkSpace(s){
+  if(!s) return s;
+  return String(s)
+    .replace(/([\u3400-\u4dbf\u4e00-\u9fff])([A-Za-z0-9])/g,'$1 $2')
+    .replace(/([A-Za-z0-9])([\u3400-\u4dbf\u4e00-\u9fff])/g,'$1 $2');
+}
+/* Word 导出把 markdown 源文交给 pandoc，所以源文上也要补同样的空格，
+   否则「预览有空格、Word 没有」。跳过围栏代码块与行内代码——代码里一个字符都不许动。 */
+function cjkSpaceMarkdown(md){
+  var src=String(md==null?'':md);
+  if(!src) return src;
+  var out=[], fence=null, lines=src.split('\n');
+  for(var i=0;i<lines.length;i++){
+    var ln=lines[i], m=ln.match(/^\s*(`{3,}|~{3,})/);
+    if(fence){
+      if(m && m[1].charAt(0)===fence.charAt(0) && m[1].length>=fence.length) fence=null;
+      out.push(ln); continue;
+    }
+    if(m){ fence=m[1]; out.push(ln); continue; }
+    out.push(ln.split(/(`+[^`]*`+)/).map(function(seg,idx){
+      return (idx%2===1) ? seg : cjkSpace(seg);      /* 奇数段是行内代码，原样 */
+    }).join(''));
+  }
+  return out.join('\n');
+}
 function parseInline(text, fx){
   var codes=[];
   text=text.replace(/`([^`]+)`/g,function(m,c){codes.push(c);return '@@C'+(codes.length-1)+'@@';});
@@ -855,6 +910,10 @@ function parseInline(text, fx){
      在代码段提取之后做：代码段内反斜杠保持字面，双保险不冲突。 */
   var escs=[];
   text=text.replace(/\\([!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])/g,function(m,c){escs.push(c);return '\x00E'+(escs.length-1)+'\x00';});
+  /* 中英混排：在转义/代码占位之后、escapeHtml 之前补空格。此刻文本仍是
+     「纯文本 + 占位符」，补出来的空格才会被 escapeHtml 正常处理，
+     而占位符（\x00U0\x00 / @@C0@@）夹在中间，代码与 URL 一律碰不到。 */
+  text=cjkSpace(text);
   text=escapeHtml(text);
   /* 生成的标签先进占位符：后续强调/加粗等行内语法绝不能触碰属性值
      （否则下划线文件名 20261015_181923_3419.png 会被 _.._ 改写成 <em>，图片必 404）。
@@ -1145,6 +1204,75 @@ function parseMarkdown(src, fx){
   var preview=document.getElementById('preview');
   var outlineEl=document.getElementById('outline');
   var fileInput=document.getElementById('fileInput');
+
+  /* ── 后端断连保护 ────────────────────────────────────────────
+     后端进程没了（被托盘退出、被测试/截图脚本抢端口后又释放、崩溃），
+     页面还在，点任何按钮都只会弹出 fetch 的原文「Failed to fetch」——
+     用户既不知道发生了什么，也不知道该怎么办。这里直接包 window.fetch：
+     网络层失败就先探一次 /api/version，确认后端真的没了就挂一条常驻提示，
+     每 2.5s 自动重连，回来了自己消失。HTTP 4xx/5xx 不走这条路（那是业务错误）。 */
+  var _rawFetch = window.fetch ? window.fetch.bind(window) : null;
+  var _offlineTimer = null, _offlineProbing = false;
+  function offlineBar(on, txt){
+    var bar=document.getElementById('offlineBar');
+    if(!bar) return;
+    if(txt){
+      var t=document.getElementById('offlineTxt');
+      if(t) t.textContent=txt;
+    }
+    bar.hidden=!on;
+  }
+  function probeBackend(cb){
+    if(!_rawFetch){ cb(false); return; }
+    _rawFetch('/api/version',{cache:'no-store'})
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(j){ cb(!!(j&&j.ok)); })
+      .catch(function(){ cb(false); });
+  }
+  function backendDown(){
+    offlineBar(true,'本地后端已断开（127.0.0.1:'+(location.port||'18766')
+      +' 无响应）：正在自动重连…');
+    if(_offlineTimer) return;
+    var ticks=0;
+    _offlineTimer=setInterval(function(){
+      if(_offlineProbing) return;
+      _offlineProbing=true;
+      ticks++;
+      /* 内嵌窗口模式下页面自己起不了进程，但桥那边可以（pywebview api）。
+         每 4 次探测（约 10s）请它重启一次后端，浏览器模式则没有这个桥。 */
+      if(ticks%4===1){
+        try{
+          if(window.pywebview&&window.pywebview.api&&window.pywebview.api.restart_backend){
+            window.pywebview.api.restart_backend();
+          }
+        }catch(e){}
+      }
+      probeBackend(function(up){
+        _offlineProbing=false;
+        if(up){
+          clearInterval(_offlineTimer); _offlineTimer=null;
+          offlineBar(false);
+          showToast('已重新连上本地后端');
+        }
+      });
+    },2500);
+  }
+  if(_rawFetch){
+    window.fetch=function(u,o){
+      return _rawFetch(u,o).catch(function(e){
+        probeBackend(function(up){ if(!up) backendDown(); });
+        throw e;
+      });
+    };
+    var _offBtn=document.getElementById('offlineRetry');
+    if(_offBtn) _offBtn.addEventListener('click',function(){
+      probeBackend(function(up){
+        if(up){ offlineBar(false); showToast('后端已恢复，请再点一次刚才的操作'); }
+        else backendDown();
+      });
+    });
+  }
+
   var STORE_KEY='md-editor-content-v1';
   var THEME_KEY='md-editor-theme';
   var SIZE_KEY='md-editor-base-size';
@@ -1870,8 +1998,89 @@ function parseMarkdown(src, fx){
       fmtBtns.appendChild(b);
     });
   })();
-  function insertBlockCode(){
-    var lang='r';
+
+  /* ── 编辑区右键菜单：基础编辑 + Markdown 快捷 ─────────────────
+     与工具栏「编辑」菜单共用 applyFormat / fmtDefs，不另写一套语法处理。
+     mousedown 一律 preventDefault：点菜单不能把编辑区的选区弄丢，
+     否则「加粗」套上去的是空选区（与一级菜单踩过的坑同一个）。 */
+  var ctxMenu=document.getElementById('ctxMenu');
+  var CTX_BTNS=[
+    {t:'撤销',k:'undo'},{t:'重做',k:'redo'},{sep:1},
+    {t:'剪切',k:'cut'},{t:'复制',k:'copy'},{t:'粘贴',k:'paste'},
+    {t:'全选',k:'selectAll'},{sep:1},
+    {t:'加粗',k:'fmt:B'},{t:'斜体',k:'fmt:I'},{t:'行内代码',k:'fmt:</>'},
+    {t:'链接',k:'fmt:链接'},{t:'表格',k:'fmt:表格'},{t:'行内公式',k:'formula'}
+  ];
+  (function buildCtxMenu(){
+    for(var i=0;i<CTX_BTNS.length;i++){
+      var d=CTX_BTNS[i];
+      if(d.sep){ var sp=document.createElement('div'); sp.className='menu-sep'; ctxMenu.appendChild(sp); continue; }
+      var b=document.createElement('button');
+      b.type='button'; b.className='menu-item'; b.setAttribute('role','menuitem');
+      b.setAttribute('data-ctx',d.k); b.textContent=d.t;
+      ctxMenu.appendChild(b);
+    }
+  })();
+  function hideCtxMenu(){
+    ctxMenu.removeAttribute('data-open');
+    ctxMenu.setAttribute('aria-hidden','true');
+  }
+  function ctxFmt(label){
+    for(var i=0;i<fmtDefs.length;i++){ if(fmtDefs[i].label===label) return fmtDefs[i]; }
+    return null;
+  }
+  function ctxRun(kind){
+    if(kind.indexOf('fmt:')===0){
+      var d=ctxFmt(kind.slice(4));
+      if(d) applyFormat(d);
+      return;
+    }
+    if(kind==='formula'){
+      var r=getSel(), val=getText();
+      var txt=val.substring(r.s,r.e)||'x';
+      setText(val.substring(0,r.s)+'$'+txt+'$'+val.substring(r.e));
+      setSel(r.s+1,r.s+1+txt.length);
+      editor.focus(); scheduleRender(); scheduleSave();
+      return;
+    }
+    if(kind==='paste'){
+      /* 127.0.0.1 是安全上下文，可以读剪贴板；readText 需要用户手势，这里就在点击里调用 */
+      if(!(navigator.clipboard&&navigator.clipboard.readText)){
+        showToast('当前环境不支持读取剪贴板，请用 Ctrl+V');
+        return;
+      }
+      navigator.clipboard.readText().then(function(t){
+        editor.focus();
+        if(t) document.execCommand('insertText',false,t);
+      }).catch(function(){ showToast('浏览器拒绝了剪贴板读取，请用 Ctrl+V'); });
+      return;
+    }
+    editor.focus();
+    document.execCommand(kind);      /* undo / redo / cut / copy / selectAll */
+  }
+  ctxMenu.addEventListener('mousedown',function(e){ e.preventDefault(); });
+  ctxMenu.addEventListener('click',function(e){
+    var b=e.target.closest('.menu-item');
+    if(!b) return;
+    var kind=b.getAttribute('data-ctx');
+    hideCtxMenu();
+    ctxRun(kind);
+  });
+  editor.addEventListener('contextmenu',function(e){
+    e.preventDefault();
+    ctxMenu.setAttribute('data-open','1');
+    ctxMenu.setAttribute('aria-hidden','false');
+    /* 先按鼠标位置摆，再按视口右/下边界回拉，贴边也不会被裁掉 */
+    var w=ctxMenu.offsetWidth||196, h=ctxMenu.offsetHeight||330;
+    ctxMenu.style.left=Math.max(6,Math.min(e.clientX,window.innerWidth-w-6))+'px';
+    ctxMenu.style.top=Math.max(6,Math.min(e.clientY,window.innerHeight-h-6))+'px';
+  });
+  document.addEventListener('mousedown',function(e){
+    if(ctxMenu.getAttribute('data-open')==='1'&&!ctxMenu.contains(e.target)) hideCtxMenu();
+  });
+  document.addEventListener('keydown',function(e){ if(e.key==='Escape') hideCtxMenu(); });
+
+  function insertBlockCode(){    var lang='r';
     var ins='\n```'+lang+'\n\n```\n';
     var r=getSel(), val=getText();
     setText(val.substring(0,r.s)+ins+val.substring(r.e));
@@ -2231,7 +2440,7 @@ function parseMarkdown(src, fx){
       docxBusy=true;
       showToast('正在导出 Word…');
       fetch('/api/export-docx',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({path:currentFile, markdown:getText(), outPath:outPath})})
+        body:JSON.stringify({path:currentFile, markdown:cjkSpaceMarkdown(getText()), outPath:outPath})})
         .then(function(r){return r.json();})
         .then(function(j){
           docxBusy=false;
@@ -2770,9 +2979,10 @@ function parseMarkdown(src, fx){
     }
   }
   var TOOL_ROWS=[['setToolPandoc','pandoc'],['setToolBrowser','browser'],
-                 ['setToolR','r'],['setToolQuarto','quarto']];
+                 ['setToolR','r'],['setToolPy','python'],['setToolQuarto','quarto']];
   var TOOL_PATH_ROWS=[['setPathPandoc','pandoc_path'],['setPathBrowser','browser_path'],
-                      ['setPathR','rscript_path'],['setPathQuarto','quarto_path']];
+                      ['setPathR','rscript_path'],['setPathPy','python_path'],
+                      ['setPathQuarto','quarto_path']];
   function fillTools(showBusy){
     for(var i=0;i<TOOL_ROWS.length;i++){
       var el=document.getElementById(TOOL_ROWS[i][0]);
@@ -2792,8 +3002,9 @@ function parseMarkdown(src, fx){
               el.className='set-tool-val ok';
               el.title=v.path||'';
             }else{
-              el.textContent='未检测到';
-              el.className='set-tool-val miss';
+              el.textContent=(TOOL_ROWS[k][1]==='python')
+                ? '未指定（用随包内置）' : '未检测到';
+              el.className='set-tool-val'+(TOOL_ROWS[k][1]==='python'?'':' miss');
               el.title='';
             }
           }
@@ -2873,6 +3084,12 @@ function parseMarkdown(src, fx){
           if(j.image) html+='<img class="r-out-img" src="/img?path='+
                             encodeURIComponent(j.image)+'">';
           if(!j.stdout&&!j.image) html+='<div class="r-out-line">（执行完成，无输出）</div>';
+          /* Python 有两套运行时（随包内置 / 本机解释器），跑完标明是谁跑的，别让人猜 */
+          if(lang==='python'&&j.runtime){
+            html+='<div class="r-out-line">'+
+                  (j.runtime==='local'?'本地解释器':'随包内置')+' · '+
+                  escapeHtml(j.python||'Python')+'</div>';
+          }
         }else{
           html+='<pre class="r-out-err">'+escapeHtml((j&&j.error)||'执行失败')+'</pre>';
           if(j&&j.stdout) html+='<pre class="r-out-txt">'+escapeHtml(j.stdout)+'</pre>';

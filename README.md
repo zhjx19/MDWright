@@ -2,6 +2,10 @@
 
 **Windows 上的单机 Markdown 写作台。** 左侧写、右侧即时渲染；排版、分页、导出、代码块运行全部在本地完成，断网照常用。
 
+> **本项目的来路**：MDWright 是基于 **[MDEditor](https://github.com/Ldxs001/maby_tool) v2.0** 的衍生开发，不是从零开始的新项目。
+> 编辑器内核、本地文件服务、`.smd` 自包含格式与安装脚本均源自上游，此后在其上继续演进并更名为 MDWright。
+> 上游仓库：<https://github.com/Ldxs001/maby_tool>（同样以 AGPL-3.0-or-later 发布）。
+
 ![写作与渲染](docs/screenshots/writing.png)
 
 ---
@@ -26,12 +30,18 @@
 | Word 导出 | 经 pandoc 转 `.docx`，保留标题层级与公式 |
 | PDF 直出 | 调本机 Chromium 内核浏览器（Edge / Chrome）无头打印，边距与页码按当前设置 |
 | 批注 | 选区批注，随文档保存，可逐条跳转 |
+| 右键菜单 | 撤销/重做 · 剪切/复制/粘贴/全选 · 加粗/斜体/行内代码/链接/表格/公式 |
+| 中英混排 | 汉字与英文/数字之间渲染时自动补空格，预览与导出同步（源文不动） |
 | AI 润色 | 接本地 LM Studio / Ollama，也支持 OpenAI 兼容端点与 DeepSeek |
 | 可执行代码块 | 带 `r` / `python` 语言标记的代码块带「▶ 运行」，输出与图形显示在块下方 |
 | 自包含文档 | `.smd` 把正文、图片、批注打包成单个文件，跨机器取用要素齐全 |
 | 多开 | 多个窗口/标签共享一个后端进程，文件各自独立 |
 
-![分页导出](docs/screenshots/paged-export.png)
+下面两张是真实界面（左边在正文里点一段就地改源码，右边是代码块跑完的样子）：
+
+| 即时渲染：点中一段，就地展开该段源码 | 可执行代码块：点「▶ 运行」，输出留在块下方 |
+|---|---|
+| ![即时渲染](docs/screenshots/live-view.png) | ![可执行代码块](docs/screenshots/code-run.png) |
 
 ## 安装
 
@@ -61,22 +71,33 @@ install.cmd
 
 > **不要直接双击 `mdwright.html`**。这个文件由本地后端服务提供，`file://` 方式打开没有后端，页面会提示你走正确入口。
 
-## 外部工具路径：pandoc / 浏览器 / Rscript
+## 外部工具路径：pandoc / 浏览器 / Rscript / Python
 
-程序本身不需要任何外部工具就能写作和预览。三项功能依赖外部程序，**都支持手工指定路径**——装在不常见的位置、装了多个版本、或不想动 PATH，都填一下就行。
+程序本身不需要任何外部工具就能写作和预览。四项功能依赖外部程序，**都支持手工指定路径**——装在不常见的位置、装了多个版本、或不想动 PATH，都填一下就行。
 
 ### 在哪里设置
 
-工具栏 **「设置」→「外部工具」** 页签。四个输入框，右边实时显示探测到的版本：
+工具栏 **「设置」→「外部工具」** 页签。五个输入框，右边实时显示探测到的版本：
 
 | 输入框 | 对应功能 | 典型路径 |
 |---|---|---|
 | **pandoc（Word 导出）** | 导出 `.docx` | `C:\Program Files\Pandoc\pandoc.exe` |
 | **浏览器（PDF 直出）** | 用 Chromium 内核无头打印 PDF | `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe` |
 | **Rscript（R 代码块）** | 运行带 `r` 标记的代码块、出图 | `C:\Program Files\R\R-4.4.1\bin\x64\Rscript.exe` |
+| **Python（Python 代码块）** | 运行带 `python` 标记的代码块 | `C:\Users\你\AppData\Local\Programs\Python\Python312\python.exe` |
 | **quarto（暂时不用）** | 预留位，本版没有功能消费 | — |
 
 填的是**可执行文件的完整路径，带 `.exe`**，不要填目录。填完点「保存路径」。
+
+### Python 是唯一例外：留空 = 用随包内置
+
+其余工具留空就走自动探测，Python 不：
+
+- **留空**（默认）→ 用随包内置的 3.11.9，只有标准库，`import pandas` 会失败。好处是**同一份 `.md` 换台机器行为一致**；
+- **填了本机解释器路径** → 用那个环境，装了什么就能用什么（pandas / numpy 都行）。输出块下方会标明这次是谁跑的：`随包内置 · Python 3.11.9` 或 `本地解释器 · Python 3.14.5`；
+- 路径填错 → 回落内置运行时，不会把功能锁死。
+
+不做「自动探测 PATH 上的 Python」是有意的：那会让同一份文档在不同机器上跑出不同结果，而且用户不知道该找谁算账。要本地环境就显式填一次。
 
 ### 留空时怎么找
 
@@ -94,7 +115,7 @@ R 走注册表这一条是有意的：R 常常装在 `D:\` 这类非系统盘，
 
 ### 填错了会怎样
 
-**自动回落到自动探测**，不会把功能永久锁死——一次笔误不该让导出按钮消失。
+**自动回落到默认**，不会把功能永久锁死——一次笔误不该让导出按钮消失。
 
 判定方法很直接：输入框右侧显示的是**实际生效的那个程序**（版本号 + 完整路径）。如果显示的路径不是你填的那条，说明你填的那个没被采纳（路径不存在、或不是可执行文件），这时按显示的路径核对，或点「重新检测」再看一次。
 
@@ -111,28 +132,26 @@ R 走注册表这一条是有意的：R 常常装在 `D:\` 这类非系统盘，
   "tools": {
     "pandoc_path": "",
     "rscript_path": "",
+    "python_path": "",
     "quarto_path": "",
     "browser_path": ""
   }
 }
 ```
 
-- 全部留空字符串 = 全部走自动探测；
-- 只认识这四个键，其余键在读入时丢弃；
+- 留空字符串 = 走自动探测（Python 是例外：留空 = 用随包内置运行时）；
+- 只认识这五个键，其余键在读入时丢弃；
 - 非字符串值会被归成空串，不会让程序崩；
 - 改完保存，回到设置面板点「重新检测」（或重启程序）生效。
 
 > 路径里的反斜杠要写成 `\\`（JSON 转义），例如 `"rscript_path": "D:\\R-4.6.1\\bin\\x64\\Rscript.exe"`。
 
-### 关于 Python
+### 代码块怎么跑
 
-**Python 路径不可配置，也不打算开放。** 带 `python` 标记的代码块固定使用随包内置的便携运行时（3.11.9）：
+带 `python` / `r` 语言标记的代码块，右上角有「▶ 运行」，输出与图形显示在块下方。
 
-- 只有标准库，**没有 pip**，装不了第三方包；
-- 只回显 `stdout` / `stderr`，不采集图形；
-- 需要画图、需要 `tidyverse` 之类，用带 `r` 标记的代码块——R 的图和输出会显示在代码块下方。
-
-这样设计是为了可复现：同一份 `.md` 换台机器打开，代码块的行为一致，不会因为谁的 `PATH` 里恰好有个装了半套包的 Python 而变样。
+- **R**：走本机 `Rscript`，**控制台语义**——没写 `print()` 的裸表达式也会打印（`1:10`、`mtcars`、`mpg |> count(class)` 与在 R 控制台里敲一样）；赋值与 `library()` 不出声；ggplot 画到块下方；
+- **Python**：留空用内置 3.11.9，填了本地路径就用你那个环境（见上文）。两条路线都只回 `stdout` / `stderr`，Python 块不出图——要画图用 R 代码块。
 
 ## 常用操作
 
@@ -143,11 +162,20 @@ R 走注册表这一条是有意的：R 常常装在 `D:\` 这类非系统盘，
 | 带页码目录的成品 | 「导出 → 打印（分页 HTML）」，在打开的浏览器里打印或存 PDF |
 | 内置文档 | 「文件」→ 内置文档 → 使用指南 |
 | 视图切换 | 工具栏「视图」菜单（分屏 / 仅编辑 / 仅预览 / 即时渲染） |
+| 右键菜单 | 编辑区点右键：基础编辑 + Markdown 快捷 |
 | 退出后台 | 托盘图标右键，或 `md_stop.cmd` |
 
-## 截图
+## 图表与分页
 
-![图表引擎](docs/screenshots/diagrams.png)
+![图表引擎：Mermaid / Graphviz / Vega-Lite](docs/screenshots/diagrams.png)
+
+![分页导出：自动目录与页码](docs/screenshots/paged-export.png)
+
+> README 里的截图都来自真实界面，不是画的示意图：`docs/screenshots/_make_screenshots.py` 起本地后端、用无头 Edge 驱动页面并截图，示例文档在 `docs/screenshots/demo/`。界面改了就跑一遍重出：
+
+```bat
+python\python.exe docs\screenshots\_make_screenshots.py
+```
 
 ## 目录
 
@@ -162,8 +190,10 @@ _splash.py             启动画面
 md_app.pyw             WebView2 内嵌窗口模式
 python/                内置便携 Python 运行时
 docs/                  使用指南、版权与开源组件声明
+docs/screenshots/      README 截图、示例文档与重录脚本
 katex/ pagedjs/ mermaid/ viz/ wavedrom/ vega/ highlight/   离线前端依赖
 installer/             安装包构建脚本（仅用系统自带 csc.exe）
+tests/                 回归测试（浏览器级 / 导出 / 解析器，逐文件独立跑）
 ```
 
 ## 自己构建安装包
@@ -175,6 +205,15 @@ python\python.exe installer\_build_installer.py
 ```
 
 产物在 `_setup_out\MDWright-Setup-vX.Y.Z.exe`。版本号取自 `CHANGELOG.md` 的第一条 `## vX.Y.Z`。
+
+## 致谢
+
+这个项目站在别人的肩膀上，该说明的地方写清楚：
+
+- **上游项目 MDEditor**（<https://github.com/Ldxs001/maby_tool>）：本项目的起点。编辑器内核、本地文件服务、`.smd` 自包含格式与安装/卸载脚本源自其 v2.0，原作者与贡献者做了最基础的那一半工作。本仓库的改动与新增见 [CHANGELOG.md](CHANGELOG.md)。
+- **随包分发的第三方组件**：KaTeX、Paged.js、Mermaid、viz-js（内嵌 Graphviz）、WaveDrom、Vega / Vega-Lite / Vega-Embed、highlight.js、Pillow、Python 嵌入式运行时。逐项版本、许可证与本地位置见 [docs/版权与开源组件声明.md](docs/版权与开源组件声明.md)，许可全文见 `LICENSES/`。
+- **调用但不打包的外部工具**：pandoc（Word 导出）、Chromium 内核浏览器 Edge / Chrome（PDF 直出）、R 的 `Rscript`（R 代码块）。这些由使用者本机提供，程序只调用、不改动、不代装。
+- **AI 编码助手**：本项目相当一部分代码、文档与截图流程由 AI 编码代理参与完成，之后逐项在本机实跑验证。界面里保留「AI 辅助生成」标识，不为这件事遮掩。
 
 ## 许可
 

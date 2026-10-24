@@ -170,6 +170,20 @@ class Api:
         log("api_version() called BY PAGE -> bridge OK")
         return {"port": PORT, "embedded": True}
 
+    def restart_backend(self):
+        """页面发现后端断了会调这里：重新把本地服务拉起来。
+
+        内嵌模式下页面自己没法起进程，而后端可能因为空闲回收、崩溃、或端口被
+        别的实例抢走后释放而消失。没有这条通路，窗口只能一直显示「后端已断开」。
+        """
+        try:
+            ok = ensure_service()
+            log("restart_backend -> %s" % ok)
+            return {"ok": bool(ok)}
+        except Exception as e:
+            log("restart_backend failed: %s" % e)
+            return {"ok": False, "error": str(e)}
+
     # ---- 窗口控制（托盘/页面可调用）----
     def minimize(self):
         try:

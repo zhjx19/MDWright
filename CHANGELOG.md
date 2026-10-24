@@ -11,6 +11,42 @@
 
 ---
 
+## v3.1.0（2026-10-24）
+
+**本次改动：编辑体验打磨——工具栏收敛、中英混排补空格、代码块按控制台语义执行、编辑区右键菜单；顺带修掉后端掉线后界面只剩 `Failed to fetch` 的问题**
+
+**变更**
+
+- **工具栏去掉产品名**：`mdwright.html` 顶栏最左侧的「MDWright」由菜单栏五档（文件 / 编辑 / 视图 / 导出 / AI）直接起步。安装包、窗口标题、快捷方式已经承载了产品名，工具栏那一格占的是菜单的位置。
+- **中文与英文/数字之间自动补空格**：照 `按Esc退出` / `v3.0.0版本` 的写法，预览里显示为 `按 Esc 退出` / `v3.0.0 版本`。实现要点：`cjkSpace()` 只匹配「汉字紧贴 ASCII 字母/数字」，幂等；调用点在 `parseInline()` 中代码段/转义占位之后、`escapeHtml` 之前，因此行内代码、代码块、公式、URL 一律不碰；Word 导出另走 `cjkSpaceMarkdown()`（跳过围栏与行内代码后套同一函数），保证预览与四种导出物一致。**源文与落盘内容一个字节都不改。**
+- **R 代码块改为控制台语义**：`_R_WRAPPER` 不再整段 `eval`，改成 `parse()` 后逐表达式 `withVisible(eval(...))`、可见值自动 `print`。`1:10`、`mtcars`、`mpg |> count(class)`、`library(tidyverse)` 后的裸管道结果都与 R 控制台一致；赋值、`library()`、`invisible()` 不出声；ggplot 对象照旧出图。用户此前只能在文档里手写 `print()`，那是脚本语义。
+- **Python 代码块支持两条运行时**：`/api/run-py` 读 `tools.python_path`——留空用随包内置 3.11.9（只有标准库），填了且文件存在则用本机解释器（pandas 等第三方包可用）。响应新增 `runtime` / `python`，输出块下方标明「随包内置 · Python 3.11.9」或「本地解释器 · Python 3.14.5」。路径填错回落内置；**不做 PATH 自动探测**（同一份 `.md` 换台机器会跑出不同结果）。`md_tools.py` 的 `TOOLS_KEYS` 由 4 个键扩到 5 个（新增 `python_path`），设置面板同步多一个输入框。
+- **编辑区右键菜单**：撤销 / 重做 / 剪切 / 复制 / 粘贴 / 全选 + 加粗 / 斜体 / 行内代码 / 链接 / 表格 / 行内公式。Markdown 项直接复用工具栏「编辑」菜单的 `applyFormat(fmtDefs[i])`，不另写一套；`mousedown` 一律 `preventDefault` 保住选区；粘贴走 `navigator.clipboard.readText()` + `insertText`（127.0.0.1 是安全上下文），被拒时提示改用 `Ctrl+V`。
+
+**修复**
+
+- **后端掉线后界面只剩 `Failed to fetch`**：现象是点「AI 设置」弹出「读取AI 配置失败：Failed to fetch」，点别处同样。根因不在 AI 接口——本地后端进程已不在 18766（被空闲回收、崩溃，或端口被另一份实例占用后又被释放），页面没有任何重连机制，于是每次 `fetch` 都只在网络层失败，用户看到的是浏览器原文。修法三处：① 包一层 `window.fetch`，网络层失败先探 `/api/version`，确认后端没了就挂一条常驻提示条（说明端口与状态）并每 2.5s 自动重连，恢复后自动消失；② 内嵌窗口模式下经 pywebview 桥（新增 `Api.restart_backend()`）每约 10s 请后端重新拉起——页面自己起不了进程；③ 提示条带「重试」按钮，可手动立即探测。
+- **脚本占用用户端口**：截图/宣传图生成流水线原本在 18766 起后端，与用户正在使用的实例抢端口（这正是上面那次掉线的直接诱因）。`md_server.py` 支持 `MD_PORT` 环境变量，截图流水线改用私有端口 18790，绝不碰 18766。
+
+**测试**
+
+- 新增 `tests/_test_cjk_space.py`：从 `mdwright.html` 抽 `cjkSpace` / `cjkSpaceMarkdown` 真源码跑 node，12 条断言（补空格、幂等、全角标点、行内代码、围栏代码、波浪围栏）。
+- `tests/_test_run_r.py` 补 4 条控制台语义断言（`1:10`、`mtcars`、赋值不打印、`invisible` 不打印）；`tests/_test_tools.py` 工具键由 4 个改为 5 个；`tests/_test_table_split.py` 抽取的函数清单补上 `cjkSpace`（`parseInline` 现在依赖它）。
+
+**验证**
+
+- 全套串行跑一遍（44 个用例、单文件 300s 超时，用时 420s）：**38 PASS / 5 SKIP / 1 FAIL**。
+  - 5 个 SKIP 是本机未装 playwright（按约定返回 77）；
+  - 1 个 FAIL 是 `_test_rag_e2e`：需本机配置 `rag-assistant` 路径，本机未部署，与本次改动无关。
+- 另用无头 Edge 逐个实跑确认：工具栏无品牌字样；`cjkSpace('按Esc退出')` → `按 Esc 退出`、`cjkSpaceMarkdown` 不碰围栏与行内代码；右键菜单 12 项、点「加粗」源文变 `**abc**`；R 的 `library(tidyverse)` + 裸管道打印出 tibble；Python 留空 `runtime=builtin`、填本地路径 `runtime=local` 且 pandas 可用、填假路径回落内置；把后端进程杀掉后底部出现断连提示，重启后端自动消失。
+
+**说明**
+
+- 空格只存在于渲染与导出，`.md` / `.smd` 落盘内容不变；想关掉只能改代码（暂不做开关，界面上多一个开关的成本高于收益）。
+- Python 的 `runtime` 标记会写进代码块输出，「同一段代码换台机器结果不同」这件事至少在界面上是可见的。
+
+---
+
 ## v3.0.0（2026-10-24）
 
 **本次改动：项目更名 MDWright，外部工具路径可手工指定，清掉发布前的遗留文件**
@@ -21,6 +57,14 @@
 - **图标改用 `carved` 款**：浅底 `#f7f9fc` 上的实底渐变圆角瓷砖（青绿 → 蓝 → 紫 → 品红）+ 镂空 M；八档尺寸 16/20/24/32/48/64/128/256 逐档按自身尺寸重绘（小尺寸加粗、放大、去细节），不做大图等比缩小。卸载图标由同一母版加红色 X 徽标生成，同源同形。
 - **外部工具路径可手工指定**：设置 → 外部工具，四个输入框（pandoc / 浏览器 / Rscript / quarto）。留空 = 自动探测（`settings.json` 显式路径 → PATH → 常见安装目录；R 额外走注册表 `HKLM\SOFTWARE\R-core\R\<ver>\InstallPath`）；填错回落自动探测，不把功能锁死。配置文件 `runtime/settings.json` 的 `tools.*` 可直接手改。
 - **清理发布前遗留**：删除深色底图标转换脚本 `_make_icon_light.py`（已被 `_make_icon_mdwright.py` 取代）、`installer/icon_backup/`、`installer/icon-preview.png`、`.mdinstall.bak` 与 `docs/宣传图/_check3.png`。
+- **README 截图全部重录**：原有 `docs/screenshots/*.png` 仍是更名前 MDEditor 的界面（旧工具栏、旧配色、旧示例文案），与 v3.0.0 不符。改为无头 Edge 通过 CDP 驱动真实界面截图，生成器 `docs/screenshots/_make_screenshots.py` 与示例文档 `docs/screenshots/demo/` 一并入库，界面改动后一条命令重出；本轮出 `writing` / `live-view` / `code-run` / `diagrams` / `paged-export` 五张。
+- **测试收进 `tests/`**：仓库根 43 个 `_test_*.py` 归入 `tests/`，补 `tests/README.md`（依赖、分组、注意事项）与 `tests/run_all.py`（串行执行 + 逐文件超时 + 汇总，不吞失败）。文件名不改，`CHANGELOG` 里的历史引用按原名可查。每个文件头部加路径 shim：便携运行时（`python311._pth`）不会把 script dir 加进 `sys.path`，故 `tests/` 与仓库根都显式挂上，跨用例 import 与根模块 import 才成立。
+- **删除 `_e2e_cdp.ps1`**：CDP 手工调试脚本，191 行里写死 `C:\Users\sm001\...` 与旧端口路径，在本机与任何其他机器上都跑不通；其覆盖面（批注 UI / LLM 设置）已由 `tests/_test_smd_ann.py`、`tests/_test_llm_ui.py` 等承接。
+- **README 补来路与致谢**：开头写明本仓库基于上游 MDEditor v2.0 衍生开发并给出上游链接；新增「致谢」段，逐项列出上游项目、随包分发的第三方组件、调用但不打包的外部工具与 AI 辅助。
+- **宣传图重做（11 张 → 7 张）**：`docs/宣传图/*.png` 同样是更名前的旧界面。改为 `docs/宣传图/_make_cards.py` 生成：复用截图流水线取真实界面裸图 → 拼进 HTML 卡片（1600×900）→ 逐张截图；纯文字卡（封面、收尾）不依赖截图。保留「封面 / 写作渲染 / 即时渲染 / 图表引擎 / 代码运行 / 分页导出 / 收尾」，删掉已无对应界面或无法诚实呈现的「排版面板 / 长文性能 / 滚动联动 / 批注 / AI 润色 / 宽度参数」六张——这些功能在 `docs/MDWright-介绍.md` 里继续以文字说明，不拿示意图充数。
+- **删除宣传视频 `MDWright-intro.mp4`**（3.4MB）：画面仍是更名前的 MDEditor 界面，与 v3.0.0 不符。重录要重新录屏与配字幕，本轮不做；先删掉，不留过期素材。`docs/MDWright-介绍.md` 末尾对它的引用一并去掉。
+- **两个 e2e 用例改为自带后端**：`_test_paged_e2e.py`、`_test_smd_ann.py` 原本假定本机已有实例占用 18766，没开时只报 “连接被拒”，看着像代码坏了。改为进程内起一份 `md_server`（与 `_test_routes.py` 同法）；`_test_dist_verify.py` 的 splash 存活断言改为最多重试 3 次（实测同一份代码 3 次里有 1 次会在 1s 内自退，`_splash.main` 的异常被吞掉没有日志，真坏会每次都死，重试不掩盖问题但把尝试次数打出来）。
+- **可选依赖缺了报 SKIP 而非 FAIL**：5 个 playwright 用例（`_test_list_repro` / `_test_list_ui` / `_test_llm_ui` / `_test_outline_jump` / `_test_rag_ui`）在未装 playwright 时返回退出码 77，`tests/run_all.py` 记为 SKIP；浏览器级能力优先用 `_test_browser` 的 CDP 方案，不把缺工具算成代码失败。
 
 **说明**
 

@@ -132,6 +132,19 @@ def find_quarto(configured=""):
                             os.path.join(pf, "Quarto", "bin", "quarto.exe")])
 
 
+def find_python(configured=""):
+    """Python 解释器：**只认显式配置**，不去 PATH 乱探。
+
+    这是刻意的例外：Python 代码块默认就跑随包内置运行时（3.11.9，行为可复现），
+    留空即内置。若改成自动探测 PATH，同一份文档在两台机器上会用不同解释器、
+    结果不一样，而我们连提示都给不出。填了路径才走本地，是用户的明确选择。
+    """
+    p = (configured or "").strip()
+    if p and os.path.isfile(p):
+        return p
+    return None
+
+
 def _entry(path, want_version=True):
     """want_version=False 用于 GUI 程序（浏览器）：它不认 --version，
     真去跑一次会**弹出窗口并卡约 8 秒**——只读探测绝不能有这种副作用。"""
@@ -150,12 +163,12 @@ def _cfg(configured, *names):
     return ""
 
 
-# 手工配置的四个键（规格 §7.2）；其余键一律丢弃，脏值归 ""
-TOOLS_KEYS = ("pandoc_path", "rscript_path", "quarto_path", "browser_path")
+# 手工配置的五个键（规格 §7.2 + R5 的 python_path）；其余键一律丢弃，脏值归 ""
+TOOLS_KEYS = ("pandoc_path", "rscript_path", "python_path", "quarto_path", "browser_path")
 
 
 def norm_tools_config(cfg):
-    """外部工具配置归一：只留四个已知键，值 strip，非字符串归空串。"""
+    """外部工具配置归一：只留已知键，值 strip，非字符串归空串。"""
     out = {k: "" for k in TOOLS_KEYS}
     if isinstance(cfg, dict):
         for k in TOOLS_KEYS:
@@ -165,7 +178,7 @@ def norm_tools_config(cfg):
 
 
 def probe_all(configured=None):
-    """一次性探测四个工具。configured 形如 {"pandoc_path": "...", ...}（规格 §7.2）。"""
+    """一次性探测五个工具。configured 形如 {"pandoc_path": "...", ...}（规格 §7.2）。"""
     c = configured or {}
     return {
         "pandoc": _entry(find_pandoc(_cfg(c, "pandoc_path", "pandoc"))),
@@ -173,5 +186,7 @@ def probe_all(configured=None):
         "browser": _entry(find_browser(_cfg(c, "browser_path", "browser")),
                           want_version=False),
         "r": _entry(find_r(_cfg(c, "rscript_path", "rscript"))),
+        # Python 只看显式配置：没填就是「用内置」，界面另有文案说明，不算缺失
+        "python": _entry(find_python(_cfg(c, "python_path", "python"))),
         "quarto": _entry(find_quarto(_cfg(c, "quarto_path", "quarto"))),
     }

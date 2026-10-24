@@ -29,3 +29,8 @@ _tmp_*
 
 # 图标候选图与放大实测图（生成器 installer/_make_icon_mdwright.py 已入库，产物可随时重建）
 /installer/icon-candidates/
+
+# 测试/截图脚本中断时的中间产物（正常跑完会自行清理）
+/_dist_verify/
+/docs/screenshots/_raw_*.png
+/docs/screenshots/*.part
