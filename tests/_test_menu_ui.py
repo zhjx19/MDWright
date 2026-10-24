@@ -48,6 +48,7 @@ PROBE_MENU = r"""
     settingsBtn: !!q('#btnSettings'),
     // 旧的平铺按钮：不应再直接出现在 header 里（只能在下拉内）
     flatBtns: qa('#toolbar > .tb-group > .tb-btn, #toolbar > .tb-group > .tb-btn').length,
+    rightBtns: qa('#toolbar .tb-group.right .tb-btn').map(function(b){return b.textContent.trim();}),
     fmtCount: qa('#fmtBtns .menu-item[data-fmt]').length,
     fmtTotal: qa('#fmtBtns .menu-item').length
   };
@@ -218,7 +219,9 @@ def main():
     check("工具栏是 5 个菜单", r.get("labels") == ["文件", "编辑", "视图", "导出", "AI"],
           str(r.get("labels")))
     check("有「设置」按钮", r.get("settingsBtn") is True)
-    check("旧的平铺按钮已收进下拉", (r.get("flatBtns") or 0) <= 1, str(r.get("flatBtns")))
+    check("工具栏右侧只有「会话重置 / 设置」两个按钮",
+          (r.get("flatBtns") or 0) == 2 and (r.get("rightBtns") or []) == ["⟳ 会话", "设置"],
+          str(r.get("rightBtns")))
     check("编辑菜单有 12 个格式项", r.get("fmtCount") == 12, str(r.get("fmtCount")))
     check("编辑菜单共 18 项（含插入类）", r.get("fmtTotal") == 18, str(r.get("fmtTotal")))
     check("点击菜单标签展开", r.get("openAfterClick") == "true" and r.get("popVisible") is True,

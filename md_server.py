@@ -68,6 +68,9 @@ PORT = int(os.environ.get("MD_PORT") or 18766)
 HERE = os.path.dirname(os.path.abspath(__file__))
 EDITOR_HTML = os.path.join(HERE, "mdwright.html")
 MD_SERVER_VERSION = 66  # 每次服务端路由/能力变更时 +1；md_launch 依此自愈换代
+# 应用版本号（「关于」窗口显示）：单一来源在这里，/api/version 带出 app 字段。
+# 发版时必须与 CHANGELOG 首段、MD_SERVER_VERSION 同步（见 AGENTS.md「发布必改三处」）。
+APP_VERSION = "3.2.0"
 SETTINGS_PATH = os.path.join(HERE, "runtime", "settings.json")
 
 # .smd 自包含文档格式（v1.2.0）；导入失败落错误日志，相关路由返回明确错误而非静默
@@ -494,7 +497,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # sessions：当前活跃页面会话数（页面加载完成即发首个 ping 登记）。
             # 启动画面据此判断"窗口真正加载出来了"再淡出（v1.11.1）。
             self._send(200, json.dumps(
-                {"ok": True, "version": MD_SERVER_VERSION,
+                {"ok": True, "version": MD_SERVER_VERSION, "app": APP_VERSION,
                  "sessions": len(_LIVE_SESSIONS)},
                 ensure_ascii=False))
             return
@@ -576,7 +579,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # sessions：当前活跃页面会话数（页面加载完成即发首个 ping 登记）。
             # 启动画面据此判断"窗口真正加载出来了"再淡出（v1.11.1）。
             self._send(200, json.dumps(
-                {"ok": True, "version": MD_SERVER_VERSION,
+                {"ok": True, "version": MD_SERVER_VERSION, "app": APP_VERSION,
                  "sessions": len(_LIVE_SESSIONS)},
                 ensure_ascii=False))
             return
