@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import uuid
+import zipfile
 
 import md_tools
 
@@ -24,18 +25,107 @@ _NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 _FENCE_RE = re.compile(r"^(\s*)(```|~~~)(.*)$")
 _CALLOUT_RE = re.compile(r"^(\s*>\s*)\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*(.*)$")
-_IMG_W_RE = re.compile(r"(!\[[^\]]*\]\([^)]+\))\s*\{([1-9]\d{0,2})\}")
+# 图片参数组：`![alt](src){...}`（花括号在这里被完整吃掉，是否合法由 _norm_img_params 判）
+_IMG_PARAM_RE = re.compile(r"(!\[[^\]]*\]\([^)]+\))\s*\{([^{}]*)\}")
+# 并排块里的图片行：整行只有一张图（宽度/对齐参数允许，随后被忽略）
+_FILL_IMG_RE = re.compile(r"^\s*!\[([^\]]*)\]\(([^)]+?)(?:\s+\"([^\"]*)\")?\)\s*(?:\{[^{}]*\})?\s*$")
+_FILL_BEGIN_RE = re.compile(r"^\s*@@\s*begin\s+fill\s*\{([^{}]*)\}\s*$", re.I)
+_FILL_END_RE = re.compile(r"^\s*@@\s*end\s+fill\s*$", re.I)
 
 
 def _clamp(pct):
     return min(100, int(pct))
 
 
+def _norm_img_params(line):
+    """图片参数 `{...}` → pandoc 只认宽度：留 `{width=N%}`，对齐 token 丢弃。
+
+    与预览同一套 fail-closed 口径：出现未知 token（`{30 x}`）、重复宽度或空组时
+    **整组原样保留**——宁可让字面露在 Word 里被看见，也不悄悄改用户的意图。
+    Word 没有段落级对齐语义，`c/l/r` 在这里是"无副作用地丢"（预览/导出 HTML 各自生效）。
+    """
+    def repl(m):
+        toks = m.group(2).split()
+        w = None
+        has_al = False
+        ok = bool(toks)
+        for t in toks:
+            if re.fullmatch(r"[1-9]\d{0,2}", t):
+                if w is not None:
+                    ok = False
+                else:
+                    w = _clamp(t)
+            elif re.fullmatch(r"[clrCLR]", t):
+                if has_al:
+                    ok = False
+                else:
+                    has_al = True
+            else:
+                ok = False
+        if not ok:
+            return m.group(0)
+        return m.group(1) + (("{width=%d%%}" % w) if w is not None else "")
+
+    return _IMG_PARAM_RE.sub(repl, line)
+
+
+def _fill_line(lines, start):
+    """`@@ begin fill {a|b[|c[|d]]}` … `@@ end fill` → 一行并排图。
+
+    Word 里最接近"并排"的表达是**同一段落里的多张行内图**（实测 pandoc 落在同一个
+    <w:p>，不带表格框线，宽度按 {width=N%} 等比缩放）。栏宽按比例换算成版面百分比，
+    总宽压到 94%：留出图之间的空格，避免 pandoc 换行变成上下排。
+    返回 (改写后的行, 下一行下标)；任何不合法都返回 None，调用处按普通文本原样处理。
+    """
+    m = _FILL_BEGIN_RE.match(lines[start])
+    if not m:
+        return None
+    parts = m.group(1).split("|")
+    if not 2 <= len(parts) <= 4:
+        return None
+    ratios = []
+    for p in parts:
+        t = p.strip()
+        if not re.fullmatch(r"\d+(\.\d+)?", t):
+            return None
+        v = float(t)
+        if v <= 0:
+            return None
+        ratios.append(v)
+    imgs, j = [], start + 1
+    while j < len(lines):
+        ln = lines[j]
+        if _FILL_END_RE.match(ln):
+            break
+        if not ln.strip():
+            j += 1
+            continue
+        im = _FILL_IMG_RE.match(ln)
+        if not im:
+            return None                      # 栏内出现非图片行
+        imgs.append(im)
+        j += 1
+    else:
+        return None                          # 没有 @@ end fill
+    if len(imgs) != len(ratios):
+        return None                          # 图数与栏数不等
+    total = sum(ratios)
+    cells = []
+    for r, im in zip(ratios, imgs):
+        pct = max(10, int(r / total * 100 * 0.94))
+        title = (' "%s"' % im.group(3)) if im.group(3) else ""
+        cells.append("![%s](%s%s){width=%d%%}" % (im.group(1), im.group(2), title, pct))
+    return " ".join(cells), j + 1
+
+
 def prepare_markdown(src):
     """把本文方言改写成 pandoc 认得的 markdown（幂等，纯函数）。"""
     out = []
     fence_mark = ""          # 当前所在围栏的标记（``` 或 ~~~），空=不在围栏内
-    for ln in src.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+    lines = src.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    i = 0
+    while i < len(lines):
+        ln = lines[i]
         m = _FENCE_RE.match(ln)
         if m:
             mark = m.group(2)
@@ -49,18 +139,165 @@ def prepare_markdown(src):
                 fence_mark = ""          # 只有**同种**标记能闭合（``` 块里的 ~~~ 是内容）
             else:
                 out.append(ln)           # 不同种标记：属于内容，不能被当闭合
+            i += 1
             continue
         if fence_mark:
             out.append(ln)               # 代码块内部一律不动
+            i += 1
+            continue
+        fl = _fill_line(lines, i)
+        if fl:
+            out.append(fl[0])
+            i = fl[1]
             continue
         cm = _CALLOUT_RE.match(ln)
         if cm:
             kind, title = cm.group(2), cm.group(3)
             out.append(cm.group(1) + "**" + kind + "**" + ((" " + title) if title else ""))
+            i += 1
             continue
-        out.append(_IMG_W_RE.sub(
-            lambda mm: mm.group(1) + "{width=" + str(_clamp(mm.group(2))) + "%}", ln))
+        out.append(_norm_img_params(ln))
+        i += 1
     return "\n".join(out)
+
+
+def inject_run_outputs(md_text, blocks):
+    """按 (语言, 代码原文) 把已存档的运行结果插到对应围栏块之后；未命中不动。
+
+    围栏扫描与 prepare_markdown 同一套规则（``` 与 ~~~ 各自配对、带参数的
+    围栏整块跳过），不会把围栏内部当正文再判一次。
+    文字输出落成 ```output 代码块（等宽呈现），图片按 {80} 宽插成图片。
+    """
+    want = {}
+    for b in blocks or []:
+        want[(b.get("lang") or "", (b.get("code") or "").strip("\n"))] = b
+    if not want:
+        return md_text
+    lines = md_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    out, i = [], 0
+    while i < len(lines):
+        m = _FENCE_RE.match(lines[i])
+        if not m:
+            out.append(lines[i])
+            i += 1
+            continue
+        mark = m.group(2)
+        info = (m.group(3) or "").strip()
+        lang = info.split()[0].lower() if info else ""
+        close_re = re.compile(r"^\s*" + re.escape(mark) + r"\s*$")
+        body, j = [], i + 1
+        while j < len(lines) and not close_re.match(lines[j]):
+            body.append(lines[j])
+            j += 1
+        if j >= len(lines):                 # 未闭合：原样输出，不猜
+            out.extend(lines[i:])
+            break
+        out.extend(lines[i:j + 1])          # 围栏本身原封不动
+        hit = want.get((lang, "\n".join(body).strip("\n"))) if lang in ("r", "python") else None
+        if hit:
+            if hit.get("error"):
+                out.append("```output")
+                out.append("[错误] " + hit["error"])
+                if hit.get("stdout"):
+                    out.extend(hit["stdout"].rstrip("\n").split("\n"))
+                out.append("```")
+            elif hit.get("stdout"):
+                out.append("```output")
+                out.extend(hit["stdout"].rstrip("\n").split("\n"))
+                out.append("```")
+            if hit.get("image"):
+                out.append("")
+                out.append('![运行输出](<%s>){80}' % str(hit["image"]).replace("\\", "/"))
+            out.append("")
+        i = j + 1
+    return "\n".join(out)
+
+
+_W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+_TBL_PR_ORDER = ["tblStyle", "tblpPr", "tblOverlap", "bidiVisual", "tblStyleRowBandSize",
+                 "tblStyleColBandSize", "tblW", "jc", "tblCellSpacing", "tblInd",
+                 "tblBorders", "shd", "tblLayout", "tblCellMar", "tblLook"]
+_TC_PR_ORDER = ["cnfStyle", "tcW", "gridSpan", "hMerge", "vMerge", "tcBorders", "shd",
+                "noWrap", "tcMar", "textDirection", "tcFitText", "vAlign", "hideMark"]
+
+
+def _insert_ordered(parent, child, order):
+    """按 OOXML 子元素顺序插入（顺序不合 schema 会让 Word 报「文件已损坏」）。"""
+    tag = child.tag.split("}")[-1]
+    idx = order.index(tag) if tag in order else len(order)
+    for i, el in enumerate(list(parent)):
+        t = el.tag.split("}")[-1]
+        if t in order and order.index(t) > idx:
+            parent.insert(i, child)
+            return
+    parent.append(child)
+
+
+def three_line_tables(docx_path, pandoc_exe):
+    """把 docx 里所有表格改成三线表（上/下 + 表头下，共三条线，无竖线）。
+
+    直接改 word/document.xml：pandoc 只写 tblStyle、不写任何显式边框，
+    改样式表就得随包一个 reference.docx（还不能按开关生效），所以选改 XML。
+    改完用 pandoc 回读一次做结构自检——读不出即判失败，绝不落一个打不开的文件。
+    """
+    import xml.etree.ElementTree as ET
+
+    def q(tag):
+        return "{%s}%s" % (_W_NS, tag)
+
+    with zipfile.ZipFile(docx_path) as z:
+        names = z.namelist()
+        raw = z.read("word/document.xml")
+        others = {n: z.read(n) for n in names if n != "word/document.xml"}
+    ET.register_namespace("w", _W_NS)
+    root = ET.fromstring(raw)
+    for tbl in root.iter(q("tbl")):
+        pr = tbl.find(q("tblPr"))
+        if pr is None:
+            pr = ET.Element(q("tblPr"))
+            tbl.insert(0, pr)
+        old = pr.find(q("tblBorders"))
+        if old is not None:
+            pr.remove(old)
+        borders = ET.Element(q("tblBorders"))
+        for side, sz in (("top", "12"), ("left", "0"), ("bottom", "12"),
+                         ("right", "0"), ("insideH", "0"), ("insideV", "0")):
+            el = ET.SubElement(borders, q(side))
+            el.set(q("val"), "single" if sz != "0" else "none")
+            el.set(q("sz"), sz)
+            el.set(q("space"), "0")
+            el.set(q("color"), "auto")
+        _insert_ordered(pr, borders, _TBL_PR_ORDER)
+        first_tr = tbl.find(q("tr"))
+        if first_tr is not None:
+            for tc in first_tr.findall(q("tc")):
+                tcpr = tc.find(q("tcPr"))
+                if tcpr is None:
+                    tcpr = ET.Element(q("tcPr"))
+                    tc.insert(0, tcpr)
+                oldb = tcpr.find(q("tcBorders"))
+                if oldb is not None:
+                    tcpr.remove(oldb)
+                tb = ET.Element(q("tcBorders"))
+                bottom = ET.SubElement(tb, q("bottom"))
+                bottom.set(q("val"), "single")
+                bottom.set(q("sz"), "8")
+                bottom.set(q("space"), "0")
+                bottom.set(q("color"), "auto")
+                _insert_ordered(tcpr, tb, _TC_PR_ORDER)
+    new_xml = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+    tmp = docx_path + ".part"
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+        for n in names:
+            z.writestr(n, new_xml if n == "word/document.xml" else others[n])
+    os.replace(tmp, docx_path)
+
+    r = subprocess.run([pandoc_exe, "-f", "docx", "-t", "markdown", docx_path],
+                       capture_output=True, timeout=120, creationflags=_NO_WINDOW)
+    if r.returncode != 0:
+        raise RuntimeError("三线表改写后 docx 结构校验失败：%s"
+                           % (r.stderr or b"").decode("utf-8", "replace")[:200])
 
 
 def _workdir_for(md_path):

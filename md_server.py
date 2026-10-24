@@ -1279,8 +1279,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 cfg = settings.get("tools") if isinstance(settings, dict) else {}
                 cfg = cfg if isinstance(cfg, dict) else {}
                 import md_tools
-                md_pandoc.export_docx(md_text, md_path, out,
-                                      md_tools._cfg(cfg, "pandoc_path", "pandoc"))
+                three_line = bool(obj.get("threeLine"))
+                # 运行结果：侧车里有存档就按代码原文注入（Word 吃源文，预览 DOM 到不了这里）
+                try:
+                    blocks = md_runs.read_outputs(md_path, (obj.get("token") or "").strip())
+                    md_text = md_pandoc.inject_run_outputs(md_text, blocks)
+                except Exception:
+                    pass
+                pandoc = md_tools._cfg(cfg, "pandoc_path", "pandoc")
+                md_pandoc.export_docx(md_text, md_path, out, pandoc)
+                if three_line:
+                    md_pandoc.three_line_tables(out, md_tools.find_pandoc(pandoc))
                 self._send(200, json.dumps({"ok": True, "path": out}, ensure_ascii=False))
             except Exception as e:
                 self._send(500, json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))

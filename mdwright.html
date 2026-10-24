@@ -2686,7 +2686,8 @@ function parseMarkdown(src, fx){
       docxBusy=true;
       showToast('正在导出 Word…');
       fetch('/api/export-docx',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({path:currentFile, markdown:cjkSpaceMarkdown(getText()), outPath:outPath})})
+        body:JSON.stringify({path:currentFile, markdown:cjkSpaceMarkdown(getText()), outPath:outPath,
+          threeLine:!!(tsCfg&&tsCfg.table&&tsCfg.table.three), token:runDocKey().token})})
         .then(function(r){return r.json();})
         .then(function(j){
           docxBusy=false;
