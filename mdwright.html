@@ -625,7 +625,7 @@
   <div id="aboutBox" role="dialog" aria-modal="true" aria-label="关于 MDWright">
     <img src="mdwright.ico" alt="" width="40" height="40">
     <div class="ab-name">MDWright</div>
-    <div class="ab-ver">版本 <span id="aboutVer">3.2.1</span></div>
+    <div class="ab-ver">版本 <span id="aboutVer">3.2.2</span></div>
     <div class="ab-desc">Windows 单机 Markdown 写作台：写作照 Markdown 的来，输出照排版的来。</div>
     <div class="ab-lic">AGPL-3.0-or-later · 衍生自 MDEditor v2.0</div>
     <div class="ab-btns">
@@ -3636,8 +3636,11 @@ function parseMarkdown(src, fx){
     if (pyReady() && a.pick_save_path) {
       a.pick_save_path(defaultName || '未命名.md', lastDir).then(function(p){
         if (!p) return;   /* 用户取消 */
-        var dir = p.replace(/[\\/][^\\/]*$/, '');
-        var name = p.split(/[\\/]/).pop();
+        /* 拆目录/文件名要保留末尾分隔符：D:\a.md 若按 replace(/[\\/][^\\/]*$/) 拆，
+           目录会变成 "D:"（盘符无斜杠），服务端会把它解析成该盘当前目录。 */
+        var idx = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/'));
+        var dir = idx > 0 ? p.slice(0, idx + 1) : '';
+        var name = idx >= 0 ? p.slice(idx + 1) : p;
         saveAsTo(dir, name, content);
       }).catch(function(e){ showToast('保存失败：' + e); });
       return;

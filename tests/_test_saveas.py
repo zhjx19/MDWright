@@ -65,6 +65,23 @@ def post(obj):
 def main():
     tmp = tempfile.mkdtemp(prefix="mdsaveas-")
     try:
+        # 目录规范化：盘符根不能变成"该盘当前目录"
+        check("D: 规范化为 D:\\",
+              md_server._norm_save_dir("D:") == "D:" + os.sep,
+              repr(md_server._norm_save_dir("D:")))
+        check("D:\\ 保持为 D:\\",
+              md_server._norm_save_dir("D:\\") == "D:" + os.sep,
+              repr(md_server._norm_save_dir("D:\\")))
+        check("普通目录去尾斜杠",
+              md_server._norm_save_dir(tmp + os.sep) == os.path.normpath(tmp),
+              repr(md_server._norm_save_dir(tmp + os.sep)))
+        check("盘符根不算安装目录",
+              md_server._is_install_dir(md_server._norm_save_dir("D:")) is False
+              or os.path.realpath("D:" + os.sep) == os.path.realpath(md_server.HERE),
+              repr(md_server._norm_save_dir("D:")))
+        check("安装目录被识别为安装目录",
+              md_server._is_install_dir(md_server.HERE) is True, "")
+
         # 正常目录：照常写
         j, code = post({"dir": tmp, "name": "ok.md", "content": "# hi\n"})
         check("正常目录可以保存", code == 200 and j.get("ok") is True, str(j)[:160])

@@ -73,10 +73,10 @@ except Exception as _e:
 PORT = int(os.environ.get("MD_PORT") or 18766)
 HERE = os.path.dirname(os.path.abspath(__file__))
 EDITOR_HTML = os.path.join(HERE, "mdwright.html")
-MD_SERVER_VERSION = 68  # 每次服务端路由/能力变更时 +1；md_launch 依此自愈换代
+MD_SERVER_VERSION = 69  # 每次服务端路由/能力变更时 +1；md_launch 依此自愈换代
 # 应用版本号（「关于」窗口显示）：单一来源在这里，/api/version 带出 app 字段。
 # 发版时必须与 CHANGELOG 首段、MD_SERVER_VERSION 同步（见 AGENTS.md「发布必改三处」）。
-APP_VERSION = "3.2.1"
+APP_VERSION = "3.2.2"
 SETTINGS_PATH = os.path.join(HERE, "runtime", "settings.json")
 
 # .smd 自包含文档格式（v1.2.0）；导入失败落错误日志，相关路由返回明确错误而非静默
@@ -967,7 +967,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             try:
                 length = int(self.headers.get("Content-Length", 0))
                 obj = json.loads(self.rfile.read(length).decode("utf-8"))
-                d = obj.get("dir", "").strip()
+                d = _norm_save_dir(obj.get("dir", ""))
                 name = (obj.get("name") or "未命名.md").strip()
                 content = obj.get("content", "")
                 if not d or not os.path.isdir(d):
@@ -985,12 +985,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 # 不许写进软件安装目录：升级会覆盖，且文件不在用户手里。
                 # 首次另存为时原生对话框以进程工作目录为起点，正是安装目录，
                 # 不拦就会把稿子默默存进 Program Files。
-                try:
-                    rp_dir, rp_here = os.path.realpath(d), os.path.realpath(HERE)
-                    inside = os.path.commonpath([rp_dir, rp_here]) == rp_here
-                except Exception:
-                    inside = False
-                if inside:
+                if _is_install_dir(d):
                     self._send(400, json.dumps({"ok": False,
                         "error": "不能保存到软件安装目录（升级会覆盖）。请点「浏览…」换一个目录"},
                         ensure_ascii=False))
@@ -2216,6 +2211,36 @@ def _doc_title_or_fallback(doc_title, fallback):
 # 工具探测缓存：/api/tools 每次页面加载都会调一次，而探测要起几个子进程。
 # 缓存 30s，避免刷新页面/多标签把机器拖慢（工具装/卸是低频动作）。
 _TOOLS_CACHE = {"t": 0.0, "sig": None, "val": None}
+
+
+_DRIVE_ONLY_RE = re.compile(r"^[A-Za-z]:$")
+
+
+def _norm_save_dir(d):
+    """规范化「另存为」的目标目录。
+
+    前端从保存框返回的完整路径里拆目录时，容易留下只剩盘符的 "D:"（反斜杠被吃掉）。
+    Windows 上 "D:" 表示「该盘当前目录」，会被解析成进程工作目录——安装版的
+    工作目录就是安装目录，于是在**盘根**保存会被误判为"往安装目录存"。
+    这里统一把 "D:" 补成 "D:\\"。
+    """
+    d = (d or "").strip().strip('"')
+    if not d:
+        return ""
+    if _DRIVE_ONLY_RE.match(d):
+        return d + os.sep
+    return os.path.normpath(d)
+
+
+def _is_install_dir(d):
+    """d 是否落在软件安装目录（含子目录）：升级会覆盖用户文件，一律拒绝。"""
+    if not d:
+        return False
+    try:
+        rp_dir, rp_here = os.path.realpath(d), os.path.realpath(HERE)
+        return os.path.commonpath([rp_dir, rp_here]) == rp_here
+    except Exception:
+        return False
 
 
 def _is_builtin_doc(p):
