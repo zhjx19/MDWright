@@ -32,8 +32,9 @@
 
 **文档**
 
-- **宣传图按新名字与 Word 导出重做**：01 标题卡由单行 `MDWright` 改为「墨匠」大字 + `MDWright` 副行；06 由「分页 HTML 两页」改为**真的 Word 页面截图**（本仓库导出 docx → Word 打印预览 → 截窗），展示 Word 里表格同样落成三线表，卡片随之更名为 `06-导出成品.png`；示例文档与 README 截图里的产品名同步为「墨匠 MDWright」。
-- `docs/宣传图/_make_cards.py` 新增 `shot_word()`，四条实测约束写进注释：文档不能放 `%TEMP%`（Word 按受保护视图打开会卡死自动化）、`ExportAsFixedFormat` 在本机 Office 上必挂（新建空文档同样）、普通视图关不掉段落标记（`View.ShowParagraphs` 写入无效）故走打印预览、捕获用 `PrintWindow(PW_RENDERFULLCONTENT)`；Word 未安装或正在运行时**跳过该卡并退回旧画法**，不主动杀 Word。
+- **宣传图按新名字与 Word 导出重做（7 张 → 8 张）**：01 标题卡由单行 `MDWright` 改为「墨匠」大字 + `MDWright` 副行；`06-Word导出` 用**真的 Word 页面截图**（本仓库导出 docx → Word 打印预览 → 截窗），展示 Word 里表格同样落成三线表；分页导出另立 `07-分页导出`（目录页 + 正文页，保留页码与自动目录），`08-收尾` 顺延。示例文档与 README 截图里的产品名同步为「墨匠 MDWright」。
+- 卡片编号改为**按顺序自动生成**，不写死在列表里：缺 Word 时「Word 导出」整张卡不出现，其余顺次顶上，不会留空号。
+- `docs/宣传图/_make_cards.py` 新增 `shot_word()`，四条实测约束写进注释：文档不能放 `%TEMP%`（Word 按受保护视图打开会卡死自动化）、`ExportAsFixedFormat` 在本机 Office 上必挂（新建空文档同样）、普通视图关不掉段落标记（`View.ShowParagraphs` 写入无效）故走打印预览、捕获用 `PrintWindow(PW_RENDERFULLCONTENT)`；Word 未安装或正在运行时**跳过该卡**，不主动杀 Word（怕丢未保存的稿子）。
 
 ---
 

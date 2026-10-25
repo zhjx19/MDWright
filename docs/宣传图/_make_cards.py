@@ -132,38 +132,42 @@ def outro():
 
 
 def build_html(raw, has_word=False):
-    """把裸图拼成卡片页；图片内联成 data URI，页面自包含、不依赖任何外部路径。"""
+    """把裸图拼成卡片页；图片内联成 data URI，页面自包含、不依赖任何外部路径。
+
+    卡片编号按顺序自动生成，不写死：缺 Word 时「Word 导出」这张卡整张不出现，
+    其余卡片顺次顶上来，不会留空号。
+    """
     def img(name):
         return '<img src="%s" alt="">' % b64(os.path.join(raw, name))
 
-    if has_word:
-        sixth = ("06-导出成品",
-                 feat("导出就是成品：Word 里也是三线表",
-                      "pandoc 转 .docx，导出后按 OOXML 注入顶线 / 表头线 / 底线",
-                      img("_raw_word.png")))
-    else:
-        sixth = ("06-导出成品",
-                 feat("导出就是成品：目录、页码、纸张",
-                      "Paged.js 组版，浏览器里 Ctrl+P 直接出 PDF",
-                      '<div class="pages">%s%s</div>'
-                      % (img("_raw_page1.png"), img("_raw_page2.png"))))
-    cards = [
-        ("01-标题卡", hero()),
-        ("02-写作渲染", feat("左边写，右边看",
-                            "常用语法即写即见，公式与表格离线渲染",
-                            img("_raw_writing.png"))),
-        ("03-即时渲染", feat("即时渲染：点中一段，就地改源码",
-                            "预览即编辑面：点中的那一段展开成源码框，改完自动重排",
-                            img("_raw_live.png"))),
-        ("04-图表引擎", feat("图表写在围栏里就出图",
-                            "Mermaid / Graphviz / Vega-Lite 随包内置，不联网",
-                            img("_raw_diagrams.png"))),
-        ("05-代码运行", feat("代码块直接跑，输出留在原处",
-                            "带 python / r 标记的围栏自带「▶ 运行」，用的是随包运行时",
-                            img("_raw_code.png"))),
-        sixth,
-        ("07-收尾", outro()),
+    items = [
+        ("标题卡", hero()),
+        ("写作渲染", feat("左边写，右边看",
+                        "常用语法即写即见，公式与表格离线渲染",
+                        img("_raw_writing.png"))),
+        ("即时渲染", feat("即时渲染：点中一段，就地改源码",
+                        "预览即编辑面：点中的那一段展开成源码框，改完自动重排",
+                        img("_raw_live.png"))),
+        ("图表引擎", feat("图表写在围栏里就出图",
+                        "Mermaid / Graphviz / Vega-Lite 随包内置，不联网",
+                        img("_raw_diagrams.png"))),
+        ("代码运行", feat("代码块直接跑，输出留在原处",
+                        "带 python / r 标记的围栏自带「▶ 运行」，用的是随包运行时",
+                        img("_raw_code.png"))),
     ]
+    if has_word:
+        items.append(("Word导出", feat(
+            "导出就是成品：Word 里也是三线表",
+            "pandoc 转 .docx，导出后按 OOXML 注入顶线 / 表头线 / 底线",
+            img("_raw_word.png"))))
+    items += [
+        ("分页导出", feat("分页导出：目录、页码、纸张",
+                        "Paged.js 组版，浏览器里 Ctrl+P 直接出 PDF",
+                        '<div class="pages">%s%s</div>'
+                        % (img("_raw_page1.png"), img("_raw_page2.png")))),
+        ("收尾", outro()),
+    ]
+    cards = [("%02d-%s" % (i + 1, slug), html) for i, (slug, html) in enumerate(items)]
     body = "\n".join('<div data-name="%s">%s</div>' % (n, h) for n, h in cards)
     html = ("<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
             "<style>%s</style></head><body>%s</body></html>" % (CSS, body))
