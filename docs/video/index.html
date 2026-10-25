@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>墨匠 MDWright · 宣传片</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    padding: 40px 20px;
+    background: radial-gradient(1200px 600px at 50% -10%, #1c2231 0%, #14171f 55%, #11141a 100%);
+    color: #e8eaf0;
+    font-family: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { width: 100%; max-width: 1040px; }
+  h1 { font-size: 30px; font-weight: 700; letter-spacing: 1px; }
+  .sub { margin-top: 8px; font-size: 15px; color: #94a1b8; }
+  video {
+    display: block; width: 100%; height: auto; margin-top: 24px;
+    background: #0b0d11; border-radius: 14px;
+    border: 1px solid rgba(255,255,255,.09);
+    box-shadow: 0 24px 60px rgba(0,0,0,.55);
+  }
+  .foot { margin-top: 18px; font-size: 14px; color: #8d99b0; line-height: 1.9; }
+  .foot a { color: #8ab4f8; text-decoration: none; }
+  .foot a:hover { text-decoration: underline; }
+  .sep { margin: 0 10px; color: #3d4757; }
+</style>
+</head>
+<body>
+<main>
+  <h1>墨匠 MDWright</h1>
+  <p class="sub">Windows 上的单机 Markdown 写作台 · 30 秒宣传片</p>
+
+  <video controls playsinline preload="metadata" poster="../宣传图/01-标题卡.png">
+    <source src="../宣传片/MDWright宣传片.mp4" type="video/mp4">
+    你的浏览器不支持内联播放，<a href="../宣传片/MDWright宣传片.mp4">下载 MP4</a> 后观看。
+  </video>
+
+  <p class="foot">
+    <a href="https://github.com/zhjx19/MDWright">← 返回仓库</a>
+    <span class="sep">·</span>
+    <a href="../宣传片/MDWright宣传片.mp4" download>下载原片（MP4 · 9 MB）</a>
+    <span class="sep">·</span>
+    <a href="https://github.com/zhjx19/MDWright/releases/latest">下载安装包</a>
+  </p>
+</main>
+</body>
+</html>
