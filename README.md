@@ -8,7 +8,9 @@
 > 编辑器内核、本地文件服务、`.smd` 自包含格式与安装脚本均源自上游，此后在其上继续演进并更名为 MDWright。
 > 上游仓库：<https://github.com/Ldxs001/maby_tool>（同样以 AGPL-3.0-or-later 发布）。
 
-![写作与渲染](docs/screenshots/writing.png)
+<a href="docs/宣传片/MDWright宣传片.mp4"><img src="docs/宣传图/01-标题卡.png" alt="墨匠 MDWright 宣传片：点封面播放" width="100%"></a>
+
+<sub>▶ **点封面看 30 秒宣传片**（MP4，9 MB）。GitHub 只能内联播放它自己托管的附件，所以仓库里的视频以「封面 + 点击」交付。</sub>
 
 ---
 
@@ -258,6 +260,8 @@ md_app.pyw             WebView2 内嵌窗口模式
 python/                内置便携 Python 运行时
 docs/                  使用指南、版权与开源组件声明
 docs/screenshots/      README 截图、示例文档与重录脚本
+docs/宣传图/           介绍文档配图（生成器与卡片源码同目录）
+docs/宣传片/           宣传片 MP4（README 开篇点封面播放）
 katex/ pagedjs/ mermaid/ viz/ wavedrom/ vega/ highlight/   离线前端依赖
 installer/             安装包构建脚本（仅用系统自带 csc.exe）
 tests/                 回归测试（浏览器级 / 导出 / 解析器，逐文件独立跑）

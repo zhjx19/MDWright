@@ -131,6 +131,7 @@ curl.exe -s --proxy http://127.0.0.1:9567 https://api.github.com/repos/zhjx19/MD
 | 第 3 行 | 一句话说清「是什么 + 给谁」：Windows 上的单机 Markdown 写作台 |
 | 第 5 行 | 中英文名的关系（墨 = Markdown 的 M，匠 = -wright）+ 排除项（不做公众号排版、不是 linter） |
 | 截图 | 必须来自真实界面：`python\python.exe docs\screenshots\_make_screenshots.py` 重录；改界面就重录，旧截图比没截图更糟 |
+| 视频 | GitHub **只内联播放 `user-attachments` 地址**；仓库内 mp4（含 raw 链接）会被清洗成空块或退化成下载链接。当前做法：封面图（`docs/宣传图/01-标题卡.png`）链到 `docs/宣传片/MDWright宣传片.mp4`，点开在 GitHub 的播放器里看。要真正内联，需在网页版 README 编辑框里把视频拖进去，把 `<a><img>` 那行换成 `<video src="https://github.com/user-attachments/assets/…">` |
 | 首屏禁止 | 路线图、待办清单、Star 数、「本项目由 AI 生成」的自我辩解（这句放在致谢里，不占首屏） |
 
 ---
