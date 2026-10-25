@@ -131,7 +131,7 @@ curl.exe -s --proxy http://127.0.0.1:9567 https://api.github.com/repos/zhjx19/MD
 | 第 3 行 | 一句话说清「是什么 + 给谁」：Windows 上的单机 Markdown 写作台 |
 | 第 5 行 | 中英文名的关系（墨 = Markdown 的 M，匠 = -wright）+ 排除项（不做公众号排版、不是 linter） |
 | 截图 | 必须来自真实界面：`python\python.exe docs\screenshots\_make_screenshots.py` 重录；改界面就重录，旧截图比没截图更糟 |
-| 视频 | GitHub **只内联播放 `user-attachments` 地址**；仓库内 mp4（含 raw 链接）会被清洗成空块或退化成下载链接。当前做法：封面图（`docs/宣传图/01-标题卡.png`）链到 `docs/宣传片/MDWright宣传片.mp4`，点开在 GitHub 的播放器里看。要真正内联，需在网页版 README 编辑框里把视频拖进去，把 `<a><img>` 那行换成 `<video src="https://github.com/user-attachments/assets/…">`。**拖拽上传后先在地址栏打开该 URL 确认能播再提交**——上传中断会得到一个 404 的空壳地址，粘进 README 就是一个打不开的播放器（2026-10-26 踩过） |
+| 视频 | GitHub **只内联播放 `user-attachments` 地址**；仓库内 mp4（含 raw 链接）会被清洗成空块或退化成下载链接。**另外 blob 预览页不渲染超过约 1 MB 的文件**（社区实测 4.73 MB 的 mp4 也是「Sorry about that, but we can't show files that are this big right now」），所以「放仓库里点开就能播」这条路不存在——目前做法是封面链到文件，文案写「下载」而不是「观看」。要真正播放，需在网页版 README 编辑框里把视频拖进去，得到 `https://github.com/user-attachments/assets/…`，再用 `<video src="…">`。**拖拽上传后先在地址栏打开该 URL 确认能播再提交**——上传中断会得到一个 404 的空壳地址（2026-10-26 踩过） |
 | 首屏禁止 | 路线图、待办清单、Star 数、「本项目由 AI 生成」的自我辩解（这句放在致谢里，不占首屏） |
 
 ---
