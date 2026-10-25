@@ -34,7 +34,7 @@
 
 - **宣传图按新名字与 Word 导出重做（7 张 → 8 张）**：01 标题卡由单行 `MDWright` 改为「墨匠」大字 + `MDWright` 副行；`06-Word导出` 用**真的 Word 页面截图**（本仓库导出 docx → Word 打印预览 → 截窗），展示 Word 里表格同样落成三线表；分页导出另立 `07-分页导出`（目录页 + 正文页，保留页码与自动目录），`08-收尾` 顺延。示例文档与 README 截图里的产品名同步为「墨匠 MDWright」。
 - 卡片编号改为**按顺序自动生成**，不写死在列表里：缺 Word 时「Word 导出」整张卡不出现，其余顺次顶上，不会留空号。
-- **README 开篇换成宣传片**：`docs/宣传片/MDWright宣传片.mp4`（30 秒，9.25 MB）以「封面图 + 点击」呈现——GitHub 的 README 只内联播放 `user-attachments` 地址，仓库内 mp4 与 raw 链接都会被清洗掉，这条约束记进了 `docs/GitHub 仓库门面清单.md` 的 README 首屏一节。
+- **README 开篇换成宣传片**：`docs/宣传片/MDWright宣传片.mp4`（30 秒，9.25 MB）以「封面 → Pages 播放页」呈现。两种"就地播放"都不可用——README 内联只认 `user-attachments` 地址，blob 预览页又不渲染超过约 1 MB 的文件（9.7 MB 直接是「Sorry about that…」）——所以新增 `docs/video/index.html`（`<video>` + 下载兜底），由 GitHub Pages 直供 `video/mp4`。Pages 默认跑 Jekyll，被 plan 文档里一行 Python `"{%s}%s" % (…)` 当 Liquid 标签打断，加 `docs/.nojekyll` 关闭 Jekyll 后通过。约束与踩坑记进 `docs/GitHub 仓库门面清单.md`。
 - `docs/宣传图/_make_cards.py` 新增 `shot_word()`，四条实测约束写进注释：文档不能放 `%TEMP%`（Word 按受保护视图打开会卡死自动化）、`ExportAsFixedFormat` 在本机 Office 上必挂（新建空文档同样）、普通视图关不掉段落标记（`View.ShowParagraphs` 写入无效）故走打印预览、捕获用 `PrintWindow(PW_RENDERFULLCONTENT)`；Word 未安装或正在运行时**跳过该卡**，不主动杀 Word（怕丢未保存的稿子）。
 
 ---

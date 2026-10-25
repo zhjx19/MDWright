@@ -8,9 +8,9 @@
 > 编辑器内核、本地文件服务、`.smd` 自包含格式与安装脚本均源自上游，此后在其上继续演进并更名为 MDWright。
 > 上游仓库：<https://github.com/Ldxs001/maby_tool>（同样以 AGPL-3.0-or-later 发布）。
 
-<a href="docs/宣传片/MDWright宣传片.mp4"><img src="docs/宣传图/01-标题卡.png" alt="墨匠 MDWright 宣传片：点封面播放" width="100%"></a>
+<a href="https://zhjx19.github.io/MDWright/video/"><img src="docs/宣传图/01-标题卡.png" alt="墨匠 MDWright 宣传片：点封面播放" width="100%"></a>
 
-<sub><a href="docs/宣传片/MDWright宣传片.mp4">▶ 下载宣传片</a>（MP4 · 30 秒 · 9 MB）</sub>
+<sub><a href="https://zhjx19.github.io/MDWright/video/">▶ 观看 30 秒宣传片</a></sub>
 
 ---
 

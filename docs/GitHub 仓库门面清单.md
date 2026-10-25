@@ -131,7 +131,7 @@ curl.exe -s --proxy http://127.0.0.1:9567 https://api.github.com/repos/zhjx19/MD
 | 第 3 行 | 一句话说清「是什么 + 给谁」：Windows 上的单机 Markdown 写作台 |
 | 第 5 行 | 中英文名的关系（墨 = Markdown 的 M，匠 = -wright）+ 排除项（不做公众号排版、不是 linter） |
 | 截图 | 必须来自真实界面：`python\python.exe docs\screenshots\_make_screenshots.py` 重录；改界面就重录，旧截图比没截图更糟 |
-| 视频 | GitHub **只内联播放 `user-attachments` 地址**；仓库内 mp4（含 raw 链接）会被清洗成空块或退化成下载链接。**另外 blob 预览页不渲染超过约 1 MB 的文件**（社区实测 4.73 MB 的 mp4 也是「Sorry about that, but we can't show files that are this big right now」），所以「放仓库里点开就能播」这条路不存在——目前做法是封面链到文件，文案写「下载」而不是「观看」。要真正播放，需在网页版 README 编辑框里把视频拖进去，得到 `https://github.com/user-attachments/assets/…`，再用 `<video src="…">`。**拖拽上传后先在地址栏打开该 URL 确认能播再提交**——上传中断会得到一个 404 的空壳地址（2026-10-26 踩过） |
+| 视频 | 播放走 **GitHub Pages**：`docs/video/index.html`（`<video>` + 下载兜底）→ `https://zhjx19.github.io/MDWright/video/`，`docs/` 作站点根，视频以 `video/mp4` 直供、支持 Range。**另外两条路都不可用**：① README 内联只认 `user-attachments` 地址，仓库内 mp4 与 raw 链接会被清洗；② blob 预览页不渲染超过约 1 MB 的文件（社区实测 4.73 MB 的 mp4 也是「Sorry about that, but we can't show files that are this big right now」）。<br>踩过的坑：Pages 默认跑 Jekyll，`docs/` 里 `superpowers/plans/*.md` 含 Python 源码 `return "{%s}%s" % (…)` 被 Liquid 当标签解析 → 构建失败；**`docs/.nojekyll` 关掉 Jekyll 后即通过**（静态托管不需要它，也避免其它代码块被静默改写）。<br>若要走 `user-attachments`：拖拽上传后**先在地址栏打开该 URL 确认能播再提交**——上传中断会得到 404 的空壳地址（2026-10-26 连踩两次） |
 | 首屏禁止 | 路线图、待办清单、Star 数、「本项目由 AI 生成」的自我辩解（这句放在致谢里，不占首屏） |
 
 ---
