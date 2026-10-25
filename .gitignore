@@ -34,3 +34,4 @@ _tmp_*
 /_dist_verify/
 /docs/screenshots/_raw_*.png
 /docs/screenshots/*.part
+/docs/screenshots/demo/*.assets/

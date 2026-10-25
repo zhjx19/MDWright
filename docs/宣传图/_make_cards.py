@@ -15,11 +15,14 @@
     python\\python.exe docs\\宣传图\\_make_cards.py 03 06      # 只重出编号含 03 / 06 的
 
 卡片是 HTML 排的，改文案/换图都只改这个脚本；纯文字卡（封面、收尾）不依赖截图。
+06 导出卡的截图来自**真的 Word**：本仓库导出 docx → Word 打印预览 → 截窗，缺 Word
+时自动退回「分页 HTML 两页」的老画法（详见 shot_word() 的注释）。
 """
 import base64
 import io
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 
@@ -58,11 +61,13 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",sans-serif
                  box-shadow:0 18px 44px rgba(0,0,0,.45)}
 /* 封面 */
 .hero{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0}
-.hero .mark{font-size:150px;font-weight:800;letter-spacing:2px;
+.hero .mark{font-size:168px;font-weight:800;letter-spacing:8px;
             background:linear-gradient(92deg,#8ab4f8 0%,#a68cf5 52%,#c58af9 100%);
             -webkit-background-clip:text;background-clip:text;color:transparent;
-            line-height:1.1;padding-top:24px}
-.hero .sub{margin-top:26px;font-size:34px;color:#cfd6e4;letter-spacing:1px}
+            line-height:1.1;padding-top:18px}
+.hero .en{margin-top:10px;font-size:46px;font-weight:600;letter-spacing:14px;
+          color:#7f8ba3;text-indent:14px}
+.hero .sub{margin-top:34px;font-size:34px;color:#cfd6e4;letter-spacing:1px}
 .hero .sub2{margin-top:14px;font-size:24px;color:#8d99b0;letter-spacing:.5px}
 .hero .chips{display:flex;gap:18px;margin-top:52px}
 .hero .chips span{font-size:24px;color:#cfd6e4;padding:13px 26px;border-radius:999px;
@@ -101,9 +106,10 @@ def feat(title, hint, img_html):
 
 def hero():
     return """<section class="card hero">
-  <div class="mark">MDWright</div>
+  <div class="mark">墨匠</div>
+  <div class="en">MDWright</div>
   <div class="sub">Windows 上的单机 Markdown 写作台</div>
-  <div class="sub2">写作 · 排版 · 分页导出，全部在本机完成，断网照常用</div>
+  <div class="sub2">写作 · 排版 · 导出，全部在本机完成，断网照常用</div>
   <div class="chips"><span>全部离线</span><span>即时渲染</span><span>选区批注</span>
   <span>代码块可运行</span><span>分页 · Word · PDF</span></div>
 </section>"""
@@ -125,12 +131,22 @@ def outro():
 </section>"""
 
 
-def build_html(raw):
+def build_html(raw, has_word=False):
     """把裸图拼成卡片页；图片内联成 data URI，页面自包含、不依赖任何外部路径。"""
     def img(name):
         return '<img src="%s" alt="">' % b64(os.path.join(raw, name))
 
-    paged = '<div class="pages">%s%s</div>' % (img("_raw_page1.png"), img("_raw_page2.png"))
+    if has_word:
+        sixth = ("06-导出成品",
+                 feat("导出就是成品：Word 里也是三线表",
+                      "pandoc 转 .docx，导出后按 OOXML 注入顶线 / 表头线 / 底线",
+                      img("_raw_word.png")))
+    else:
+        sixth = ("06-导出成品",
+                 feat("导出就是成品：目录、页码、纸张",
+                      "Paged.js 组版，浏览器里 Ctrl+P 直接出 PDF",
+                      '<div class="pages">%s%s</div>'
+                      % (img("_raw_page1.png"), img("_raw_page2.png"))))
     cards = [
         ("01-标题卡", hero()),
         ("02-写作渲染", feat("左边写，右边看",
@@ -145,9 +161,7 @@ def build_html(raw):
         ("05-代码运行", feat("代码块直接跑，输出留在原处",
                             "带 python / r 标记的围栏自带「▶ 运行」，用的是随包运行时",
                             img("_raw_code.png"))),
-        ("06-分页导出", feat("导出就是成品：目录、页码、纸张",
-                            "Paged.js 组版，浏览器里 Ctrl+P 直接出 PDF",
-                            paged)),
+        sixth,
         ("07-收尾", outro()),
     ]
     body = "\n".join('<div data-name="%s">%s</div>' % (n, h) for n, h in cards)
@@ -176,7 +190,142 @@ def shoot_raws():
                 srv.terminate()
             except Exception:
                 pass
-    return raw
+    word = shot_word(raw)
+    return raw, word
+
+
+# ---------------------------------------------------------------- Word 三线表截图
+# 这张卡要证明的是「导出到 Word 的表格落成三线表」，所以必须是 Word 自己的排版结果，
+# 不能用 HTML 复刻。实测出来的四条约束（都踩过）：
+#   1. 文档不能放 %TEMP%——Word 会以「受保护的视图」打开，随后的自动化调用直接卡死；
+#   2. ExportAsFixedFormat 在本机 Office 上必挂（新建空文档也一样），所以走窗口截图；
+#   3. 普通视图里关不掉段落标记（View.ShowParagraphs 写入无效），改用**打印预览**，
+#      它显示的就是打印结果，不带任何编辑标记；
+#   4. 捕获用 PrintWindow(PW_RENDERFULLCONTENT)——CopyFromScreen 会被别的窗口遮挡。
+# 另外不主动杀 Word：用户可能有未保存的稿子，检测到在运行就退出并提示先关掉。
+WORD_MD = """## 三线表：学术与出版排版的基本盘
+
+正文照常写，表格在导出时按三线表落版：顶线、表头下横线、底线，其余横线一律不画。
+
+| 版本 | 类型 | 主要变更 | 影响 |
+| --- | --- | --- | --- |
+| v2.2.0 | 新增 | Word（.docx）与 PDF 直出 | 稿子能直接交出去 |
+| v3.1.0 | 改进 | 中英混排自动补空格 | 渲染与导出同步 |
+| v3.2.0 | 新增 | 代码块常驻会话、结果落盘 | 变量可跨块复用 |
+| v3.2.4 | 新增 | 上下标支持 `^{}` / `_{}` | 公式写法更顺手 |
+"""
+
+WORD_PS = r"""$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Drawing
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class WinCap {
+  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr hdc, uint flags);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after,
+      int x, int y, int cx, int cy, uint flags);
+  public struct RECT { public int Left, Top, Right, Bottom; }
+}
+"@
+[void][WinCap]::SetProcessDPIAware()
+
+if (Get-Process WINWORD -ErrorAction SilentlyContinue) { Write-Output 'WORD_RUNNING'; exit 3 }
+
+$docx = '%s'
+$png  = '%s'
+
+$word = New-Object -ComObject Word.Application
+$word.Visible = $true
+$word.DisplayAlerts = 0
+$word.AutomationSecurity = 3
+$doc = $word.Documents.Open($docx, $false, $false)
+$word.ActiveWindow.DocumentMap = $false
+$word.ActiveWindow.View.ShowTextBoundaries = $false   # 关掉文字边界线（打印预览里也会画）
+$word.ActiveWindow.View.ShowBookmarks = $false
+$word.WindowState = 0
+
+$hwnd = (Get-Process WINWORD | Sort-Object StartTime -Descending | Select-Object -First 1).MainWindowHandle
+[void][WinCap]::SetWindowPos($hwnd, [IntPtr]::Zero, 0, 0, 1280, 1000, 0x0040)
+[void][WinCap]::SetForegroundWindow($hwnd)
+Start-Sleep -Milliseconds 700
+
+$doc.PrintPreview()
+Start-Sleep -Milliseconds 1500
+$word.ActiveWindow.View.Zoom.PageFit = 2
+Start-Sleep -Milliseconds 800
+
+$r = New-Object WinCap+RECT
+[void][WinCap]::GetWindowRect($hwnd, [ref]$r)
+$w = $r.Right - $r.Left; $h = $r.Bottom - $r.Top
+$bmp = New-Object System.Drawing.Bitmap($w, $h)
+$g = [System.Drawing.Graphics]::FromImage($bmp)
+$hdc = $g.GetHdc()
+$ok = [WinCap]::PrintWindow($hwnd, $hdc, 2)
+$g.ReleaseHdc($hdc); $g.Dispose()
+$bmp.Save($png, [System.Drawing.Imaging.ImageFormat]::Png)
+$bmp.Dispose()
+Write-Output "CAPTURED ${w}x${h} ok=$ok"
+
+$doc.ClosePrintPreview()
+$doc.Close(0)
+$word.Quit()
+"""
+
+# 只保留白色页面本体：左侧竖线（文字边界）、页角标记与状态栏都在这个框外
+_WORD_CROP = (90, 315, 1215, 940)
+
+
+def find_winword():
+    for base in (os.environ.get("ProgramFiles", r"C:\Program Files"),
+                 os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")):
+        for ver in ("root\\Office16", "Office16", "root\\Office15", "Office15"):
+            p = os.path.join(base, "Microsoft Office", ver, "WINWORD.EXE")
+            if os.path.isfile(p):
+                return p
+    return ""
+
+
+def shot_word(raw):
+    """用 Word 截一张三线表页面，返回裸图路径；没有 Word 或 Word 正在运行时返回空串。"""
+    if not find_winword():
+        print("跳过 Word 卡：本机未找到 WINWORD.EXE")
+        return ""
+    import md_pandoc
+    import md_tools
+
+    # runtime/ 已被 .gitignore 忽略，且不是 %TEMP%，Word 不会按受保护视图打开
+    work = os.path.join(ROOT, "runtime", "tmp", "wordcard")
+    shutil.rmtree(work, ignore_errors=True)
+    os.makedirs(work, exist_ok=True)
+    md_path = os.path.join(work, "demo.md")
+    docx = os.path.join(work, "demo.docx")
+    png = os.path.join(work, "window.png")
+    with io.open(md_path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(WORD_MD)
+    md_pandoc.export_docx(WORD_MD, md_path, docx)
+    md_pandoc.three_line_tables(docx, md_tools.find_pandoc(""))
+
+    ps1 = os.path.join(work, "shot_word.ps1")
+    with io.open(ps1, "w", encoding="utf-8") as f:
+        f.write(WORD_PS % (docx, png))
+    r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                        "-File", ps1], capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    out_text = ((r.stdout or "") + (r.stderr or "")).strip()
+    if "WORD_RUNNING" in out_text:
+        print("跳过 Word 卡：Word 正在运行，先关掉再重跑（不主动杀，怕丢未保存的稿子）")
+        return ""
+    if r.returncode != 0 or not os.path.isfile(png):
+        print("跳过 Word 卡：截图失败 %s" % out_text[-300:])
+        return ""
+
+    out = os.path.join(raw, "_raw_word.png")
+    Image.open(png).convert("RGB").crop(_WORD_CROP).resize(
+        (1280, 720), Image.LANCZOS).save(out, "PNG", optimize=True)
+    return out
 
 
 def capture(html_path, cards, out_dir, want=frozenset()):
@@ -218,8 +367,8 @@ def clean_raws():
 
 def main(argv):
     want = frozenset(argv[1:])
-    raw = shoot_raws()
-    html, cards = build_html(raw)
+    raw, word = shoot_raws()
+    html, cards = build_html(raw, bool(word))
     html_path = os.path.join(raw, "_cards.html")
     with io.open(html_path, "w", encoding="utf-8") as f:
         f.write(html)

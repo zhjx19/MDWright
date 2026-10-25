@@ -1,6 +1,6 @@
 # 写作与渲染
 
-MDWright 是 Windows 上的单机 Markdown 写作台：**左边写 `.md`，右边就是成品**。
+墨匠 MDWright 是 Windows 上的单机 Markdown 写作台：**左边写 `.md`，右边就是成品**。
 排版、分页、导出、代码块运行全部在本地完成，断网照常用。
 
 ## 行内语法与公式
