@@ -10,7 +10,7 @@
 
 <a href="docs/宣传片/MDWright宣传片.mp4"><img src="docs/宣传图/01-标题卡.png" alt="墨匠 MDWright 宣传片：点封面播放" width="100%"></a>
 
-<sub>▶ **点封面看 30 秒宣传片**（MP4，9 MB）。GitHub 只能内联播放它自己托管的附件，所以仓库里的视频以「封面 + 点击」交付。</sub>
+<sub><a href="docs/宣传片/MDWright宣传片.mp4">▶ 观看 30 秒宣传片</a></sub>
 
 ---
 
