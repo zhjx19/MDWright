@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 wUwproject. Licensed under GNU AGPL v3 (or later).
 """行内高亮 / 上标 / 下标回归（R1）：
-- ==高亮== → <mark>；^上标^ → <sup>；~下标~ → <sub>
+- ==高亮== → <mark>；上标 ^x^ 与 ^{x} → <sup>；下标 ~x~ 与 _{x} → <sub>
 - 删除线 ~~x~~ 优先于下标（不得被拆成两个下标）
+- 花括号下标不得被斜体 _.._ 抢先，花括号上标不得被 ^..^ 规则跨段错配
 - 行内代码段内的 ~ ^ = 不生效（代码段优先）
 - 链接 URL 里的 ~ 不被当成下标定界符
 - 图床常见写法：H~2~O、x^2^、==重点==
@@ -67,7 +68,25 @@ var CASES = [
   ["裸 URL 内波浪号不被当下标", "see https://example.com/~user/~bob here",
    "https://example.com/~user/~bob"],
   ["裸 URL 内下划线不被当斜体", "see https://example.com/~a_b_c here",
-   "https://example.com/~a_b_c"]
+   "https://example.com/~a_b_c"],
+  /* 花括号形式（LaTeX 习惯）：^{} / _{}
+     与既有的 ^x^ / ~x~ 并存，两者都认 */
+  ["花括号上标", "x^{2}", "x<sup>2</sup>"],
+  ["花括号下标", "H_{2}O", "H<sub>2</sub>O"],
+  ["花括号上标可含空格", "x^{a b}", "x<sup>a b</sup>"],
+  ["花括号上标含引用编号", "见注^{[1]}", "<sup>[1]</sup>"],
+  ["花括号上下标并存", "A^{[1]}B_{2}", "<sup>[1]</sup>B<sub>2</sub>"],
+  /* 关键回归：_{a} 不能被斜体 _.._ 抢先吃成 <em> */
+  ["花括号下标不被斜体吃掉", "x_{a} 与 y_{b}",
+   "x<sub>a</sub> 与 y<sub>b</sub>"],
+  /* 关键回归：^{a}b^{c} 不能被 ^..^ 规则跨段错配 */
+  ["花括号上标先于尖号规则", "^{a}b^{c}",
+   "<sup>a</sup>b<sup>c</sup>"],
+  ["空花括号保持字面", "x^{}", "x^{}"],
+  ["未闭合花括号保持字面", "x^{1", "x^{1"],
+  ["转义后的花括号上标保持字面", "\\^{1}", "{1}"],
+  ["代码段内花括号上下标不生效", "`x^{1} H_{2}`", "<code>x^{1} H_{2}</code>"],
+  ["花括号内行内代码照常着色", "x^{`2`}", "<sup><code>2</code></sup>"]
 ];
 var fails = 0;
 for (var i=0;i<CASES.length;i++){

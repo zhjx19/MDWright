@@ -31,6 +31,11 @@ _IMG_PARAM_RE = re.compile(r"(!\[[^\]]*\]\([^)]+\))\s*\{([^{}]*)\}")
 _FILL_IMG_RE = re.compile(r"^\s*!\[([^\]]*)\]\(([^)]+?)(?:\s+\"([^\"]*)\")?\)\s*(?:\{[^{}]*\})?\s*$")
 _FILL_BEGIN_RE = re.compile(r"^\s*@@\s*begin\s+fill\s*\{([^{}]*)\}\s*$", re.I)
 _FILL_END_RE = re.compile(r"^\s*@@\s*end\s+fill\s*$", re.I)
+# 花括号上下标 ^{..} / _{..}：内容不含花括号与换行；pandoc 认的是 ^..^ 与 ~..~
+_SCRIPT_RE = re.compile(r"([\^_])\{([^{}\n]+)\}")
+# 改写前要原样保留的两类片段：行内代码与行内公式（LaTeX 的 ^{2} / _{k=1} 不能被改）
+_CODE_SPAN_RE = re.compile(r"`[^`\n]*`")
+_MATH_INLINE_RE = re.compile(r"\$[^$\n]+\$")
 
 
 def _clamp(pct):
@@ -118,10 +123,44 @@ def _fill_line(lines, start):
     return " ".join(cells), j + 1
 
 
+def _mask(text, pattern, store, mark):
+    """把匹配到的片段换成长度无关的占位符，原样存进 store，稍后按序还原。"""
+    def repl(m):
+        store.append(m.group(0))
+        return mark + str(len(store) - 1) + mark
+    return pattern.sub(repl, text)
+
+
+def _brace_scripts(line):
+    """把 ^{..} / _{..} 改写成 pandoc 认得的 ^..^ / ~..~（纯函数，幂等）。
+
+    两类片段必须原样保留：行内代码（语法示例）与行内公式（LaTeX 自身就用 ^{}），
+    所以先占位再改写。内容里的定界符与空格按 pandoc 规范转义——pandoc 的上下标
+    遇到裸空格会提前收尾，遇到同名定界符会错配。
+    块级公式（$$ 跨行）由 prepare_markdown 的 math_block 状态整段跳过，不到这里。
+    """
+    if "^{" not in line and "_{" not in line:
+        return line
+    code_store, math_store = [], []
+    s = _mask(line, _CODE_SPAN_RE, code_store, "\x01")
+    s = _mask(s, _MATH_INLINE_RE, math_store, "\x00")
+
+    def repl(m):
+        delim = "^" if m.group(1) == "^" else "~"
+        body = m.group(2).replace(delim, "\\" + delim).replace(" ", "\\ ")
+        return delim + body + delim
+
+    s = _SCRIPT_RE.sub(repl, s)
+    s = re.sub(r"\x00(\d+)\x00", lambda m: math_store[int(m.group(1))], s)
+    s = re.sub(r"\x01(\d+)\x01", lambda m: code_store[int(m.group(1))], s)
+    return s
+
+
 def prepare_markdown(src):
     """把本文方言改写成 pandoc 认得的 markdown（幂等，纯函数）。"""
     out = []
     fence_mark = ""          # 当前所在围栏的标记（``` 或 ~~~），空=不在围栏内
+    math_block = False       # 是否在 $$ 块级公式内（跨行，整段不参与改写）
     lines = src.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     i = 0
     while i < len(lines):
@@ -145,6 +184,17 @@ def prepare_markdown(src):
             out.append(ln)               # 代码块内部一律不动
             i += 1
             continue
+        if math_block:
+            out.append(ln)
+            if ln.count("$$") % 2 == 1:
+                math_block = False
+            i += 1
+            continue
+        if ln.lstrip().startswith("$$") and ln.count("$$") % 2 == 1:
+            math_block = True            # 块级公式开：整段原样透传，内部的 ^{} 是 LaTeX
+            out.append(ln)
+            i += 1
+            continue
         fl = _fill_line(lines, i)
         if fl:
             out.append(fl[0])
@@ -156,7 +206,7 @@ def prepare_markdown(src):
             out.append(cm.group(1) + "**" + kind + "**" + ((" " + title) if title else ""))
             i += 1
             continue
-        out.append(_norm_img_params(ln))
+        out.append(_brace_scripts(_norm_img_params(ln)))
         i += 1
     return "\n".join(out)
 

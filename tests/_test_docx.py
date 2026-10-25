@@ -80,6 +80,8 @@ $$
 > [!NOTE]
 > 提示内容
 
+花括号上下标：x^{2} 与 H_{2}O
+
 ![图](assets/pic.png)
 
 [^a]: 脚注说明
@@ -129,6 +131,10 @@ def main():
             check("front matter 进核心属性",
                   "导出测试" in z.read("docProps/core.xml").decode("utf-8", "replace"))
             check("Callout 落为引用块（无 [!NOTE] 字面）", "[!NOTE]" not in x)
+            check("花括号上下标落为 Word 上下标",
+                  'w:val="superscript"' in x and 'w:val="subscript"' in x,
+                  "sup=%s sub=%s" % ('superscript' in x, 'subscript' in x))
+            check("花括号写法不残留字面", "^{2}" not in x and "_{2}" not in x)
 
         # 未保存文档 → 明确报错且不产文件
         j2 = post("/api/export-docx", {"path": "", "markdown": "# x\n"})

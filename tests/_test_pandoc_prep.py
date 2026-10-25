@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 wUwproject. Licensed under GNU AGPL v3 or later.
 """方言 → pandoc markdown 预处理回归（R2）：
-只做 pandoc 不认的三件事（Callout / 图片宽度 {N} / 图表围栏的 {N}），其余原样透传——
-脚注、定义列表、front matter、行内高亮、上下标、公式都是 pandoc 原生能力。
+只做 pandoc 不认的几件事（Callout / 图片宽度 {N} / 图表围栏的 {N} / 花括号上下标 ^{} _{}），
+其余原样透传——脚注、定义列表、front matter、行内高亮、^x^ 与 ~x~ 形式的上下标、
+公式都是 pandoc 原生能力。
 """
 # --- 测试入口 shim：本文件在 tests/ 下。便携运行时（python311._pth）不会把 script dir
 # 加进 sys.path，所以 tests/ 与仓库根两个都显式挂上，跨用例 import 与根模块 import 才成立 ---
@@ -87,6 +88,29 @@ def main():
     out = prep(src)
     check("~~~ 块内的 ``` 不结束围栏",
           "[!NOTE]" in out and "{30}" in out, out)
+
+    # 9 花括号上下标 → pandoc 的 ^..^ / ~..~
+    out = prep("x^{2} 与 H_{2}O\n")
+    check("花括号上标转 pandoc", "x^2^" in out and "^{2}" not in out, out)
+    check("花括号下标转 pandoc", "H~2~O" in out and "_{2}" not in out, out)
+    out = prep("x^{a b}\n")
+    check("含空格的花括号上标转义空格", "x^a\\ b^" in out, out)
+    out = prep("见注^{[1]}\n")
+    check("编号形上标转 pandoc", "见注^[1]^" in out, out)
+
+    # 10 公式与行内代码里的花括号上下标一律不动（LaTeX 写法不能被改写）
+    src = "公式 $e^{i\\pi}+1=0$ 与 $\\sum_{k=1}^{n}k$\n"
+    check("行内公式不动", prep(src) == src, prep(src))
+    src = "$$\n\\sum_{k=1}^{n} k\n$$\n"
+    check("块级公式不动", prep(src) == src, prep(src))
+    src = "说明 `x^{1} H_{2}` 原样\n"
+    check("行内代码不动", prep(src) == src, prep(src))
+    src = "```\nx^{1} H_{2}\n```\n"
+    check("围栏内不动", prep(src) == src, prep(src))
+
+    # 11 幂等：转换结果再跑一遍不变
+    once = prep("x^{2} H_{2}O 见注^{[1]}\n")
+    check("花括号上下标转换幂等", prep(once) == once, prep(once))
 
     print("\n%s" % ("ALL PASS" if not fails else "FAILED: %s" % fails))
     sys.exit(1 if fails else 0)

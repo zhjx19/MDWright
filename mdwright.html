@@ -625,7 +625,7 @@
   <div id="aboutBox" role="dialog" aria-modal="true" aria-label="关于 墨匠 MDWright">
     <img src="mdwright.ico" alt="" width="40" height="40">
     <div class="ab-name">墨匠 MDWright</div>
-    <div class="ab-ver">版本 <span id="aboutVer">3.2.3</span></div>
+    <div class="ab-ver">版本 <span id="aboutVer">3.2.4</span></div>
     <div class="ab-desc">Windows 单机 Markdown 写作台：写作照 Markdown 的来，输出照排版的来。</div>
     <div class="ab-lic">AGPL-3.0-or-later · 衍生自 MDEditor v2.0</div>
     <div class="ab-btns">
@@ -1017,6 +1017,21 @@ function parseInline(text, fx){
       return '\x00T'+(toks.length-1)+'\x00';
     });
   }
+  /* 花括号上下标（LaTeX 习惯）：^{..} / _{..}。内容可含空白，不可含花括号本身。
+     两条都必须排在斜体 _.._ 与 ^..^ **之前**——否则 `x_{a} 与 y_{b}` 会被斜体吃成
+     <em>{a} 与 y</em>，`^{a}b^{c}` 会被 ^..^ 跨段错配成 <sup>{a}b</sup>{c}。
+     转义写法 \^{1} 已在上方成为占位符，此处碰不到；空组、未闭合、嵌套花括号
+     一律 fail-closed（原样留在正文）。花括号里的行内代码先就地还原，否则
+     占位符会漏成 @@C0@@。 */
+  function braceScript(tag){
+    return function(m,c){
+      c=c.replace(/@@C([0-9]+)@@/g,function(mm,i){return '<code>'+escapeHtml(codes[+i])+'</code>';});
+      toks.push('<'+tag+'>'+c+'</'+tag+'>');
+      return '\x00T'+(toks.length-1)+'\x00';
+    };
+  }
+  text=text.replace(/\^\{([^{}]+)\}/g,braceScript('sup'));
+  text=text.replace(/_\{([^{}]+)\}/g,braceScript('sub'));
   text=text.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/__([^_]+)__/g,'<strong>$1</strong>');
   text=text.replace(/\*([^*]+)\*/g,'<em>$1</em>').replace(/_([^_]+)_/g,'<em>$1</em>');
   text=text.replace(/~~([^~]+)~~/g,'<del>$1</del>');
