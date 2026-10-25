@@ -5,7 +5,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Markdown 编辑器</title>
+<title>墨匠 MDWright</title>
 <style>
   :root{
     /* 默认亮色（GitHub Primer 浅色）——暗色在 body 不带 .light 时生效，见下方 body:not(.light) */
@@ -622,10 +622,10 @@
   </div>
 </div>
 <div id="aboutOverlay" hidden>
-  <div id="aboutBox" role="dialog" aria-modal="true" aria-label="关于 MDWright">
+  <div id="aboutBox" role="dialog" aria-modal="true" aria-label="关于 墨匠 MDWright">
     <img src="mdwright.ico" alt="" width="40" height="40">
-    <div class="ab-name">MDWright</div>
-    <div class="ab-ver">版本 <span id="aboutVer">3.2.2</span></div>
+    <div class="ab-name">墨匠 MDWright</div>
+    <div class="ab-ver">版本 <span id="aboutVer">3.2.3</span></div>
     <div class="ab-desc">Windows 单机 Markdown 写作台：写作照 Markdown 的来，输出照排版的来。</div>
     <div class="ab-lic">AGPL-3.0-or-later · 衍生自 MDEditor v2.0</div>
     <div class="ab-btns">
@@ -3823,7 +3823,7 @@ function parseMarkdown(src, fx){
   function updateFileIndicator(p){
     var name=p?String(p).replace(/^.*[\\/]/,''):'默认文档';
     document.getElementById('statFile').textContent=name;
-    document.title=(name==='默认文档')?'MDWright':'MDWright - '+name;
+    document.title=(name==='默认文档')?'墨匠 MDWright':'墨匠 MDWright - '+name;
   }
   function loadFile(p){
     currentBuiltin=-1;

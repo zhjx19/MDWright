@@ -160,12 +160,13 @@ def _draw(hwnd):
         n = int((time.time() - _state["t0"]) * 2.5) % 4
         sub = "正在启动" + "." * n
         gdi32.SetBkMode(hdc, 1)
-        f1 = gdi32.CreateFontW(32, 0, 0, 0, 700, 0, 0, 0, 0, 0, 0, 0, 0, "Segoe UI")
+        # 标题含中文：Segoe UI 没有汉字字形，用雅黑（与下面副标题同一款字体）
+        f1 = gdi32.CreateFontW(28, 0, 0, 0, 700, 0, 0, 0, 0, 0, 0, 0, 0, "Microsoft YaHei")
         f2 = gdi32.CreateFontW(18, 0, 0, 0, 400, 0, 0, 0, 0, 0, 0, 0, 0, "Microsoft YaHei")
         gdi32.SetTextColor(hdc, C_TXT)
         of = gdi32.SelectObject(hdc, f1)
         r1 = wintypes.RECT(112, 46, W - 24, 92)
-        user32.DrawTextW(hdc, "MDWright", -1, ctypes.byref(r1),
+        user32.DrawTextW(hdc, "墨匠 MDWright", -1, ctypes.byref(r1),
                          DT_CENTER | DT_VCENTER | DT_SINGLELINE)
         gdi32.SetTextColor(hdc, C_SUB)
         gdi32.SelectObject(hdc, f2)

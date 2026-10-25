@@ -99,7 +99,7 @@ if /i "%~1"=="nolegacy" (
 )
 
 echo [5/5] Register "Apps & features" uninstall entry (HKCU)...
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\MDWright" /v DisplayName /t REG_SZ /d "MDWright" /f
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\MDWright" /v DisplayName /t REG_SZ /d "墨匠 MDWright" /f
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\MDWright" /v DisplayIcon /t REG_SZ /d "%HERE%\mdwright.ico" /f
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\MDWright" /v UninstallString /t REG_SZ /d "\"%HERE%\UninstallMDWright.exe\"" /f
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\MDWright" /v NoModify /t REG_DWORD /d 1 /f

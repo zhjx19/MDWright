@@ -154,7 +154,7 @@ namespace MDWrightSetup
                     }
                     k.SetValue("DisplayVersion", Version);
                     k.SetValue("EstimatedSize", (int)Math.Min(DirSize(target) / 1024, (long)int.MaxValue), RegistryValueKind.DWord);
-                    log("卸载条目已就绪：设置 → 应用 → \"MDWright\"。");
+                    log("卸载条目已就绪：设置 → 应用 → \"墨匠 MDWright\"。");
                 }
             }
             catch (Exception ex) { log("[!] 卸载条目补充失败: " + ex.Message); }
@@ -246,7 +246,7 @@ namespace MDWrightSetup
 
         public SetupForm()
         {
-            Text = "MDWright v" + Setup.Version + " 安装程序";
+            Text = "墨匠 MDWright v" + Setup.Version + " 安装程序";
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterScreen;
             MaximizeBox = false;
@@ -254,7 +254,7 @@ namespace MDWrightSetup
 
             var lblTitle = new Label
             {
-                Text = "MDWright v" + Setup.Version + " 安装程序",
+                Text = "墨匠 MDWright v" + Setup.Version + " 安装程序",
                 Font = new Font(FontFamily.GenericSansSerif, 14, FontStyle.Bold),
                 Location = new Point(20, 15),
                 Size = new Size(580, 30)
@@ -277,7 +277,7 @@ namespace MDWrightSetup
             _btnBrowse.Size = new Size(90, 26);
             _btnBrowse.Click += (s, e) =>
             {
-                using (var d = new FolderBrowserDialog { Description = "选择 MDWright 安装目录", SelectedPath = _txtDir.Text })
+                using (var d = new FolderBrowserDialog { Description = "选择 墨匠 MDWright 安装目录", SelectedPath = _txtDir.Text })
                     if (d.ShowDialog(this) == DialogResult.OK) _txtDir.Text = d.SelectedPath;
             };
 

@@ -289,7 +289,7 @@ def main():
     import webview
     api = Api()
     w, h = load_window_size()
-    win = webview.create_window("MDWright", "http://127.0.0.1:%d/%s" % (PORT, q),
+    win = webview.create_window("墨匠 MDWright", "http://127.0.0.1:%d/%s" % (PORT, q),
                                 width=w, height=h, min_size=(900, 600),
                                 js_api=api)
     api.window = win
