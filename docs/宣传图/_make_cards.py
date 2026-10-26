@@ -67,7 +67,8 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",sans-serif
             line-height:1.1;padding-top:18px}
 .hero .en{margin-top:10px;font-size:46px;font-weight:600;letter-spacing:14px;
           color:#7f8ba3;text-indent:14px}
-.hero .sub{margin-top:34px;font-size:34px;color:#cfd6e4;letter-spacing:1px}
+.hero .hook{margin-top:32px;font-size:29px;color:#c9d3e4;letter-spacing:.6px}
+.hero .sub{margin-top:16px;font-size:23px;color:#8d99b0;letter-spacing:.8px}
 .hero .sub2{margin-top:14px;font-size:24px;color:#8d99b0;letter-spacing:.5px}
 .hero .chips{display:flex;gap:18px;margin-top:52px}
 .hero .chips span{font-size:24px;color:#cfd6e4;padding:13px 26px;border-radius:999px;
@@ -108,8 +109,8 @@ def hero():
     return """<section class="card hero">
   <div class="mark">墨匠</div>
   <div class="en">MDWright</div>
+  <div class="hook">Markdown 编辑器很多，能跑 Python / R、交付成品 Word 的，不多</div>
   <div class="sub">Windows 上的单机 Markdown 写作台</div>
-  <div class="sub2">写作 · 排版 · 导出，全部在本机完成，断网照常用</div>
   <div class="chips"><span>全部离线</span><span>即时渲染</span><span>选区批注</span>
   <span>代码块可运行</span><span>分页 · Word · PDF</span></div>
 </section>"""
