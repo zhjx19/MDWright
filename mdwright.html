@@ -3435,7 +3435,16 @@ function parseMarkdown(src, fx){
       body:JSON.stringify({config:cfg})})
       .then(function(r){return r.json();})
       .then(function(j){
-        if(j&&j.ok){ showToast('外部工具路径已保存'); fillTools(false); }
+        if(j&&j.ok){
+          /* 解释器换了服务端会把常驻会话清掉，这里如实说一句：
+             「路径已保存」与「会话已重置」是两件事，不说明用户会以为变量无缘无故没了 */
+          var rl=(j.reset||[]),names=[];
+          if(rl.indexOf('python')>=0) names.push('Python');
+          if(rl.indexOf('r')>=0) names.push('R');
+          showToast('外部工具路径已保存'+(names.length
+            ?('，'+names.join(' / ')+' 代码块会话已重置'):''));
+          fillTools(false);
+        }
         else{ showToast('保存失败：'+((j&&j.error)||'未知错误')); }
       })
       .catch(function(e){ showToast('保存失败：'+e.message); });
@@ -3505,6 +3514,8 @@ function parseMarkdown(src, fx){
     }else{
       html+='<pre class="r-out-err">'+escapeHtml((j&&j.error)||'执行失败')+'</pre>';
       if(j&&j.stdout) html+='<pre class="r-out-txt">'+escapeHtml(j.stdout)+'</pre>';
+      /* 内置运行时缺第三方库时后端会给一句 hint（指回设置面板），别让人去重装库 */
+      if(j&&j.hint) html+='<div class="r-out-line">'+escapeHtml(j.hint)+'</div>';
     }
     if(!runDocKey().doc){
       html+='<div class="r-out-line">当前文档未保存为 .md，运行结果只在本次使用期间保留</div>';

@@ -11,6 +11,31 @@
 
 ---
 
+## v3.3.1（2026-10-27）
+
+**本次改动：改了解释器路径，代码运行会话跟着换——修「填了 Python，pandas 还是 ModuleNotFoundError」**
+
+**修复**
+
+- **会话不随配置重建**：文档里先跑过一块，之后再在「设置 → 外部工具」填 Python 路径，同一个文档继续复用原会话，仍跑随包内置 3.11.9，`import pandas` 报 `ModuleNotFoundError`；`pandas` 其实装着，是解释器没换。会话用哪个解释器在 `_spawn()` 时定死，此后没人再比对配置。现场证据：失败会话的 `_driver.py` 早于 `settings.json` 29 秒。
+- **保存路径时清会话**：`PUT /api/tools` 比对改动前后的 `python_path` / `rscript_path`，变了就 `md_runs.reset(None, lang)` 清掉该语言的常驻会话，响应新增 `reset` 字段说明清了谁；配置原样再保存不清（避免每次点保存都丢变量）。前端提示随之改为「外部工具路径已保存，Python 代码块会话已重置」。
+- **兜底比对解释器**：`_Session` 记下实际使用的 `exe`，`run_code()` 每次比对当前配置解析出的解释器，不一致就重建会话并置 `restarted:true`。覆盖不经接口的改动（手改 `settings.json`、路径原来填错回落过、把解释器装回原路径）。
+
+**新增**
+
+- **缺库提示**：内置运行时遇 `ModuleNotFoundError` 时，响应带 `hint`，输出区在报错下方多一行——「当前用的是随包内置 Python（只有标准库），在设置里指到装了它的解释器再运行一次」，不再让人去重装库。
+
+**测试**
+
+- `_test_run_reset_on_config.py`（新，18 项，真起服务 + 真 PUT）：留空时用内置、缺库带 hint；改 `python_path` 后 `reset` 含 `python` 不含 `r`；同一文档重跑换成新解释器且老会话变量已清；原样再保存不清会话、变量仍在；直接改 `settings.json` 也自行换解释器且 `restarted:true`。本机无 pandas 时 SKIP。
+- 全量 `tests/run_all.py`：`59` 个用例 → **PASS 53 / SKIP 5 / FAIL 1 / TIMEOUT 0**；唯一 FAIL 为 `_test_rag_e2e`（本机未部署 rag-assistant，既有基线）。
+
+**文档**
+
+- 使用指南「Python 代码块」与「外部工具路径」两节：写明改 Python / R 路径会重置该语言会话，改完重新运行一次即可。
+
+---
+
 ## v3.3.0（2026-10-27）
 
 **本次改动：图表围栏（mermaid / dot / wavedrom / vega）能进 Word；Python 代码块也能出图**

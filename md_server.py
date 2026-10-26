@@ -73,10 +73,10 @@ except Exception as _e:
 PORT = int(os.environ.get("MD_PORT") or 18766)
 HERE = os.path.dirname(os.path.abspath(__file__))
 EDITOR_HTML = os.path.join(HERE, "mdwright.html")
-MD_SERVER_VERSION = 72  # 每次服务端路由/能力变更时 +1；md_launch 依此自愈换代
+MD_SERVER_VERSION = 73  # 每次服务端路由/能力变更时 +1；md_launch 依此自愈换代
 # 应用版本号（「关于」窗口显示）：单一来源在这里，/api/version 带出 app 字段。
 # 发版时必须与 CHANGELOG 首段、MD_SERVER_VERSION 同步（见 AGENTS.md「发布必改三处」）。
-APP_VERSION = "3.3.0"
+APP_VERSION = "3.3.1"
 SETTINGS_PATH = os.path.join(HERE, "runtime", "settings.json")
 
 # .smd 自包含文档格式（v1.2.0）；导入失败落错误日志，相关路由返回明确错误而非静默
@@ -1210,12 +1210,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 settings = _load_json(SETTINGS_PATH, {})
                 if not isinstance(settings, dict):
                     settings = {}
+                old = settings.get("tools")
+                old = old if isinstance(old, dict) else {}
                 settings["tools"] = cfg
                 _save_json(SETTINGS_PATH, settings)
                 _TOOLS_CACHE["val"] = None          # 强制重探（工具可能刚装/刚搬）
+                # 解释器换了就把常驻会话掐掉：会话用哪个解释器在启动时定死，
+                # 留着的话改完设置仍跑旧解释器——用户看到的是「填了 Python，
+                # pandas 还是 ModuleNotFoundError」，而不是「设置没生效」。
+                reset = []
+                for lang, k in (("python", "python_path"), ("r", "rscript_path")):
+                    was = old.get(k) if isinstance(old.get(k), str) else ""
+                    if was.strip() != (cfg.get(k) or "").strip():
+                        md_runs.reset(None, lang)
+                        reset.append(lang)
                 self._send(200, json.dumps({"ok": True,
                                             "tools": _tools_probe_cached(cfg),
-                                            "configured": cfg},
+                                            "configured": cfg,
+                                            "reset": reset},
                                            ensure_ascii=False))
             except Exception as e:
                 self._send(500, json.dumps({"ok": False, "error": str(e)},

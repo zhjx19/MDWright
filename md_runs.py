@@ -201,9 +201,35 @@ def _png_blank(path):
             return True
 
 
+def _exe_now(lang):
+    """当前配置应使用的解释器。
+
+    R 没装时返回空串——空串不参与「换了没」的比对，免得 R 一时不可用
+    就把好好的会话掐掉。
+    """
+    try:
+        return _py_exe() if lang == "python" else (_r_exe() or "")
+    except Exception:
+        return ""
+
+
+def _annotate(res, lang):
+    """内置运行时缺第三方库时，补一句能直接照做的提示。
+
+    `ModuleNotFoundError` 只说缺哪个包，用户看到的却是「我明明装了 pandas」——
+    实际是没指到本机解释器。提示把人指回设置面板，别让人去重装库。
+    """
+    if (not res.get("ok")) and lang == "python" and res.get("runtime") == "builtin" \
+            and "ModuleNotFoundError" in (res.get("error") or ""):
+        res["hint"] = ("当前用的是随包内置 Python（只有标准库）。要用第三方库，"
+                       "在「设置 → 外部工具」里把 Python 指到装了它的解释器，再运行一次。")
+    return res
+
+
 class _Session(object):
     def __init__(self, key, lang, exe, workdir, meta=None):
         self.key, self.lang, self.workdir = key, lang, workdir
+        self.exe = exe          # 记下这次用的解释器，配置变了要据此重建
         self.meta = meta or {}
         self.seq = 0
         self.dead = False
@@ -312,7 +338,7 @@ def run_code(lang, code, doc_key, timeout=60):
             res = s.run(code, timeout)
             res["restarted"] = False
             res.update(s.meta)
-            return res
+            return _annotate(res, lang)
         finally:
             s.kill()
     key = (doc_key, lang)
@@ -324,6 +350,16 @@ def run_code(lang, code, doc_key, timeout=60):
     try:
         with _GUARD:
             s = _SESS.get(key)
+            # 解释器换了就重建会话：会话用哪个解释器在 _spawn 时定死，
+            # 不重建会一直用旧的那个——表现就是「设置里明明填了 Python，
+            # 还是 ModuleNotFoundError」。改设置时服务端已顺手清一次，
+            # 这里兜住「设置没走接口」的情况（手改了 settings.json、路径原来填错回落过）。
+            exe_now = _exe_now(lang)
+            if s is not None and not s.dead and exe_now \
+                    and os.path.normcase(getattr(s, "exe", "")) != os.path.normcase(exe_now):
+                _SESS.pop(key).kill()
+                s = None
+                restarted = True
             if s is None or s.dead:
                 if s is not None:
                     restarted = True
@@ -332,7 +368,7 @@ def run_code(lang, code, doc_key, timeout=60):
         res = s.run(code, timeout)
         res["restarted"] = restarted
         res.update(s.meta)
-        return res
+        return _annotate(res, lang)
     finally:
         with _GUARD:
             _BUSY.discard(key)
