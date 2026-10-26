@@ -11,6 +11,28 @@
 
 ---
 
+## v3.3.2（2026-10-27）
+
+**本次改动：装完重新出现在「设置 → 应用 → 安装的应用」——修 LF-only 的 install.cmd 被 cmd.exe 解析错**
+
+**修复**
+
+- **卸载条目残缺**：`install.cmd` 是 LF-only 行尾，cmd.exe 会把 `if (...)` 段与相邻 `reg add` 揉在一起，只有零散几行真正执行。结果 `set "HERE=..."` 没生效，`DisplayIcon` 落成 `\mdwright.ico`、`UninstallString` 落成 `"\UninstallMDWright.exe"`（都是根相对路径），`DisplayName` 那条干脆没写——Windows 只认 `DisplayName`，缺了就不列举，于是「安装的应用」里找不到。安装目录里也缺 `UninstallMDWright.exe`、`.smd` 关联与快捷方式。
+- **行尾统一 CRLF**：`install.cmd` / `uninstall.cmd` / `md_stop.cmd` / `desktop-shortcut.cmd` 全部转 CRLF；新增 `.gitattributes`（`*.cmd text eol=crlf`）避免检出与编辑再写回 LF；`installer/_build_installer.py` 在 staging 落地后强制改写一遍，改不动就构建失败。同一份内容写成 LF-only 的复现结果是 `{'DisplayIcon': '\mdwright.ico', 'UninstallString': '"\UninstallMDWright.exe"', 'NoModify': 1, 'NoRepair': 1}`——与用户机器上的键逐值一致。
+- **中文显示名不再乱码**：`install.cmd` 是 UTF-8 无 BOM，cmd 默认按控制台代码页读，`/d "墨匠 MDWright"` 会写成乱码。脚本开头加 `chcp 65001 >nul`（实测 UTF-8 变体里只有加了它才写对）。
+- **安装程序自己登记条目**：`WriteArpExtras` 改为 `EnsureArpEntry`，用 `CreateSubKey` 建键并写全 `DisplayName` / `DisplayVersion` / `Publisher` / `InstallLocation` / `DisplayIcon` / `UninstallString` / `NoModify` / `NoRepair` / `EstimatedSize`；install.cmd 因任何原因半途而废也能显示。`UninstallMDWright.exe` 缺失时在安装日志里明确警告，不再留下一个点不动的「卸载」。
+
+**测试**
+
+- `_test_setup_arp.py`（新，23 项）：仓库与 staging 的四个 .cmd 必须 CRLF（0 个 LF-only）；`.gitattributes` 与构建期改写存在；安装程序写全条目字段；把 `install.cmd` 里真实的 ARP 命令行抽出来改到测试键上真跑一遍——`DisplayName` 为「墨匠 MDWright」、`DisplayIcon` / `UninstallString` 是目标目录下的绝对路径、`NoModify=1`；同一内容写成 LF-only 的结果打印出来作对照。测试键跑完即删。
+- 构建 smoke 新增 `install.cmd is CRLF in payload`：从 payload.zip 里解包后逐字节数，防止 zip 环节又把行尾改掉。
+
+**文档**
+
+- `docs/分发清单.md` 补一条：随包 `.cmd` 必须 CRLF，构建期强制改写并断言。
+
+---
+
 ## v3.3.1（2026-10-27）
 
 **本次改动：改了解释器路径，代码运行会话跟着换——修「填了 Python，pandas 还是 ModuleNotFoundError」**

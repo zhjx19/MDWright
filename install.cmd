@@ -1,4 +1,7 @@
 @echo off
+REM 中文显示名要按 UTF-8 解：cmd 默认按控制台代码页读脚本，不改这里
+REM 「墨匠 MDWright」会变成乱码写进注册表（本文件是 UTF-8 无 BOM）。
+chcp 65001 >nul
 setlocal EnableExtensions
 set "HERE=%~dp0"
 if "%HERE:~-1%"=="\" set "HERE=%HERE:~0,-1%"

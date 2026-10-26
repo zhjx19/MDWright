@@ -1,0 +1,5 @@
+# Windows 批处理必须是 CRLF：cmd.exe 解析 LF-only 的 .cmd 会把 if / reg 段揉错，
+# 结果是 install.cmd 只有零散几行执行成功（v3.2.4 / v3.3.0 装完不进「设置 → 应用」
+# 就是这个原因）。构建期还会再强制改写一次，这里是让检出/编辑也别把它写成 LF。
+*.cmd text eol=crlf
+*.bat text eol=crlf

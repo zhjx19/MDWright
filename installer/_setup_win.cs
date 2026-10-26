@@ -138,26 +138,44 @@ namespace MDWrightSetup
             return p;
         }
 
-        static void WriteArpExtras(string target, Action<string> log)
+        internal const string ArpKey =
+            @"Software\Microsoft\Windows\CurrentVersion\Uninstall\MDWright";
+
+        static void EnsureArpEntry(string target, Action<string> log)
         {
-            // install.cmd owns the ARP entry (single source). Here we only
-            // supplement the fields only the installer knows: version + size.
+            EnsureArpEntry(target, ArpKey, log);
+        }
+
+        static void EnsureArpEntry(string target, string keyPath, Action<string> log)
+        {
+            // 「设置 → 应用」只认这里的 DisplayName 等值。install.cmd 也登记，
+            // 但它可能因任何原因半途而废（v3.2.4 / 3.3.0 就是 LF-only 被 cmd 揉错，
+            // 只落下 DisplayIcon=\mdwright.ico、DisplayName 干脆没写，条目就不显示）。
+            // 安装程序自己再写一遍，缺什么补什么——版本号与占用大小只有这里知道。
             try
             {
-                using (var k = Registry.CurrentUser.OpenSubKey(
-                    @"Software\Microsoft\Windows\CurrentVersion\Uninstall\MDWright", true))
+                using (var k = Registry.CurrentUser.CreateSubKey(keyPath))
                 {
-                    if (k == null)
-                    {
-                        log("[!] 卸载条目缺失（install.cmd 未完成第 5 步登记）");
-                        return;
-                    }
+                    string ico = Path.Combine(target, "mdwright.ico");
+                    string unins = Path.Combine(target, "UninstallMDWright.exe");
+                    k.SetValue("DisplayName", "墨匠 MDWright");
                     k.SetValue("DisplayVersion", Version);
-                    k.SetValue("EstimatedSize", (int)Math.Min(DirSize(target) / 1024, (long)int.MaxValue), RegistryValueKind.DWord);
+                    k.SetValue("Publisher", "wUwproject");
+                    k.SetValue("InstallLocation", target);
+                    k.SetValue("DisplayIcon", ico);
+                    k.SetValue("UninstallString", "\"" + unins + "\"");
+                    k.SetValue("NoModify", 1, RegistryValueKind.DWord);
+                    k.SetValue("NoRepair", 1, RegistryValueKind.DWord);
+                    k.SetValue("EstimatedSize",
+                               (int)Math.Min(DirSize(target) / 1024, (long)int.MaxValue),
+                               RegistryValueKind.DWord);
                     log("卸载条目已就绪：设置 → 应用 → \"墨匠 MDWright\"。");
+                    if (!File.Exists(unins))
+                        log("[!] 卸载程序缺失（UninstallMDWright.exe 未编译成功）："
+                            + "「卸载」会失败，可在安装目录手动运行 install.cmd 重试。");
                 }
             }
-            catch (Exception ex) { log("[!] 卸载条目补充失败: " + ex.Message); }
+            catch (Exception ex) { log("[!] 卸载条目登记失败: " + ex.Message); }
         }
 
         internal static void Install(string target, Action<string> log, Action<int> pct, Action done, Action<string> fail)
@@ -184,7 +202,7 @@ namespace MDWrightSetup
                 log("系统集成（右键菜单 / 图标 / 快捷方式 / EXE 编译 / 卸载条目登记）...");
                 var p = RunHidden("cmd.exe", "/c install.cmd nopause", target);
                 log(p.ExitCode == 0 ? "install.cmd 执行成功。" : "[!] install.cmd 退出码 " + p.ExitCode + "（可稍后在安装目录手动重跑）");
-                WriteArpExtras(target, log);
+                EnsureArpEntry(target, log);
                 log("");
                 log("安装完成：" + target);
                 log("右键 .md 文件可用 MDWright 打开。");
@@ -216,6 +234,15 @@ namespace MDWrightSetup
             lines.Add("license_doc_exists=" + (File.Exists(lic) ? 1 : 0));
             lines.Add("uninstall_icon_exists=" + (File.Exists(uico) ? 1 : 0));
             lines.Add("uninstaller_cs_exists=" + (File.Exists(ucs) ? 1 : 0));
+            // 批处理必须 CRLF：LF-only 会让 cmd.exe 把 install.cmd 解析错，
+            // 直接后果是卸载条目写不全、应用不出现在「设置 → 应用」
+            string icmd = Path.Combine(tmp, "install.cmd");
+            var raw = File.Exists(icmd) ? File.ReadAllBytes(icmd) : new byte[0];
+            int lf = 0, crlf = 0;
+            for (int i = 0; i < raw.Length; i++)
+                if (raw[i] == 0x0A) { lf++; if (i > 0 && raw[i - 1] == 0x0D) crlf++; }
+            lines.Add("install_cmd_lf=" + lf);
+            lines.Add("install_cmd_crlf=" + crlf);
             lines.Add("docs_listing=" + string.Join(";", Directory.GetFileSystemEntries(docs).Select(Path.GetFileName)));
             lines.Add("pythonnet_dll_size=" + (File.Exists(dll) ? new FileInfo(dll).Length : 0));
             lines.Add("katex_fonts_count=" + (Directory.Exists(fonts) ? Directory.GetFiles(fonts).Length : 0));
@@ -228,8 +255,44 @@ namespace MDWrightSetup
             lines.Add("wavedrom_skin_dark_size=" + (File.Exists(wskd) ? new FileInfo(wskd).Length : 0));
             lines.Add("vega_embed_vendor_size=" + (File.Exists(gejs) ? new FileInfo(gejs).Length : 0));
             lines.Add("version=" + Version);
+            RunArpSmoke(lines);
             File.WriteAllLines(Path.Combine(Path.GetTempPath(), "md_setup_smoke_report.txt"), lines);
             try { Directory.Delete(tmp, true); } catch { }
+        }
+
+        static void RunArpSmoke(List<string> lines)
+        {
+            // 「设置 → 应用」只看 ARP 条目的 DisplayName。这里真的写一次再读回来
+            // （测试键 MDWrightArpSmoke，跑完删掉），确认字段、中文与绝对路径都对。
+            string keyPath = @"Software\MDWrightArpSmoke";
+            string tmp = Path.Combine(Path.GetTempPath(), "md_arp_smoke");
+            try
+            {
+                if (Directory.Exists(tmp)) Directory.Delete(tmp, true);
+                Directory.CreateDirectory(tmp);
+                File.WriteAllBytes(Path.Combine(tmp, "mdwright.ico"), new byte[0]);
+                File.WriteAllBytes(Path.Combine(tmp, "UninstallMDWright.exe"), new byte[0]);
+                EnsureArpEntry(tmp, keyPath, delegate(string s) { lines.Add("arp_log=" + s); });
+                using (var k = Registry.CurrentUser.OpenSubKey(keyPath))
+                {
+                    string name = k == null ? "" : (k.GetValue("DisplayName") as string ?? "");
+                    string icon = k == null ? "" : (k.GetValue("DisplayIcon") as string ?? "");
+                    string unins = k == null ? "" : (k.GetValue("UninstallString") as string ?? "");
+                    string loc = k == null ? "" : (k.GetValue("InstallLocation") as string ?? "");
+                    lines.Add("arp_display_name=" + name);
+                    lines.Add("arp_icon_abs=" + (icon == Path.Combine(tmp, "mdwright.ico") ? 1 : 0));
+                    lines.Add("arp_unins_abs=" +
+                              (unins == "\"" + Path.Combine(tmp, "UninstallMDWright.exe") + "\"" ? 1 : 0));
+                    lines.Add("arp_install_location=" + (loc == tmp ? 1 : 0));
+                    lines.Add("arp_nomodify=" + (k == null ? -1 : Convert.ToInt32(k.GetValue("NoModify", -1))));
+                }
+            }
+            catch (Exception ex) { lines.Add("arp_error=" + ex.Message); }
+            finally
+            {
+                try { Registry.CurrentUser.DeleteSubKey(keyPath, false); } catch { }
+                try { Directory.Delete(tmp, true); } catch { }
+            }
         }
     }
 

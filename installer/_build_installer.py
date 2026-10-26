@@ -56,6 +56,24 @@ def find_csc():
     return os.path.join(root, vers[0], "csc.exe")
 
 
+def force_crlf(path):
+    """批处理必须是 CRLF：cmd.exe 解析 LF-only 的 .cmd 会把 if / reg 段揉错。
+
+    实测（v3.2.4 / v3.3.0 装完不进「设置 → 应用」）：LF-only 的 install.cmd 里
+    只有零散几行执行成功，`set "HERE=..."` 没生效，`reg add` 落下的
+    DisplayIcon 是 `\\mdwright.ico`、DisplayName 干脆没写——Windows 因此不显示条目。
+    构建期统一改写，不指望编辑器 / 检出配置。
+    """
+    with open(path, "rb") as f:
+        data = f.read()
+    fixed = data.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+    if fixed != data:
+        with open(path, "wb") as f:
+            f.write(fixed)
+        return True
+    return False
+
+
 def make_staging(ver):
     shutil.rmtree(STAGING, ignore_errors=True)
     os.makedirs(STAGING)
@@ -69,6 +87,26 @@ def make_staging(ver):
         shutil.copytree(os.path.join(SRC, "docs", d), os.path.join(docs, d))
     for f in DIST_FILES:
         shutil.copy2(os.path.join(SRC, f), os.path.join(STAGING, f))
+    fixed = 0
+    for root, _dirs, files in os.walk(STAGING):
+        for fn in files:
+            if fn.lower().endswith((".cmd", ".bat")):
+                if force_crlf(os.path.join(root, fn)):
+                    fixed += 1
+    if fixed:
+        print("normalized to CRLF: %d .cmd" % fixed)
+    bad = []
+    for root, _dirs, files in os.walk(STAGING):
+        for fn in files:
+            if fn.lower().endswith((".cmd", ".bat")):
+                p = os.path.join(root, fn)
+                with open(p, "rb") as f:
+                    data = f.read()
+                if data.count(b"\n") != data.count(b"\r\n"):
+                    bad.append(os.path.relpath(p, STAGING))
+    if bad:
+        raise SystemExit("FAIL 随包 .cmd 仍是 LF-only（cmd.exe 会解析错）: "
+                         + ", ".join(bad))
     n = sum(len(fs) for _, _, fs in os.walk(STAGING))
     return n
 
@@ -144,6 +182,19 @@ def run_smoke(exe):
         ("license doc exists", rep.get("license_doc_exists") == "1", ""),
         ("uninstall icon in payload", rep.get("uninstall_icon_exists") == "1", ""),
         ("uninstaller source in payload", rep.get("uninstaller_cs_exists") == "1", ""),
+        ("install.cmd is CRLF in payload",
+         int(rep.get("install_cmd_lf", "0")) > 100
+         and rep.get("install_cmd_lf") == rep.get("install_cmd_crlf"),
+         rep.get("install_cmd_lf", "?") + "/" + rep.get("install_cmd_crlf", "?")),
+        ("ARP entry shows up (DisplayName)",
+         rep.get("arp_display_name") == "墨匠 MDWright",
+         str(rep.get("arp_error") or rep.get("arp_display_name"))),
+        ("ARP icon + uninstaller are absolute paths",
+         rep.get("arp_icon_abs") == "1" and rep.get("arp_unins_abs") == "1",
+         "icon=%s uninst=%s" % (rep.get("arp_icon_abs"), rep.get("arp_unins_abs"))),
+        ("ARP InstallLocation / NoModify",
+         rep.get("arp_install_location") == "1" and rep.get("arp_nomodify") == "1",
+         "%s/%s" % (rep.get("arp_install_location"), rep.get("arp_nomodify"))),
         ("pythonnet DLL >= 400KB", int(rep.get("pythonnet_dll_size", "0")) > 400 * 1024,
          rep.get("pythonnet_dll_size", "?")),
         ("katex fonts >= 50", int(rep.get("katex_fonts_count", "0")) >= 50,
