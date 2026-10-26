@@ -73,10 +73,10 @@ except Exception as _e:
 PORT = int(os.environ.get("MD_PORT") or 18766)
 HERE = os.path.dirname(os.path.abspath(__file__))
 EDITOR_HTML = os.path.join(HERE, "mdwright.html")
-MD_SERVER_VERSION = 71  # 每次服务端路由/能力变更时 +1；md_launch 依此自愈换代
+MD_SERVER_VERSION = 72  # 每次服务端路由/能力变更时 +1；md_launch 依此自愈换代
 # 应用版本号（「关于」窗口显示）：单一来源在这里，/api/version 带出 app 字段。
 # 发版时必须与 CHANGELOG 首段、MD_SERVER_VERSION 同步（见 AGENTS.md「发布必改三处」）。
-APP_VERSION = "3.2.4"
+APP_VERSION = "3.3.0"
 SETTINGS_PATH = os.path.join(HERE, "runtime", "settings.json")
 
 # .smd 自包含文档格式（v1.2.0）；导入失败落错误日志，相关路由返回明确错误而非静默
@@ -1305,6 +1305,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 cfg = cfg if isinstance(cfg, dict) else {}
                 import md_tools
                 three_line = bool(obj.get("threeLine"))
+                # 图表位图：前端在预览里渲染好、栅格化后一起交上来；空数组 = 全按代码块
+                diagrams = obj.get("diagrams") or []
+                if not isinstance(diagrams, list):
+                    diagrams = []
+                chart_chars = sum(len(d.get("png") or "") for d in diagrams
+                                  if isinstance(d, dict))
+                if chart_chars > 48 * 1024 * 1024:
+                    self._send(400, json.dumps({
+                        "ok": False,
+                        "error": "图表图片过大（解码前超过 48MB），请减少图表数量后重试"},
+                        ensure_ascii=False))
+                    return
                 # 运行结果：侧车里有存档就按代码原文注入（Word 吃源文，预览 DOM 到不了这里）
                 try:
                     blocks = md_runs.read_outputs(md_path, (obj.get("token") or "").strip())
@@ -1312,10 +1324,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 except Exception:
                     pass
                 pandoc = md_tools._cfg(cfg, "pandoc_path", "pandoc")
-                md_pandoc.export_docx(md_text, md_path, out, pandoc)
+                stats = {}
+                md_pandoc.export_docx(md_text, md_path, out, pandoc,
+                                      diagrams=diagrams, stats=stats)
                 if three_line:
                     md_pandoc.three_line_tables(out, md_tools.find_pandoc(pandoc))
-                self._send(200, json.dumps({"ok": True, "path": out}, ensure_ascii=False))
+                self._send(200, json.dumps({"ok": True, "path": out,
+                    "diagrams": stats.get("diagrams", 0),
+                    "diagramTotal": md_pandoc.count_diagram_fences(md_text)},
+                    ensure_ascii=False))
             except Exception as e:
                 self._send(500, json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
             return

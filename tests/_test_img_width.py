@@ -103,10 +103,10 @@ for (const [raw, el, ew] of fenceCases) {
 }
 /* 端到端：图表围栏产出带宽容器；非图表围栏保持字面 */
 const md1 = parseMarkdown('```mermaid {30}\ngraph TD\nA-->B\n```\n');
-if (/class="diagram" data-diagram="mermaid" style="width:30%"/.test(md1)) console.log('PASS md diagram {30}');
+if (/class="diagram" data-diagram="mermaid"[^>]*style="width:30%"/.test(md1)) console.log('PASS md diagram {30}');
 else { console.log('FAIL md diagram {30} -> ' + md1.slice(0, 160)); ffails++; }
 const md2 = parseMarkdown('```mermaid{50}\ngraph TD\nA-->B\n```\n');
-if (/data-diagram="mermaid" style="width:50%"/.test(md2)) console.log('PASS md diagram{50}');
+if (/data-diagram="mermaid"[^>]*style="width:50%"/.test(md2)) console.log('PASS md diagram{50}');
 else { console.log('FAIL md diagram{50}'); ffails++; }
 const md3 = parseMarkdown('```python {30}\nx=1\n```\n');
 if (/class="lang-python \{30\}"/.test(md3)) console.log('PASS md python {30} literal kept');

@@ -10,6 +10,7 @@
 公式：`$...$` / `$$...$$` 交给 pandoc，docx 侧落为 Word 原生公式（OMML，
 实测 `<m:oMath>` / `<m:sSup>` / `<m:f>` 齐全），不做图像化或文本化降级。
 """
+import base64
 import os
 import re
 import shutil
@@ -24,6 +25,10 @@ import md_tools
 _NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 _FENCE_RE = re.compile(r"^(\s*)(```|~~~)(.*)$")
+# 图表围栏：预览侧渲染成 SVG，Word 侧只能嵌位图（前端点导出时先栅格化）。
+# 语言名与预览 parseMarkdown 认的那一组保持一致。
+DIAGRAM_LANGS = frozenset(("mermaid", "dot", "graphviz", "viz",
+                           "wavedrom", "wavejson", "vega", "vega-lite", "vegalite"))
 _CALLOUT_RE = re.compile(r"^(\s*>\s*)\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*(.*)$")
 # 图片参数组：`![alt](src){...}`（花括号在这里被完整吃掉，是否合法由 _norm_img_params 判）
 _IMG_PARAM_RE = re.compile(r"(!\[[^\]]*\]\([^)]+\))\s*\{([^{}]*)\}")
@@ -156,8 +161,58 @@ def _brace_scripts(line):
     return s
 
 
-def prepare_markdown(src):
-    """把本文方言改写成 pandoc 认得的 markdown（幂等，纯函数）。"""
+def diagram_key(lang, code):
+    """图表围栏的匹配键：语言（小写、去空白）+ 源码原文（去首尾换行）。
+
+    前端在预览里渲染完一张图，就以这个键把 PNG 交回来；键必须逐字对上，
+    对不上就保持代码块（fail-closed），不拿错图顶替。
+    """
+    return ((lang or "").strip().lower(),
+            (code or "").replace("\r\n", "\n").strip("\n"))
+
+
+def count_diagram_fences(src):
+    """数源文里的图表围栏个数（导出后回报「几张没渲染成功」用）。"""
+    n, fence_mark = 0, ""
+    for ln in (src or "").replace("\r\n", "\n").split("\n"):
+        m = _FENCE_RE.match(ln)
+        if not m:
+            continue
+        mark = m.group(2)
+        if not fence_mark:
+            info = re.sub(r"\s*\{[1-9]\d{0,2}\}\s*$", "", (m.group(3) or "").strip()).strip()
+            lang = info.split()[0].lower() if info else ""
+            if lang in DIAGRAM_LANGS:
+                n += 1
+            fence_mark = mark
+        elif mark == fence_mark:
+            fence_mark = ""
+    return n
+
+
+def _fence_block(lines, start, mark):
+    """从 start 起找与 mark 同种的闭合行，返回 (块内各行, 闭合行下标)。
+
+    未闭合时下标为 None——调用方原样透传，不猜。
+    """
+    body, j = [], start
+    while j < len(lines):
+        m = _FENCE_RE.match(lines[j])
+        if m and m.group(2) == mark:
+            return body, j
+        body.append(lines[j])
+        j += 1
+    return body, None
+
+
+def prepare_markdown(src, diagrams=None):
+    """把本文方言改写成 pandoc 认得的 markdown（幂等，纯函数）。
+
+    diagrams：{(语言, 源码): {"path": ..., "width": N}}，是前端在预览里渲染好
+    并栅格化的图表位图。命中的图表围栏整块换成一张图——宽度优先取围栏的
+    `{N}`，没有就用前端按显示尺寸算出的百分比；没命中就保持代码块，宁可让
+    源码留在 Word 里被看见，也不塞一张对不上号的图。
+    """
     out = []
     fence_mark = ""          # 当前所在围栏的标记（``` 或 ~~~），空=不在围栏内
     math_block = False       # 是否在 $$ 块级公式内（跨行，整段不参与改写）
@@ -170,7 +225,24 @@ def prepare_markdown(src):
             mark = m.group(2)
             if not fence_mark:
                 # 开围栏：图表围栏的 `{N}` 宽度 pandoc 不认，剥掉；语言名保留
-                info = re.sub(r"\s*\{[1-9]\d{0,2}\}\s*$", "", m.group(3).strip())
+                info_raw = (m.group(3) or "").strip()
+                wm = re.search(r"\{([1-9]\d{0,2})\}\s*$", info_raw)
+                fence_w = int(wm.group(1)) if wm else 0
+                info = re.sub(r"\s*\{[1-9]\d{0,2}\}\s*$", "", info_raw).strip()
+                if diagrams:
+                    lang = info.split()[0].lower() if info else ""
+                    if lang in DIAGRAM_LANGS:
+                        body, close_at = _fence_block(lines, i + 1, mark)
+                        hit = diagrams.get(diagram_key(lang, "\n".join(body)))
+                        if close_at is not None and hit:
+                            w = _clamp(fence_w) if fence_w else _clamp(hit.get("width") or 95)
+                            # alt 留空：pandoc 会把「段落里只有一张图」当插图并拿 alt
+                            # 当题注，Word 里就多一行斜体「图表」。
+                            out.append("![](<%s>){width=%d%%}"
+                                       % (str(hit["path"]).replace("\\", "/"), w))
+                            out.append("")
+                            i = close_at + 1
+                            continue
                 out.append(m.group(1) + mark + info)
                 fence_mark = mark
             elif mark == fence_mark:
@@ -364,8 +436,13 @@ def _workdir_for(md_path):
     return os.path.dirname(os.path.abspath(md_path))
 
 
-def export_docx(md_text, md_path, out_path, configured=""):
+def export_docx(md_text, md_path, out_path, configured="", diagrams=None, stats=None):
     """跑 pandoc 出 docx。成功返回 pandoc 路径；失败抛 RuntimeError（文案面向用户）。
+
+    diagrams：前端渲染好的图表位图列表（`lang` / `code` / `png`(base64) / `width`）。
+    图片落进本次临时目录再按绝对路径引用——不往用户文档目录扔中间文件，.smd
+    解包目录也不会被污染。stats 若给了 dict，会写入 `diagrams`：真正嵌进 Word
+    的张数，供前端提示「还有几张没渲染成功」。
 
     落盘策略（两个坑都要避开）：
     - 源码 md 放系统临时目录（不污染用户文档目录）；
@@ -383,9 +460,30 @@ def export_docx(md_text, md_path, out_path, configured=""):
     stage = tempfile.mkdtemp(prefix="mdeditor-pandoc-")
     tmp_md = os.path.join(stage, "src.md")
     staged_out = os.path.join(out_dir, ".mdeditor-%s.docx.part" % uuid.uuid4().hex[:10])
+    dmap = {}
     try:
+        for idx, item in enumerate(diagrams or []):
+            item = item if isinstance(item, dict) else {}
+            b64 = item.get("png") or ""
+            if b64.startswith("data:"):
+                b64 = b64.split(",", 1)[-1]
+            try:
+                raw = base64.b64decode(b64)
+            except Exception:
+                continue
+            if not raw:
+                continue
+            p = os.path.join(stage, "diagram_%02d.png" % idx)
+            with open(p, "wb") as f:
+                f.write(raw)
+            dmap[diagram_key(item.get("lang"), item.get("code"))] = {
+                "path": p, "width": item.get("width")}
+        prepared = prepare_markdown(md_text, dmap)
+        if stats is not None:
+            stats["diagrams"] = (count_diagram_fences(md_text)
+                                 - count_diagram_fences(prepared))
         with open(tmp_md, "w", encoding="utf-8", newline="\n") as f:
-            f.write(prepare_markdown(md_text))
+            f.write(prepared)
         cmd = [pandoc, "-f", "markdown+mark", "-t", "docx", "-o", staged_out]
         if workdir:
             cmd.append("--resource-path=" + workdir)

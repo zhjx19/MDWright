@@ -11,6 +11,41 @@
 
 ---
 
+## v3.3.0（2026-10-27）
+
+**本次改动：图表围栏（mermaid / dot / wavedrom / vega）能进 Word；Python 代码块也能出图**
+
+**新增**
+
+- **图表进 Word**：点「Word」时，预览里已经渲染好的 SVG 按显示尺寸 2 倍栅格化成 PNG（白底，宽上限 2400px），连同围栏语言与源码原文发给 `/api/export-docx`；后端按这两项对回围栏，整块换成图片再交 pandoc。四类引擎走同一条路，pandoc 侧不新增依赖（不要求 rsvg）。
+- **宽度两套口径**：围栏写了 `{N}` 就用 N%（与预览一致，超 100 钳到 100）；没写就按图在预览里的显示比例算，下限 10%、上限 100%。图片 alt 留空，避免 pandoc 把「段落里只有一张图」当插图、多印一行斜体题注。
+- **部分成功说得清**：响应带 `diagrams`（真正嵌进 Word 的张数）与 `diagramTotal`（源文里的围栏数），少一张就在提示里写「N 张图表没渲染成功，仍是代码块」，不假装全部成功。
+- **Python 代码块出图**：执行完检查 matplotlib 里还开着的 figure，`savefig` 成 `<id>.png`（白底、150dpi、tight），交回与 R 完全相同的链路——预览显示在块下方、存进 `<文档>.md.assets/runs/`、导出 Word 时按「语言 + 代码原文」带入。只认真正 import 过 pyplot 的代码，随包内置的 3.11.9 没有 matplotlib，静默跳过，不新增依赖。
+- **matplotlib 后端与字体**：驱动启动时若有 matplotlib 就固定 `Agg` 并补中文字族（微软雅黑 / 黑体 / 苹方 / Noto / 思源黑体）、关掉 `axes.unicode_minus`。前者让 `plt.show()` 不弹窗不阻塞，后者让中文标题与负号正常显示——默认 DejaVu 没有中文字形，标题会落成方块。
+- **每块执行完 `close('all')`**：不关的话，下一块会把上一块还开着的图再存一遍，图就串了。没有 figure 时不出图，避免空白图块。
+
+**修复**
+
+- **mermaid 改用 SVG 文字标签**：`htmlLabels:false`（顶层与 flowchart / class / state / sequence / er 一起给）。默认的 `foreignObject` 在图片与 Word 里都不渲染——预览看着有字，栅格化出来却是空框。改成 `<text>` 后，预览与导出用的是同一份可栅格化的 SVG。
+- **主题重渲期间不再谎报就绪**：`rerenderMermaidForTheme()` 原来只清 `data-done`、没清 `diagram-ok`，元素里只剩「图表渲染中」却仍算「已就绪」。导出等待据此提前返回，暗色主题下 mermaid 会整张漏掉。修法——重渲时一并移除 `diagram-ok`；导出侧判「有 `<svg>` 或明确的错误块」，不看 class。
+- **暗色界面按浅色导出**：导出前临时切浅色并重渲 mermaid / wavedrom，截完再切回去；否则深底浅字印到白纸上。恢复只动 `body` 的 class，不碰 localStorage 里的主题设置。
+
+**验证**
+
+- `_test_diagram_docx.py`（新）：键匹配 / 语言不同 / 未闭合 / CRLF / `{N}` 优先 / 超 100 钳到 100 / 无宽度落 95% / 未命中保代码块；真导出 docx 断言图片进 `word/media`、`<w:drawing>` 存在、围栏源码无残留、没有多出题注、`stats` 只报 1 张。
+- `_test_diagram_export_ui.py`（新）：真浏览器点「导出 Word」并拦下请求体——两张图都在、base64 以 PNG 魔数开头、长度像真图、语言与源码逐字一致、宽度在 10~100、mermaid 无 `foreignObject`、提示「已导出」。
+- `_test_run_py_plot.py`（新）：画图块回真 PNG（魔数 + 非空白）且文字输出仍在；没画图的块不串上一张图、上一张也没被覆盖；再画一张是新文件；报错时 `ok:false` 但已画内容仍留（与 R 的 png 设备一致）；驱动补的中文字族与 `unicode_minus` 生效；`plt.show()` 不阻塞且图照样出。本机无 matplotlib 时 SKIP（exit 77）。
+- 人工验收：mermaid / dot / wavedrom / vega-lite 各一张 → 导出 docx → Word 转 PDF → 逐页看图，标签、波形、坐标轴都在，题注已去掉；Python 画 sin/cos 图，中文标题正常，非空坐标轴。
+- 全量 `tests/run_all.py`：`58` 个用例 → **PASS 52 / SKIP 5 / FAIL 1 / TIMEOUT 0**；唯一 FAIL 为 `_test_rag_e2e`（本机未部署 rag-assistant，既有基线）。
+
+**文档**
+
+- 使用指南「导出 Word」一节：图表不再是代码块，改为「导出时把预览里渲染好的图栅格化成 PNG 嵌进 Word」，写明必须先在预览渲染成功、宽度取 `{N}` 或显示比例。
+- 使用指南「Python 代码块」一节：删掉「只显示文字、出图请用 R」，改为两套运行时都能用第三方库、Python 出图的三条实测细节（Agg、中文字族、每块 close）。
+- README：Word 一节与「本工具自己做的」表同步说明图表嵌入路径；「代码块怎么跑」删掉「Python 不出图」。
+
+---
+
 ## v3.2.4（2026-10-25）
 
 **本次改动：上下标补上 `^{}` / `_{}` 花括号写法（与旧的 `^x^` / `~x~` 并存）**

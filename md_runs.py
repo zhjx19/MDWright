@@ -71,6 +71,51 @@ repeat {
 
 _PY_DRIVER = r'''
 import contextlib, io, os, sys, traceback
+
+# 有 matplotlib 就先把它按住：后端固定 Agg（否则 plt.show() 会弹窗并卡住到超时），
+# 字体补中文字族（默认 DejaVu 没有中文，标题会显示成方块）。没有 matplotlib 时
+# 这两步都静默跳过——随包内置的运行时本来就没有它。
+try:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "PingFang SC",
+                                       "Noto Sans CJK SC", "Source Han Sans SC",
+                                       "DejaVu Sans"]
+    plt.rcParams["axes.unicode_minus"] = False
+except Exception:
+    pass
+
+
+def _save_figure(wd, rid):
+    """执行完把还没关的 matplotlib 图落成 png（与 R 的 png() 设备同一条口径）。
+
+    只认真正 import 过 pyplot 的代码：随包内置的 3.11.9 没有 matplotlib，
+    这里直接跳过，不额外装依赖。savefig 之后统一 close('all')——不关的话，
+    下一块会把上一块的图再存一遍，图就串了。
+    """
+    plt = sys.modules.get("matplotlib.pyplot")
+    if plt is None:
+        return
+    try:
+        nums = plt.get_fignums()
+    except Exception:
+        return
+    if not nums:
+        return
+    try:
+        fig = plt.figure(nums[-1])
+        fig.savefig(os.path.join(wd, rid + ".png"), dpi=150,
+                    facecolor="white", bbox_inches="tight")
+    except Exception:
+        pass
+    finally:
+        try:
+            plt.close("all")
+        except Exception:
+            pass
+
+
 wd = sys.argv[1]
 ns = {"__name__": "__main__"}
 for line in sys.stdin:
@@ -89,6 +134,7 @@ for line in sys.stdin:
         pass
     except BaseException:
         err = traceback.format_exc().strip().splitlines()[-1]
+    _save_figure(wd, rid)
     io.open(os.path.join(wd, rid + ".out.txt"), "w", encoding="utf-8").write(ob.getvalue())
     io.open(os.path.join(wd, rid + ".err.txt"), "w", encoding="utf-8").write(eb.getvalue())
     io.open(os.path.join(wd, rid + ".status"), "w", encoding="utf-8").write(

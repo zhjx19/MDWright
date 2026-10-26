@@ -1226,7 +1226,7 @@ function parseMarkdown(src, fx){
         if(lang==='dot'||lang==='graphviz'||lang==='viz')kind='dot';
         else if(lang==='wavedrom'||lang==='wavejson')kind='wavedrom';
         else if(lang==='vega'||lang==='vega-lite'||lang==='vegalite')kind='vega';
-        html+='<div class="diagram" data-diagram="'+kind+'"'+(fW?' style="width:'+fW+'%"':'')+' data-code="'+encodeURIComponent(code)+'"><div class="diagram-pending">图表渲染中…</div></div>';
+        html+='<div class="diagram" data-diagram="'+kind+'" data-lang="'+escAttr(fl.lang)+'"'+(fW?' style="width:'+fW+'%"':'')+' data-code="'+encodeURIComponent(code)+'"><div class="diagram-pending">图表渲染中…</div></div>';
       }else{
         html+='<div class="code-wrap"><pre><code'+(rawLang?' class="lang-'+escAttr(rawLang)+'"':'')+' data-lang="'+escAttr(fl.lang)+'">'+escapeHtml(code).replace(/</g,'&lt;')+'</code></pre>'+
               '<button type="button" class="copy-btn" title="复制代码">复制</button></div>';
@@ -1635,6 +1635,14 @@ function parseMarkdown(src, fx){
   var diagUrl={mermaid:['/static/mermaid/mermaid.min.js'],dot:['/static/viz/viz-standalone.js'],wavedrom:['/static/wavedrom/skins/default.js','/static/wavedrom/skins/dark.js','/static/wavedrom/wavedrom.min.js'],vega:['/static/vega/vega.min.js','/static/vega/vega-lite.min.js','/static/vega/vega-embed.min.js'],highlight:['/static/highlight/highlight.min.js']};
   var vizInstance=null;
   function mermaidThemeName(){ return document.body.classList.contains('light')?'default':'dark'; }
+  /* mermaid 统一用 SVG <text> 标签（htmlLabels:false）：默认的 foreignObject 在
+     图片与 Word 里都不渲染，预览和导出就会对不上——改成文字标签后，预览里看到
+     的就是能栅格化、能进 Word 的那一份。 */
+  function mermaidInitCfg(theme){
+    return {startOnLoad:false, securityLevel:'strict', theme:theme||mermaidThemeName(),
+            htmlLabels:false, flowchart:{htmlLabels:false}, class:{htmlLabels:false},
+            state:{htmlLabels:false}, sequence:{htmlLabels:false}, er:{htmlLabels:false}};
+  }
   function chainScripts(urls,i,ok,err){
     if(i>=urls.length){ok();return;}
     var s=document.createElement('script');
@@ -1651,7 +1659,7 @@ function parseMarkdown(src, fx){
     st.loading=true;
     chainScripts(diagUrl[kind],0,function(){
       try{
-        if(kind==='mermaid')mermaid.initialize({startOnLoad:false, securityLevel:'strict', theme:mermaidThemeName()});
+        if(kind==='mermaid')mermaid.initialize(mermaidInitCfg());
         st.ready=true;
         var q=st.queue.slice(); st.queue=[];
         while(q.length)q.shift()();
@@ -1745,9 +1753,10 @@ function parseMarkdown(src, fx){
   function rerenderMermaidForTheme(){
     var done=preview.querySelectorAll('.diagram[data-diagram="mermaid"][data-done],.diagram[data-diagram="wavedrom"][data-done]');
     if(!done.length)return;
-    if(diagState.mermaid.ready)mermaid.initialize({startOnLoad:false, securityLevel:'strict', theme:mermaidThemeName()});
+    if(diagState.mermaid.ready)mermaid.initialize(mermaidInitCfg());
     for(var i=0;i<done.length;i++){
       done[i].removeAttribute('data-done');
+      done[i].classList.remove('diagram-ok');   /* 重渲期间不能还宣称"已就绪" */
       done[i].innerHTML='<div class="diagram-pending">图表渲染中…</div>';
     }
     mountDiagrams(preview);
@@ -2717,6 +2726,99 @@ function parseMarkdown(src, fx){
     var base=currentFile.replace(/^.*[\\/]/,'');
     return base.replace(/\.[^.]+$/,'')||'文档';
   }
+  /* ---------- 图表进 Word：把预览里渲染好的 SVG 栅格化成 PNG ----------
+     Word 不认 mermaid / dot / wavedrom / vega 源码，pandoc 只会把它当代码块。
+     导出前在浏览器里把每张图按**显示尺寸的 2 倍**画进 canvas（白底、PNG），
+     连同围栏语言与源码原文一起交给后端；后端按这两项对回围栏再换成图片。
+     任何一步没成（图没渲染完、跨源图污染画布），这张就保持代码块——不拿空白
+     图或错图顶替。暗色界面先切浅色再截，免得深底黑字印进白纸。 */
+  function diagramSettled(el){
+    /* 不能只看 diagram-ok：主题重渲时旧 class 还挂着，里面却只剩「渲染中」。
+       以真有 <svg> 或明确的错误块为准。 */
+    if(el.querySelector('.diagram-err'))return true;
+    return !!el.querySelector('svg');
+  }
+  function waitDiagramsSettled(cb,deadline){
+    var els=preview.querySelectorAll('.diagram'), all=true;
+    for(var i=0;i<els.length;i++){ if(!diagramSettled(els[i])){all=false;break;} }
+    if(all||Date.now()>deadline){cb();return;}
+    setTimeout(function(){waitDiagramsSettled(cb,deadline);},100);
+  }
+  function rasterizeDiagram(el,cb){
+    var svg=el.querySelector('svg');
+    if(!svg){cb(null,0);return;}
+    var r=svg.getBoundingClientRect();
+    var w=Math.round(r.width), h=Math.round(r.height);
+    if(!(w>0&&h>0)){cb(null,0);return;}
+    var scale=2;
+    if(w*scale>2400)scale=2400/w;
+    var clone=svg.cloneNode(true);
+    clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
+    clone.setAttribute('width',String(w));
+    clone.setAttribute('height',String(h));
+    try{ clone.style.maxWidth='none'; clone.style.overflow='visible'; }catch(e){}
+    var vb=svg.viewBox&&svg.viewBox.baseVal;
+    if(vb&&vb.width&&!clone.getAttribute('viewBox')){
+      clone.setAttribute('viewBox',vb.x+' '+vb.y+' '+vb.width+' '+vb.height);
+    }
+    var blob=new Blob([new XMLSerializer().serializeToString(clone)],
+                      {type:'image/svg+xml;charset=utf-8'});
+    var url=URL.createObjectURL(blob);
+    var img=new Image();
+    img.onload=function(){
+      var b64=null;
+      try{
+        var c=document.createElement('canvas');
+        c.width=Math.max(1,Math.round(w*scale));
+        c.height=Math.max(1,Math.round(h*scale));
+        var ctx=c.getContext('2d');
+        ctx.fillStyle='#ffffff';
+        ctx.fillRect(0,0,c.width,c.height);
+        ctx.drawImage(img,0,0,c.width,c.height);
+        var data=c.toDataURL('image/png');
+        b64=data.slice(data.indexOf(',')+1);
+      }catch(e){ b64=null; }        /* 画布被跨源图污染：这张不导 */
+      URL.revokeObjectURL(url);
+      var host=preview.clientWidth||w;
+      cb(b64, Math.max(10,Math.min(100,Math.round(w/host*100))));
+    };
+    img.onerror=function(){URL.revokeObjectURL(url);cb(null,0);};
+    img.src=url;
+  }
+  function collectDiagramPngs(cb){
+    render();                       /* 先让预览追上正文，免得拿上一次的图 */
+    var els=preview.querySelectorAll('.diagram');
+    if(!els.length){cb([]);return;}
+    var wasLight=document.body.classList.contains('light');
+    function capture(){
+      els=preview.querySelectorAll('.diagram');
+      var out=[], i=0;
+      (function next(){
+        if(i>=els.length){cb(out);return;}
+        var el=els[i++];
+        if(!el.querySelector('svg')){next();return;}
+        rasterizeDiagram(el,function(png,width){
+          if(png){
+            out.push({lang:el.getAttribute('data-lang')||'',
+                      code:decodeURIComponent(el.getAttribute('data-code')||''),
+                      png:png, width:width});
+          }
+          next();
+        });
+      })();
+    }
+    if(!wasLight){
+      document.body.classList.add('light');   /* 切浅色重渲，截完再切回去 */
+      rerenderMermaidForTheme();
+    }
+    waitDiagramsSettled(function(){
+      capture();
+      if(!wasLight){
+        document.body.classList.remove('light');
+        rerenderMermaidForTheme();
+      }
+    },Date.now()+8000);
+  }
   document.getElementById('btnExportDocx').addEventListener('click',function(){
     if(!currentFile){ showToast('请先保存文档再导出 Word'); return; }
     if(currentBuiltin>=0){ showToast('内置文档请先「另存为」到你自己的目录，再导出 Word'); return; }
@@ -2725,16 +2827,23 @@ function parseMarkdown(src, fx){
     askSavePath('docx', docStem()+'.docx', function(outPath){
       docxBusy=true;
       showToast('正在导出 Word…');
-      fetch('/api/export-docx',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({path:currentFile, markdown:cjkSpaceMarkdown(getText()), outPath:outPath,
-          threeLine:!!(tsCfg&&tsCfg.table&&tsCfg.table.three), token:runDocKey().token})})
-        .then(function(r){return r.json();})
-        .then(function(j){
-          docxBusy=false;
-          if(j&&j.ok){ showToast('已导出：'+j.path, false,
-            {label:'打开所在目录', fn:function(){ revealFile(j.path); }}); }
-          else{ showToast('导出失败：'+((j&&j.error)||'未知错误')); }
-        }).catch(function(e){ docxBusy=false; showToast('导出失败：'+e.message); });
+      collectDiagramPngs(function(diagrams){
+        fetch('/api/export-docx',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({path:currentFile, markdown:cjkSpaceMarkdown(getText()), outPath:outPath,
+            threeLine:!!(tsCfg&&tsCfg.table&&tsCfg.table.three), token:runDocKey().token,
+            diagrams:diagrams})})
+          .then(function(r){return r.json();})
+          .then(function(j){
+            docxBusy=false;
+            if(j&&j.ok){
+              var total=j.diagramTotal||0, got=j.diagrams||0;
+              var note=(total>got)?('；'+(total-got)+' 张图表没渲染成功，仍是代码块'):'';
+              showToast('已导出：'+j.path+note, false,
+                {label:'打开所在目录', fn:function(){ revealFile(j.path); }});
+            }
+            else{ showToast('导出失败：'+((j&&j.error)||'未知错误')); }
+          }).catch(function(e){ docxBusy=false; showToast('导出失败：'+e.message); });
+      });
     });
   });
   document.getElementById('btnExportPdf').addEventListener('click',function(){
