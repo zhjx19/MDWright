@@ -195,6 +195,11 @@ def run_smoke(exe):
         ("ARP InstallLocation / NoModify",
          rep.get("arp_install_location") == "1" and rep.get("arp_nomodify") == "1",
          "%s/%s" % (rep.get("arp_install_location"), rep.get("arp_nomodify"))),
+        ("ARP InstallDate is yyyymmdd",
+         len(rep.get("arp_install_date", "")) == 8
+         and rep.get("arp_install_date", "").isdigit(),
+         rep.get("arp_install_date", "")),
+        ("AssocQueryString P/Invoke works", rep.get("assoc_call_ok") == "1", ""),
         ("pythonnet DLL >= 400KB", int(rep.get("pythonnet_dll_size", "0")) > 400 * 1024,
          rep.get("pythonnet_dll_size", "?")),
         ("katex fonts >= 50", int(rep.get("katex_fonts_count", "0")) >= 50,

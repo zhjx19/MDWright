@@ -11,6 +11,30 @@
 
 ---
 
+## v3.3.3（2026-10-27）
+
+**本次改动：装完立刻能看出来有没有登记上——资源管理器刷新关联、安装日志当场核对那两件事**
+
+**修复**
+
+- **关联改完没通知外壳**：`install.cmd` 改完注册表后没有人调 `SHChangeNotify`，资源管理器沿用旧的默认程序与文件图标，双击时像是「没关联上」。安装程序在 install.cmd 之后再补一次 `SHChangeNotify(SHCNE_ASSOCCHANGED)`。
+- **条目没有 InstallDate**：「安装的应用」按安装日期分组/排序，缺 `InstallDate` 的条目落到很靠后的位置，不易找到。`EnsureArpEntry` 现在写 `InstallDate`（`yyyymmdd`）。
+
+**新增**
+
+- **装完当场核对**：`VerifyIntegration()` 读回 ARP 的 `DisplayName`、并用 `AssocQueryString(ASSOCSTR_EXECUTABLE, ".md")` 问系统「.md 现在用什么打开」，在安装日志里直接给出两行结论（已登记 / 未生效 + 补救办法）。这两件事用户只能在界面上看，不该靠他自己翻。
+- **「查看『安装的应用』」按钮**：安装完成后可直接打开 `ms-settings:appsfeatures` 核对，不用自己点进去找。
+
+**测试**
+
+- 构建 smoke 新增 `ARP InstallDate is yyyymmdd`（与既有的 DisplayName / 绝对路径 / InstallLocation / NoModify 四条一起，都是真写测试键再读回）。
+
+**说明**
+
+- 3.3.2 装完后 `AssocQueryString` 已返回本程序、ARP 条目也已带 `DisplayName`（本机实测），但资源管理器仍可能显示旧图标、`设置 → 应用` 也可能停留在安装前的列表——重新打开该页面即可。本版把这两件事从「用户自己发现」变成安装日志里的结论。
+
+---
+
 ## v3.3.2（2026-10-27）
 
 **本次改动：装完重新出现在「设置 → 应用 → 安装的应用」——修 LF-only 的 install.cmd 被 cmd.exe 解析错**

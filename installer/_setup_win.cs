@@ -141,6 +141,56 @@ namespace MDWrightSetup
         internal const string ArpKey =
             @"Software\Microsoft\Windows\CurrentVersion\Uninstall\MDWright";
 
+        [System.Runtime.InteropServices.DllImport("shell32.dll")]
+        static extern void SHChangeNotify(int eventId, uint flags, IntPtr item1, IntPtr item2);
+
+        [System.Runtime.InteropServices.DllImport("shlwapi.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        static extern int AssocQueryStringW(uint flags, int str, string assoc, string extra,
+                                            System.Text.StringBuilder outBuf, ref uint outLen);
+
+        // 关联改完必须叫一声，否则资源管理器还用旧图标与旧默认程序，看着像「没关联上」
+        static void NotifyShell()
+        {
+            try { SHChangeNotify(0x08000000 /*SHCNE_ASSOCCHANGED*/, 0, IntPtr.Zero, IntPtr.Zero); }
+            catch { }
+        }
+
+        static string AssocExe(string ext)
+        {
+            try
+            {
+                uint n = 1024;
+                var sb = new System.Text.StringBuilder(1024);
+                // ASSOCSTR_EXECUTABLE = 2
+                return AssocQueryStringW(0, 2, ext, null, sb, ref n) == 0 ? sb.ToString() : "";
+            }
+            catch { return ""; }
+        }
+
+        // 装完当场核对一遍：这两件事用户只能在界面上看，装完就得有结论，
+        // 不能等他去「设置 → 应用」里翻（v3.2.4 / 3.3.0 就是这么静默失败的）。
+        static void VerifyIntegration(Action<string> log)
+        {
+            try
+            {
+                string name = "";
+                using (var k = Registry.CurrentUser.OpenSubKey(ArpKey))
+                    if (k != null) name = k.GetValue("DisplayName") as string ?? "";
+                log(name.Length > 0
+                    ? "卸载条目：已登记「" + name + "」，可在「设置 → 应用 → 安装的应用」里看到。"
+                    : "[!] 卸载条目缺失：本程序不会出现在「设置 → 应用」里。");
+
+                string exe = AssocExe(".md");
+                bool ok = exe.Length > 0 && string.Equals(Path.GetFileName(exe), "MDWright.exe",
+                                                         StringComparison.OrdinalIgnoreCase);
+                log(ok
+                    ? "md 关联：双击 .md 用本程序打开。"
+                    : "[!] md 关联没生效（当前是 " + (exe.Length > 0 ? exe : "无")
+                      + "）：可在安装目录重跑 install.cmd，或右键 .md → 打开方式里选本程序并勾选「始终」。");
+            }
+            catch (Exception ex) { log("[!] 安装结果核对失败: " + ex.Message); }
+        }
+
         static void EnsureArpEntry(string target, Action<string> log)
         {
             EnsureArpEntry(target, ArpKey, log);
@@ -166,6 +216,8 @@ namespace MDWrightSetup
                     k.SetValue("UninstallString", "\"" + unins + "\"");
                     k.SetValue("NoModify", 1, RegistryValueKind.DWord);
                     k.SetValue("NoRepair", 1, RegistryValueKind.DWord);
+                    // 「安装的应用」按安装日期分组/排序，没有它就落到「更早」里，不好找
+                    k.SetValue("InstallDate", DateTime.Now.ToString("yyyyMMdd"));
                     k.SetValue("EstimatedSize",
                                (int)Math.Min(DirSize(target) / 1024, (long)int.MaxValue),
                                RegistryValueKind.DWord);
@@ -203,6 +255,8 @@ namespace MDWrightSetup
                 var p = RunHidden("cmd.exe", "/c install.cmd nopause", target);
                 log(p.ExitCode == 0 ? "install.cmd 执行成功。" : "[!] install.cmd 退出码 " + p.ExitCode + "（可稍后在安装目录手动重跑）");
                 EnsureArpEntry(target, log);
+                NotifyShell();
+                VerifyIntegration(log);
                 log("");
                 log("安装完成：" + target);
                 log("右键 .md 文件可用 MDWright 打开。");
@@ -255,6 +309,8 @@ namespace MDWrightSetup
             lines.Add("wavedrom_skin_dark_size=" + (File.Exists(wskd) ? new FileInfo(wskd).Length : 0));
             lines.Add("vega_embed_vendor_size=" + (File.Exists(gejs) ? new FileInfo(gejs).Length : 0));
             lines.Add("version=" + Version);
+            // .txt 一定有处理器：用它验证 AssocQueryString 的 P/Invoke 签名没写错
+            lines.Add("assoc_call_ok=" + (AssocExe(".txt").Length > 0 ? 1 : 0));
             RunArpSmoke(lines);
             File.WriteAllLines(Path.Combine(Path.GetTempPath(), "md_setup_smoke_report.txt"), lines);
             try { Directory.Delete(tmp, true); } catch { }
@@ -284,6 +340,8 @@ namespace MDWrightSetup
                     lines.Add("arp_unins_abs=" +
                               (unins == "\"" + Path.Combine(tmp, "UninstallMDWright.exe") + "\"" ? 1 : 0));
                     lines.Add("arp_install_location=" + (loc == tmp ? 1 : 0));
+                    lines.Add("arp_install_date=" + (k == null ? "" :
+                              (k.GetValue("InstallDate") as string ?? "")));
                     lines.Add("arp_nomodify=" + (k == null ? -1 : Convert.ToInt32(k.GetValue("NoModify", -1))));
                 }
             }
@@ -303,6 +361,7 @@ namespace MDWrightSetup
         readonly ProgressBar _prog = new ProgressBar();
         readonly Button _btnInstall = new Button();
         readonly Button _btnRun = new Button();
+        readonly Button _btnApps = new Button();
         readonly Button _btnBrowse = new Button();
         readonly Label _lblWv2 = new Label();
         string _target;
@@ -374,7 +433,16 @@ namespace MDWrightSetup
             var btnExit = new Button { Text = "退出", Location = new Point(494, 428), Size = new Size(106, 30) };
             btnExit.Click += (s, e) => Close();
 
-            Controls.AddRange(new Control[] { lblTitle, _lblWv2, lblDir, _txtDir, _btnBrowse, _btnInstall, _prog, _txtLog, _btnRun, btnExit });
+            _btnApps.Text = "查看「安装的应用」";
+            _btnApps.Enabled = false;
+            _btnApps.Location = new Point(20, 428);
+            _btnApps.Size = new Size(170, 30);
+            _btnApps.Click += (s, e) =>
+            {
+                try { Process.Start("ms-settings:appsfeatures"); } catch { }
+            };
+
+            Controls.AddRange(new Control[] { lblTitle, _lblWv2, lblDir, _txtDir, _btnBrowse, _btnInstall, _prog, _txtLog, _btnRun, _btnApps, btnExit });
             AcceptButton = _btnInstall;
         }
 
@@ -401,6 +469,7 @@ namespace MDWrightSetup
                     else _prog.Value = _prog.Maximum;
                     _target = target;
                     _btnRun.Enabled = true;
+                    _btnApps.Enabled = true;
                     _btnInstall.Enabled = true; _btnBrowse.Enabled = true; _txtDir.Enabled = true;
                 },
                 err =>
