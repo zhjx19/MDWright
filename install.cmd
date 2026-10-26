@@ -108,10 +108,14 @@ reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\MDWright" /v U
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\MDWright" /v NoModify /t REG_DWORD /d 1 /f
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\MDWright" /v NoRepair /t REG_DWORD /d 1 /f
 
+REM 关联改完要通知外壳并重建图标缓存，否则双击已经生效、图标还是旧的
+REM （用户得手动「打开方式 → 始终」才刷新，看着像没关联上）
+if exist "%SystemRoot%\System32\ie4uinit.exe" "%SystemRoot%\System32\ie4uinit.exe" -show >nul 2>&1
+
 echo.
 echo Done. Right-click any .md file, or just double-click it.
 echo Tray icon lives in the notification area: new blank doc / exit.
-echo Uninstall: Settings - Apps - "MDWright".
+echo Uninstall: Settings - Apps - "墨匠 MDWright".
 REM pause hangs forever when install.cmd is invoked silently by the setup
 REM exe (no interactive console). The setup passes "nopause" to skip it.
 if /i not "%~1"=="nopause" pause

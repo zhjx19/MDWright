@@ -153,6 +153,15 @@ namespace MDWrightSetup
         {
             try { SHChangeNotify(0x08000000 /*SHCNE_ASSOCCHANGED*/, 0, IntPtr.Zero, IntPtr.Zero); }
             catch { }
+            // 光通知还不够：扩展名图标来自图标缓存，不重建的话双击已生效、图标仍是旧的，
+            // 用户得手动「打开方式 → 始终」才刷新（v3.3.3 实测如此）。
+            string ie4 = Path.Combine(Environment.SystemDirectory, "ie4uinit.exe");
+            if (File.Exists(ie4))
+            {
+                foreach (var a in new[] { "-show", "-ClearIconCache" })
+                    try { RunHidden(ie4, a, null); } catch { }
+            }
+            try { SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero); } catch { }
         }
 
         static string AssocExe(string ext)

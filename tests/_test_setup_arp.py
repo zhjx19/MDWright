@@ -149,6 +149,12 @@ def main():
                   "DisplayIcon", "UninstallString", "Publisher"):
         check("安装程序写 %s" % field,
               re.search(r'SetValue\("%s"' % field, setup) is not None)
+    check("安装程序通知外壳刷新关联", "SHChangeNotify" in setup)
+    check("安装程序重建图标缓存", "ie4uinit" in setup)
+
+    with open(os.path.join(ROOT, "install.cmd"), encoding="utf-8") as f:
+        icmd_text = f.read()
+    check("install.cmd 重建图标缓存", "ie4uinit" in icmd_text)
 
     head, body = arp_lines()
     check("install.cmd 里有卸载条目命令行", len(body) >= 4, "抽到 %d 行" % len(body))
