@@ -31,7 +31,7 @@
 | 图表 | Mermaid（流程/时序/状态/类）、Graphviz `dot`、WaveDrom 时序图、Vega-Lite 数据图 |
 | 排版 | 逐元素字体/字号、段落缩进、对齐、表格样式、页面纸张与页边距，全部可视化配置 |
 | 分页导出 | Paged.js 组版，纸张、页边距、页码、自动目录、目录独占一页；「导出 → 打印（分页 HTML）」生成成品并交给系统浏览器，浏览器里打印或存为 PDF |
-| Word 导出 | 经 pandoc 转 `.docx`，保留标题层级与公式；中/西文字体可选（默认宋体 + Times New Roman），代码块固定等宽 |
+| Word 导出 | 经 pandoc 转 `.docx`，保留标题层级与公式；标题/正文的中文字体与西文字体可选（默认黑体 / 宋体 / Times New Roman），代码块固定等宽 |
 | PDF 直出 | 调本机 Chromium 内核浏览器（Edge / Chrome）无头打印，边距与页码按当前设置 |
 | 批注 | 选区批注，随文档保存，可逐条跳转 |
 | 右键菜单 | 撤销/恢复 · 剪切/复制/粘贴 · 标题 / 强调 / 块 / 插入（二级菜单）· 运行选中代码 |
@@ -66,7 +66,7 @@
 |---|---|
 | Markdown 方言 | 脚注、Callout 五型（NOTE/TIP/IMPORTANT/WARNING/CAUTION）、`==高亮==`、`^{}` / `_{}` 上下标（与旧的 `^x^` / `~x~` 并存）、定义列表、YAML front matter；预览 / 独立 HTML / 分页 PDF / Word 四条链路各实现一遍并对齐口径 |
 | 代码高亮 | highlight.js 懒加载（仅按围栏语言着色，主题跟随明暗）+ 代码块复制按钮（导出时剥离，不进成品） |
-| Word 导出 | pandoc 转换、公式 LaTeX→OMML（Word 里可继续编辑）、导出后注入 `tblBorders` 做三线表、运行输出按「语言 + 代码原文」匹配带入；图表围栏由预览栅格化成 PNG 嵌入（渲染失败的保持代码块），宽度取围栏 `{N}` 或预览显示比例；导出后可选中/西文分别设字体（默认宋体 + Times New Roman，代码块保持 Consolas 等宽） |
+| Word 导出 | pandoc 转换、公式 LaTeX→OMML（Word 里可继续编辑）、导出后注入 `tblBorders` 做三线表、运行输出按「语言 + 代码原文」匹配带入；图表围栏由预览栅格化成 PNG 嵌入（渲染失败的保持代码块），宽度取围栏 `{N}` 或预览显示比例；导出后可按标题中文 / 正文中文 / 西文三档设字体（默认黑体 / 宋体 / Times New Roman，代码块保持 Consolas 等宽） |
 | PDF 直出 | 本机 Edge / Chrome 无头打印，单会话 CDP 且等分页完成再 `printToPDF`，不留半截文件 |
 | 可执行代码块 | R（Rscript、控制台语义、ggplot 就地出图）、Python（随包内置 3.11.9 或指定本机解释器，matplotlib 图自动落 PNG）、同文档常驻会话变量跨块、结果落盘 `runs/` 并进 Word |
 | 外部工具 | pandoc / 浏览器 / Rscript / Python 的探测与手工指定路径，缺失即置灰并说明原因 |
@@ -86,7 +86,7 @@
 
 - **Word**：pandoc 转换，公式走 **LaTeX → OMML**，到 Word 里是可继续编辑的原生公式，不是图片。上游的方言在这里会原样露出记法，所以导出前先把 Callout、图片宽度、图表围栏改写成 pandoc 认得的 Markdown；图表则用预览里已经渲染好的 SVG 栅格化成 PNG 嵌进去（Word 不认这些源码）。
 - **Word 的表格边框是自己写进去的**：pandoc 只给表格挂 `tblStyle`、不写任何显式边框，样式来自内置模板，排版面板的开关到不了 Word。导出后改 `word/document.xml`，按 OOXML 顺序注入 `tblBorders` 与表头行底边，改完用 `pandoc -f docx` 回读自检，读不出就判失败——不落打不开的文件。
-- **Word 的字体是自己写死的**：pandoc 的内置模板把字体整体交给 Word 主题（`asciiTheme` / `eastAsiaTheme`），落到成品里是 Aptos / 等线 一类，不是中文稿要的样子。导出后改 `word/styles.xml`，把主题引用换成语义相同的显式字体名（中文写 `eastAsia` 槽、西文写 `ascii`/`hAnsi` 槽），`word/theme/theme1.xml` 同步改写兜住导出后新插的内容。默认**宋体 + Times New Roman**，在「设置 → 排版 → Word 导出字体」里按中/西文分别选（常用字体 + 自动枚举的本机字体）；标题与正文同一套字体，**代码块仍是显式 Consolas 等宽**——它本来就不走主题，因此不跟随设置。
+- **Word 的字体是自己写死的**：pandoc 的内置模板把字体整体交给 Word 主题（`asciiTheme` / `eastAsiaTheme`），落到成品里是 Aptos / 等线 一类，不是中文稿要的样子。导出后改 `word/styles.xml`，把主题引用换成语义相同的显式字体名；判据是原值属于 `major*`（pandoc 的各级标题，落到「标题中文」）还是 `minor*`（`docDefaults` 那条正文根，落到「正文中文」），`word/theme/theme1.xml` 的 `majorFont` / `minorFont` 两组同步改写，兜住导出后新插的内容。默认**标题黑体、正文宋体、西文 Times New Roman**，在「设置 → 排版 → Word 导出字体」里改（常用字体 + 自动枚举的本机字体）；**代码块仍是显式 Consolas 等宽**——它本来就不走主题，因此不参与这两档。
 - **Word 会带上代码块的运行输出**：按「语言 + 代码原文」从侧车匹配，命中才插入。代码改过就匹配不到，因此不会把过期结果贴进交付物。
 - **PDF 直出**：调本机 Edge / Chrome 的无头模式打印，边距与页码沿用当前排版设置。走单会话 CDP 并**等分页完成再 `printToPDF`**，避免生成半截文件。
 

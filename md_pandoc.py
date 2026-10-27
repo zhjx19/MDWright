@@ -427,21 +427,27 @@ def three_line_tables(docx_path, pandoc_exe):
 # pandoc 的参考文档把字体整个交给主题（asciiTheme / eastAsiaTheme），落到 Word 里
 # 是 Aptos / 等线 一类，不是中文文稿要的「宋体 + Times New Roman」。导出后把主题
 # 引用改写成语义相当的显式字体名：白纸黑字写进 styles.xml，Word 没得再挑主题。
+#
+# 主题分两族，正好对上中文稿的两档：majorFont = 标题（Heading* 用的都是它），
+# minorFont = 正文（docDefaults 与 Body Text 等）。所以既能给出「标题黑体 / 正文
+# 宋体」，又不用逐个样式列表——判据就是原属性值开头是 major 还是 minor。
 DEFAULT_LATIN_FONT = "Times New Roman"
 DEFAULT_CJK_FONT = "SimSun"
+DEFAULT_HEADING_CJK_FONT = "SimHei"
 # 代码块（Verbatim Char）本来就是显式 Consolas，不走主题；因此天然保持等宽。
 CODE_FONT = "Consolas"
 
 # 主题属性 → 对应的显式属性槽；中文只认 eastAsia，其余三槽都是西文
 _THEME_SLOT = {"asciiTheme": "ascii", "hAnsiTheme": "hAnsi",
                "eastAsiaTheme": "eastAsia", "cstheme": "cs"}
-_THEME_ATTR_RE = re.compile(r'w:(asciiTheme|hAnsiTheme|eastAsiaTheme|cstheme)="[^"]*"')
+_THEME_ATTR_RE = re.compile(r'w:(asciiTheme|hAnsiTheme|eastAsiaTheme|cstheme)="([^"]*)"')
 _THEME_LEFT_RE = re.compile(r'w:(?:ascii|hAnsi|eastAsia|cs)Theme=')
 _BAD_FONT_CHARS = set('<>"\'&{}[],\\\r\n\t')
 _FONT_ELEM_RE = {
     "latin": re.compile(r'(<a:latin\b[^>]*\btypeface=")[^"]*(")'),
     "ea": re.compile(r'(<a:ea\b[^>]*\btypeface=")[^"]*(")'),
 }
+_FONT_HANS_RE = re.compile(r'(<a:font\b[^>]*\bscript="(?:Hans|Hant)"[^>]*\btypeface=")[^"]*(")')
 
 
 def _clean_font_name(name, fallback):
@@ -452,29 +458,42 @@ def _clean_font_name(name, fallback):
     return s
 
 
-def _theme_fonts_xml(xml, latin, cjk):
+def _sub_fonts_in(block, latin, cjk):
+    """把一段 theme 字体定义里的 latin / ea / Hans 条目换成给定字体。"""
+    for key, val in (("latin", latin), ("ea", cjk)):
+        block = _FONT_ELEM_RE[key].sub(lambda m, v=val: m.group(1) + v + m.group(2), block)
+    return _FONT_HANS_RE.sub(lambda m: m.group(1) + cjk + m.group(2), block)
+
+
+def _theme_fonts_xml(xml, latin, cjk, heading_cjk):
     """styles.xml / theme1.xml 的主题字体引用 → 显式字体名（逐字符串替换，不动命名空间）。"""
     def repl(m):
         slot = _THEME_SLOT[m.group(1)]
-        return 'w:%s="%s"' % (slot, cjk if slot == "eastAsia" else latin)
+        # major* = 标题档，minor* = 正文档；西文两档共用同一个值
+        head = m.group(2).lower().startswith("major")
+        return 'w:%s="%s"' % (slot, (heading_cjk if head else cjk)
+                              if slot == "eastAsia" else latin)
 
     xml = _THEME_ATTR_RE.sub(repl, xml)
-    # 主题里的 major/minorFont：latin 与 ea 两槽，外加按脚本登记的中文字体条目
-    for key, val in (("latin", latin), ("ea", cjk)):
-        xml = _FONT_ELEM_RE[key].sub(lambda m, v=val: m.group(1) + v + m.group(2), xml)
-    xml = re.sub(r'(<a:font\b[^>]*\bscript="(?:Hans|Hant)"[^>]*\btypeface=")[^"]*(")',
-                 lambda m: m.group(1) + cjk + m.group(2), xml)
+    # 主题里的 major/minorFont 块（styles.xml 没有这两块，替换自然空转）
+    for tag, cjk_font in (("majorFont", heading_cjk), ("minorFont", cjk)):
+        xml = re.sub(r'(<a:%s>)(.*?)(</a:%s>)' % (tag, tag),
+                     lambda m, f=cjk_font: (m.group(1) + _sub_fonts_in(m.group(2), latin, f)
+                                            + m.group(3)),
+                     xml, flags=re.S)
     return xml
 
 
-def set_docx_fonts(docx_path, latin="", cjk="", pandoc_exe="", verify_dir=""):
-    """把 docx 的字体改成「西文 latin / 中文 cjk」，返回实际生效的两个名字。
+def set_docx_fonts(docx_path, latin="", cjk="", heading_cjk="", pandoc_exe="",
+                   verify_dir=""):
+    """把 docx 的字体改成「西文 latin / 正文中文 cjk / 标题中文 heading_cjk」。
 
     改两处（与三线表改 document.xml 互不干扰）：
 
-    - `word/styles.xml`：所有 `<w:rFonts>` 的 `*Theme` 属性换成显式字体名，
-      docDefaults 因此带上完整的四个槽（正文继承的根）。
-    - `word/theme/theme1.xml`：major/minorFont 的 latin / ea 同步改写，兜底
+    - `word/styles.xml`：所有 `<w:rFonts>` 的 `*Theme` 属性换成显式字体名——引用
+      majorFont 的（各级标题）落到 heading_cjk，引用 minorFont 的（正文根，即
+      docDefaults）落到 cjk。
+    - `word/theme/theme1.xml`：major/minorFont 两组同步改写，兜底
       「导出后在 Word 里新插内容」的字体。
 
     显式的非主题字体一律不动 —— Verbatim Char 的 Consolas 由此保持等宽。
@@ -484,6 +503,7 @@ def set_docx_fonts(docx_path, latin="", cjk="", pandoc_exe="", verify_dir=""):
     """
     latin = _clean_font_name(latin, DEFAULT_LATIN_FONT)
     cjk = _clean_font_name(cjk, DEFAULT_CJK_FONT)
+    heading_cjk = _clean_font_name(heading_cjk, DEFAULT_HEADING_CJK_FONT)
     theme_name = "word/theme/theme1.xml"
     with zipfile.ZipFile(docx_path) as z:
         names = z.namelist()
@@ -494,14 +514,14 @@ def set_docx_fonts(docx_path, latin="", cjk="", pandoc_exe="", verify_dir=""):
         others = {n: z.read(n) for n in names
                   if n not in ("word/styles.xml", theme_name)}
 
-    new_styles = _theme_fonts_xml(styles, latin, cjk)
+    new_styles = _theme_fonts_xml(styles, latin, cjk, heading_cjk)
     if (_THEME_LEFT_RE.search(new_styles)
             or ('w:eastAsia="%s"' % cjk) not in new_styles
             or ('w:ascii="%s"' % latin) not in new_styles):
         raise RuntimeError("字体改写未生效（styles.xml 主题属性未被完全替换）")
     others["word/styles.xml"] = new_styles.encode("utf-8")
     if theme:
-        others[theme_name] = _theme_fonts_xml(theme, latin, cjk).encode("utf-8")
+        others[theme_name] = _theme_fonts_xml(theme, latin, cjk, heading_cjk).encode("utf-8")
 
     tmp = os.path.join(os.path.dirname(os.path.abspath(docx_path)),
                        ".mdeditor-font-%s.docx.part" % uuid.uuid4().hex[:8])
@@ -533,7 +553,7 @@ def set_docx_fonts(docx_path, latin="", cjk="", pandoc_exe="", verify_dir=""):
             raise RuntimeError("字体改写后 docx 结构校验失败：%s"
                                % (r.stderr or b"").decode("utf-8", "replace")[:200])
     os.replace(tmp, docx_path)
-    return latin, cjk
+    return latin, cjk, heading_cjk
 
 
 def _workdir_for(md_path):
@@ -554,7 +574,8 @@ def export_docx(md_text, md_path, out_path, configured="", diagrams=None, stats=
     """跑 pandoc 出 docx。成功返回 pandoc 路径；失败抛 RuntimeError（文案面向用户）。
 
     diagrams：前端渲染好的图表位图列表（`lang` / `code` / `png`(base64) / `width`）。
-    fonts：`{"latin": ..., "cjk": ...}`，空值即默认 Times New Roman / SimSun；
+    fonts：`{"latin": ..., "cjk": ..., "heading": ...}`，空值即默认 Times New Roman /
+    SimSun / SimHei（heading 是标题中文档，西文两档共用 latin）；
     给了就在落位**之前**改好字体（改坏了不会留下一个半成品），实际生效值写回
     `stats["fonts"]`。不给则完全不动字体（截图等旁路调用沿用 pandoc 主题）。
     图片落进本次临时目录再按绝对路径引用——不往用户文档目录扔中间文件，.smd
@@ -614,9 +635,9 @@ def export_docx(md_text, md_path, out_path, configured="", diagrams=None, stats=
         if fonts is not None:
             f = fonts if isinstance(fonts, dict) else {}
             got = set_docx_fonts(staged_out, f.get("latin") or "", f.get("cjk") or "",
-                                 pandoc, verify_dir=stage)
+                                 f.get("heading") or "", pandoc, verify_dir=stage)
             if stats is not None:
-                stats["fonts"] = {"latin": got[0], "cjk": got[1]}
+                stats["fonts"] = {"latin": got[0], "cjk": got[1], "heading": got[2]}
         os.replace(staged_out, out_path)      # 同卷 → 原子落位
         return pandoc
     except PermissionError:

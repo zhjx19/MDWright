@@ -3,10 +3,11 @@
 # Copyright (C) 2026 wUwproject. Licensed under GNU AGPL v3 or later.
 """Word 导出字体（v3.4.0）的端到端回归（需本机 pandoc）：
 
-- 传了中/西文字体 → styles.xml 无主题字体残留、docDefaults 写死两槽
+- 传了标题/正文中文与西文字体 → styles.xml 无主题字体残留；标题（majorFont）
+  与正文（minorFont）各落到各的字体，docDefaults 写死正文两槽
 - 代码块（Verbatim Char）仍是 Consolas：等宽字体不跟随设置
-- theme1.xml 的 major/minorFont 同步改写（导出后新插内容的兜底）
-- 不传字体 → 默认 Times New Roman + SimSun
+- theme1.xml 的 major/minorFont 分别同步（导出后新插内容的兜底）
+- 不传字体 → 默认 黑体（标题）/ 宋体（正文）/ Times New Roman
 - 脏字体名（含 < > { }）→ 安全回落默认，且产出的 docx 仍能读回
 - 与三线表同开：两条 XML 改写互不打架
 """
@@ -121,12 +122,15 @@ def main():
         with open(doc, "w", encoding="utf-8") as f:
             f.write(MD)
 
-        # 1) 指定字体：Georgia / 黑体
+        # 1) 指定字体：西文 Georgia、正文中文宋体、标题中文楷体
         j = post("/api/export-docx", {"path": doc, "markdown": MD,
-                                      "latinFont": "Georgia", "cjkFont": "SimHei",
+                                      "latinFont": "Georgia", "cjkFont": "SimSun",
+                                      "headingFont": "KaiTi",
                                       "outPath": os.path.join(tmp, "指定字体.docx")})
         check("指定字体导出 ok", j.get("ok") is True, str(j)[:300])
-        check("响应回显生效字体", (j.get("fonts") or {}) == {"latin": "Georgia", "cjk": "SimHei"},
+        check("响应回显生效字体",
+              (j.get("fonts") or {}) == {"latin": "Georgia", "cjk": "SimSun",
+                                         "heading": "KaiTi"},
               str(j.get("fonts")))
         out = j.get("path") or ""
         if out and os.path.isfile(out):
@@ -137,54 +141,62 @@ def main():
             dd = re.search(r"<w:rFonts[^/]*/>", styles[i:i + 500])
             dd = dd.group(0) if dd else ""
             check("docDefaults 西文=Georgia", 'w:ascii="Georgia"' in dd, dd)
-            check("docDefaults 中文=SimHei", 'w:eastAsia="SimHei"' in dd, dd)
-            check("标题也跟随同一套字体",
-                  'w:eastAsia="SimHei"' in rfonts_near(styles, "Heading1"),
-                  rfonts_near(styles, "Heading1"))
+            check("docDefaults 中文=正文宋体", 'w:eastAsia="SimSun"' in dd, dd)
+            head = rfonts_near(styles, "Heading1")
+            check("标题落到标题字体（楷体），不跟正文",
+                  'w:eastAsia="KaiTi"' in head and "SimSun" not in head, head)
             code = rfonts_near(styles, "VerbatimChar")
             check("代码块仍是 Consolas（等宽不跟随）",
-                  'w:ascii="Consolas"' in code and "SimHei" not in code, code)
+                  'w:ascii="Consolas"' in code and "KaiTi" not in code, code)
             check("theme latin 同步", theme.count('typeface="Georgia"') >= 2,
                   str(re.findall(r'<a:latin typeface="[^"]*"', theme)))
-            check("theme ea 同步", theme.count('typeface="SimHei"') >= 2,
+            check("theme 标题档(major) 同步", "KaiTi" in theme.split("<a:minorFont>")[0],
+                  str(re.findall(r'<a:ea typeface="[^"]*"', theme)))
+            check("theme 正文档(minor) 同步", "SimSun" in theme.split("<a:minorFont>")[-1],
                   str(re.findall(r'<a:ea typeface="[^"]*"', theme)))
             ok, detail = pandoc_roundtrip(out)
             check("改字体后 docx 结构可读", ok, detail)
 
-        # 2) 不传字体 → 默认宋体 + Times New Roman
+        # 2) 不传字体 → 默认 标题黑体 / 正文宋体 / 西文 TNR
         j2 = post("/api/export-docx", {"path": doc, "markdown": MD,
                                        "outPath": os.path.join(tmp, "默认字体.docx")})
         check("默认字体导出 ok", j2.get("ok") is True, str(j2)[:300])
-        check("默认为 TNR + SimSun",
-              (j2.get("fonts") or {}) == {"latin": "Times New Roman", "cjk": "SimSun"},
+        check("默认为 黑体 + 宋体 + TNR",
+              (j2.get("fonts") or {}) == {"latin": "Times New Roman", "cjk": "SimSun",
+                                          "heading": "SimHei"},
               str(j2.get("fonts")))
         out2 = j2.get("path") or ""
         if out2 and os.path.isfile(out2):
-            _, styles2, _ = docxml(out2)
-            check("默认 docDefaults 写死 TNR/SimSun",
+            _, styles2, theme2 = docxml(out2)
+            check("默认 docDefaults 写死正文宋体/TNR",
                   'w:ascii="Times New Roman"' in styles2 and 'w:eastAsia="SimSun"' in styles2)
+            check("默认标题是黑体", 'w:eastAsia="SimHei"' in rfonts_near(styles2, "Heading2"),
+                  rfonts_near(styles2, "Heading2"))
             ok2, detail2 = pandoc_roundtrip(out2)
             check("默认字体 docx 结构可读", ok2, detail2)
 
         # 3) 脏字体名 → 安全回落，不产坏文件
         j3 = post("/api/export-docx", {"path": doc, "markdown": MD,
                                        "latinFont": 'Bad<Font>&"x"', "cjkFont": "宋体{1}",
+                                       "headingFont": "Ha<ck>",
                                        "outPath": os.path.join(tmp, "脏字体.docx")})
         check("脏字体名仍导出成功", j3.get("ok") is True, str(j3)[:300])
         check("脏字体名回落默认",
-              (j3.get("fonts") or {}) == {"latin": "Times New Roman", "cjk": "SimSun"},
+              (j3.get("fonts") or {}) == {"latin": "Times New Roman", "cjk": "SimSun",
+                                          "heading": "SimHei"},
               str(j3.get("fonts")))
         out3 = j3.get("path") or ""
         if out3 and os.path.isfile(out3):
             z3 = zipfile.ZipFile(out3)
-            check("脏字体名未写进 XML",
-                  "Bad<Font>" not in z3.read("word/styles.xml").decode("utf-8", "replace"))
+            raw3 = z3.read("word/styles.xml").decode("utf-8", "replace")
+            check("脏字体名未写进 XML", "Bad<Font>" not in raw3 and "Ha<ck>" not in raw3)
             ok3, detail3 = pandoc_roundtrip(out3)
             check("脏字体名 docx 结构可读", ok3, detail3)
 
         # 4) 与三线表同开：两条改写互不打架
         j4 = post("/api/export-docx", {"path": doc, "markdown": MD, "threeLine": True,
                                        "latinFont": "Cambria", "cjkFont": "KaiTi",
+                                       "headingFont": "Microsoft YaHei",
                                        "outPath": os.path.join(tmp, "字体加三线表.docx")})
         check("字体 + 三线表导出 ok", j4.get("ok") is True, str(j4)[:300])
         out4 = j4.get("path") or ""
@@ -193,7 +205,10 @@ def main():
             d4 = z4.read("word/document.xml").decode("utf-8", "replace")
             _, styles4, _ = docxml(out4)
             check("三线表仍在（表头下框线）", 'w:val="single"' in d4 and "<w:tblBorders>" in d4)
-            check("字体仍在", 'w:ascii="Cambria"' in styles4 and 'w:eastAsia="KaiTi"' in styles4)
+            check("字体仍在",
+                  'w:ascii="Cambria"' in styles4
+                  and 'w:eastAsia="KaiTi"' in styles4
+                  and 'w:eastAsia="Microsoft YaHei"' in styles4)
             ok4, detail4 = pandoc_roundtrip(out4)
             check("字体 + 三线表 docx 结构可读", ok4, detail4)
 

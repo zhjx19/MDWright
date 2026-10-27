@@ -11,6 +11,23 @@
 
 ---
 
+## v3.4.1（2026-10-27）
+
+**本次改动：Word 导出的标题单独一档，默认黑体（不再跟正文）**
+
+**变更**
+
+- **字体拆成三档**：「设置 → 排版 → Word 导出字体」现在是**标题中文 / 正文中文 / 西文（标题与正文）**三行，默认 **黑体 / 宋体 / Times New Roman**。3.4.0 那版是标题跟着正文走，中文稿里「标题黑体、正文宋体」的固定搭配反而要手动改回来。
+- **判据是主题的 major/minor 两族**：pandoc 的参考文档里，`Heading*` 引用 `majorHAnsi` / `majorEastAsia`，正文（`docDefaults`、`Body Text`）引用 `minorHAnsi` / `minorEastAsia`。改写时按属性值开头是 `major` 还是 `minor` 决定落到标题档还是正文档，`word/theme/theme1.xml` 的 `majorFont` / `minorFont` 两组也分别同步——不必逐个样式列举，新增的标题层级自动跟着走。
+- **代码块仍固定 Consolas**：`Verbatim Char` 是显式字体、不走主题，因此不参与这两族映射。
+
+**测试**
+
+- `_test_docx_font.py` 增加标题/正文分离断言：`Heading1` 落到标题档、`docDefaults` 落到正文档、theme 的 major 与 minor 两组各自正确，默认值为黑体 / 宋体 / TNR。
+- `_test_docx_font_ui.py` 改为三个下拉：默认值、常用/本机组填充、应用后回填、导出请求体带 `headingFont`。
+
+---
+
 ## v3.4.0（2026-10-27）
 
 **本次改动：导出 Word 可以选字体，默认中文宋体、西文 Times New Roman**

@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 wUwproject. Licensed under GNU AGPL v3 or later.
 """Word 导出字体的界面级回归（R1）：
-- 「设置 → 排版」里有中/西文两个下拉，默认 SimSun / Times New Roman
+- 「设置 → 排版」里有标题/正文中文与西文三个下拉，默认 黑体 / 宋体 / Times New Roman
 - 常用组在前、本机字体组在 /api/fonts 回来后补上
 - 应用后写进 localStorage，重开面板能回填
-- 导出请求体真的带上了 latinFont / cjkFont（不是只在界面上摆着）
+- 导出请求体真的带上了 headingFont / latinFont / cjkFont（不是只在界面上摆着）
 
 页面用 `?file=` 打开一个临时文档：否则 currentFile 为空，点导出只会在
 「请先保存文档」那句提示上停下，根本走不到请求体。
@@ -64,29 +64,33 @@ EXPR = r"""
   return new Promise(function(resolve){
     setTimeout(function(){
       openTs();
+      var h=document.querySelector('select[data-docxfont="heading"]');
       var c=document.querySelector('select[data-docxfont="cjk"]');
       var l=document.querySelector('select[data-docxfont="latin"]');
-      var first={cjk:c?c.value:null, latin:l?l.value:null};
+      var first={heading:h?h.value:null, cjk:c?c.value:null, latin:l?l.value:null};
       var presets={
+        heading:h?h.querySelectorAll('optgroup[label="\u5e38\u7528"] option').length:0,
         cjk:c?c.querySelectorAll('optgroup[label="\u5e38\u7528"] option').length:0,
         latin:l?l.querySelectorAll('optgroup[label="\u5e38\u7528"] option').length:0};
       var sys={
+        heading:h?h.querySelectorAll('optgroup[label="\u672c\u673a\u5b57\u4f53"] option').length:0,
         cjk:c?c.querySelectorAll('optgroup[label="\u672c\u673a\u5b57\u4f53"] option').length:0,
         latin:l?l.querySelectorAll('optgroup[label="\u672c\u673a\u5b57\u4f53"] option').length:0};
-      c.value='SimHei'; l.value='Georgia';
+      h.value='KaiTi'; c.value='SimHei'; l.value='Georgia';
       document.getElementById('tsApply').click();
       var saved=null;
       try{saved=JSON.parse(localStorage.getItem('md-editor-typeset-v3')||'{}').docx||null;}catch(e){}
       document.getElementById('tsClose').click();
       openTs();
-      var reopen={cjk:c.value, latin:l.value};
+      var reopen={heading:h.value, cjk:c.value, latin:l.value};
       document.getElementById('tsClose').click();
       document.getElementById('btnExportDocx').click();
       setTimeout(function(){
         window.fetch=orig;
         resolve({first:first, presets:presets, sys:sys, saved:saved, reopen:reopen,
                  toast:(document.querySelector('#mdToast')||{}).textContent||'',
-                 payload:captured?{latinFont:captured.latinFont, cjkFont:captured.cjkFont}:null});
+                 payload:captured?{latinFont:captured.latinFont, cjkFont:captured.cjkFont,
+                                   headingFont:captured.headingFont}:null});
       },2000);
     },2000);
   });
@@ -106,22 +110,26 @@ def main():
         shutil.rmtree(tmp, ignore_errors=True)
 
     first = res.get("first") or {}
-    check("中文下拉默认宋体", first.get("cjk") == "SimSun", str(first))
-    check("西文下拉默认 Times New Roman", first.get("latin") == "Times New Roman", str(first))
+    check("标题中文默认黑体", first.get("heading") == "SimHei", str(first))
+    check("正文中文默认宋体", first.get("cjk") == "SimSun", str(first))
+    check("西文默认 Times New Roman", first.get("latin") == "Times New Roman", str(first))
     presets = res.get("presets") or {}
-    check("常用组已填充（中文 >=7 项）", (presets.get("cjk") or 0) >= 7, str(presets))
-    check("常用组已填充（西文 >=7 项）", (presets.get("latin") or 0) >= 7, str(presets))
+    check("常用组已填充（三个下拉都 >=7 项）",
+          min(presets.get("heading") or 0, presets.get("cjk") or 0,
+              presets.get("latin") or 0) >= 7, str(presets))
     sysf = res.get("sys") or {}
     check("本机组已由 /api/fonts 填充",
-          (sysf.get("cjk") or 0) > 50 and (sysf.get("latin") or 0) > 50, str(sysf))
+          min(sysf.get("heading") or 0, sysf.get("cjk") or 0,
+              sysf.get("latin") or 0) > 50, str(sysf))
     check("应用后写进 localStorage",
-          (res.get("saved") or {}) == {"cjk": "SimHei", "latin": "Georgia"},
+          (res.get("saved") or {}) == {"heading": "KaiTi", "cjk": "SimHei", "latin": "Georgia"},
           str(res.get("saved")))
     check("重开面板回填已保存字体",
-          (res.get("reopen") or {}) == {"cjk": "SimHei", "latin": "Georgia"},
+          (res.get("reopen") or {}) == {"heading": "KaiTi", "cjk": "SimHei", "latin": "Georgia"},
           str(res.get("reopen")))
-    check("导出请求带上字体",
-          (res.get("payload") or {}) == {"latinFont": "Georgia", "cjkFont": "SimHei"},
+    check("导出请求带上三个字体",
+          (res.get("payload") or {}) == {"latinFont": "Georgia", "cjkFont": "SimHei",
+                                         "headingFont": "KaiTi"},
           str(res.get("payload")) + " toast=" + str(res.get("toast")))
     print("\n%s" % ("ALL PASS" if not fails else "FAILED: %s" % fails))
     sys.exit(1 if fails else 0)

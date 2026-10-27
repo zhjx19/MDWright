@@ -588,10 +588,11 @@
         <div class="ts-row"><label>三线表（去竖线，三条横线）</label><input id="tsThree" type="checkbox"></div>
         <div class="ts-row"><label>表头底色</label><input id="tsHeadOn" type="checkbox"><input id="tsHeadColor" type="color" value="#dbe5ff"></div>
         <div class="ts-row"><label>首列底色</label><input id="tsColOn" type="checkbox"><input id="tsColColor" type="color" value="#dbe5ff"></div>
-        <div class="ts-sep"><span>Word 导出字体（中文 / 西文分槽；代码块固定 Consolas 等宽）</span></div>
-        <div class="ts-row"><label>中文</label><select data-docxfont="cjk"></select></div>
-        <div class="ts-row"><label>西文</label><select data-docxfont="latin"></select></div>
-        <p class="set-note">作用于「导出 Word（.docx）」：标题与正文同一套字体，层级靠字号与加粗区分；下拉里的「本机字体」由后端枚举注册表。改动在下次导出时生效——PDF / 打印仍走上面各元素的字体设置。</p>
+        <div class="ts-sep"><span>Word 导出字体（标题与正文分开；代码块固定 Consolas 等宽）</span></div>
+        <div class="ts-row"><label>标题中文</label><select data-docxfont="heading"></select></div>
+        <div class="ts-row"><label>正文中文</label><select data-docxfont="cjk"></select></div>
+        <div class="ts-row"><label>西文（标题与正文）</label><select data-docxfont="latin"></select></div>
+        <p class="set-note">作用于「导出 Word（.docx）」：标题用「标题中文」，正文/表格/列表/引用用「正文中文」，西文两档共用。默认<b>标题黑体、正文宋体、西文 Times New Roman</b>；下拉里的「本机字体」由后端枚举注册表。改动在下次导出时生效——PDF / 打印仍走上面各元素的字体设置。</p>
       </section>
       <section class="set-sec" data-sec="page" hidden>
         <div class="ts-sep"><span>页面（作用于「打印」与「导出 PDF」）</span></div>
@@ -629,7 +630,7 @@
   <div id="aboutBox" role="dialog" aria-modal="true" aria-label="关于 墨匠 MDWright">
     <img src="mdwright.ico" alt="" width="40" height="40">
     <div class="ab-name">墨匠 MDWright</div>
-    <div class="ab-ver">版本 <span id="aboutVer">3.4.0</span></div>
+    <div class="ab-ver">版本 <span id="aboutVer">3.4.1</span></div>
     <div class="ab-desc">Windows 单机 Markdown 写作台：写作照 Markdown 的来，输出照排版的来。</div>
     <div class="ab-lic">AGPL-3.0-or-later · 衍生自 MDEditor v2.0</div>
     <div class="ab-btns">
@@ -2837,6 +2838,7 @@ function parseMarkdown(src, fx){
             threeLine:!!(tsCfg&&tsCfg.table&&tsCfg.table.three), token:runDocKey().token,
             latinFont:(tsCfg.docx&&tsCfg.docx.latin)||'',
             cjkFont:(tsCfg.docx&&tsCfg.docx.cjk)||'',
+            headingFont:(tsCfg.docx&&tsCfg.docx.heading)||'',
             diagrams:diagrams})})
           .then(function(r){return r.json();})
           .then(function(j){
@@ -3207,11 +3209,14 @@ function parseMarkdown(src, fx){
   var TS_KEYS=['p','h1','h2','h3','h4','quote','li','table','code','math','img'];
   var IND_KEYS=['p','quote','li'];
   /* Word 导出字体：下拉值是 docx 里要写的**确切字体名**（SimSun / Times New Roman），
-     不是 CSS 字体栈——pandoc 出的 docx 只认这个名字。中文写 eastAsia 槽、西文写
-     ascii/hAnsi 槽；代码块在 docx 里本来就是显式 Consolas，不跟随这里。 */
-  var DOCX_DEFAULT={cjk:'SimSun',latin:'Times New Roman'};
+     不是 CSS 字体栈——pandoc 出的 docx 只认这个名字。中文分标题档与正文档，西文
+     两档共用；代码块在 docx 里本来就是显式 Consolas，不跟随这里。 */
+  var DOCX_DEFAULT={heading:'SimHei',cjk:'SimSun',latin:'Times New Roman'};
+  var DOCX_CJK_PRESETS=[['SimHei','黑体'],['SimSun','宋体'],['NSimSun','新宋体'],
+    ['Microsoft YaHei','微软雅黑'],['KaiTi','楷体'],['FangSong','仿宋'],['DengXian','等线']];
   var DOCX_PRESETS={
-    cjk:[['SimSun','宋体'],['NSimSun','新宋体'],['SimHei','黑体'],['Microsoft YaHei','微软雅黑'],
+    heading:DOCX_CJK_PRESETS,
+    cjk:[['SimSun','宋体'],['SimHei','黑体'],['NSimSun','新宋体'],['Microsoft YaHei','微软雅黑'],
          ['KaiTi','楷体'],['FangSong','仿宋'],['DengXian','等线']],
     latin:[['Times New Roman','Times New Roman'],['Arial','Arial'],['Calibri','Calibri'],
            ['Cambria','Cambria'],['Georgia','Georgia'],['Garamond','Garamond'],
@@ -3272,7 +3277,8 @@ function parseMarkdown(src, fx){
         size:(function(v){v=parseFloat(v);return isNaN(v)?9:v;})(pg.pn&&pg.pn.size)},
       toc:{on:(pg.toc&&pg.toc.on==='on')?'on':'off',pos:(pg.toc&&pg.toc.pos)||'top',solo:pg.toc?(pg.toc.solo!==false):true}};
     var dx=raw.docx||{};
-    o.docx={cjk:docxFontName(dx.cjk,'cjk'),latin:docxFontName(dx.latin,'latin')};
+    o.docx={heading:docxFontName(dx.heading,'heading'),
+      cjk:docxFontName(dx.cjk,'cjk'),latin:docxFontName(dx.latin,'latin')};
     return o;})();
   function applyTypeset(){
     var old=document.getElementById('ts-style');if(old)old.parentNode.removeChild(old);
