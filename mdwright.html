@@ -588,6 +588,10 @@
         <div class="ts-row"><label>三线表（去竖线，三条横线）</label><input id="tsThree" type="checkbox"></div>
         <div class="ts-row"><label>表头底色</label><input id="tsHeadOn" type="checkbox"><input id="tsHeadColor" type="color" value="#dbe5ff"></div>
         <div class="ts-row"><label>首列底色</label><input id="tsColOn" type="checkbox"><input id="tsColColor" type="color" value="#dbe5ff"></div>
+        <div class="ts-sep"><span>Word 导出字体（中文 / 西文分槽；代码块固定 Consolas 等宽）</span></div>
+        <div class="ts-row"><label>中文</label><select data-docxfont="cjk"></select></div>
+        <div class="ts-row"><label>西文</label><select data-docxfont="latin"></select></div>
+        <p class="set-note">作用于「导出 Word（.docx）」：标题与正文同一套字体，层级靠字号与加粗区分；下拉里的「本机字体」由后端枚举注册表。改动在下次导出时生效——PDF / 打印仍走上面各元素的字体设置。</p>
       </section>
       <section class="set-sec" data-sec="page" hidden>
         <div class="ts-sep"><span>页面（作用于「打印」与「导出 PDF」）</span></div>
@@ -625,7 +629,7 @@
   <div id="aboutBox" role="dialog" aria-modal="true" aria-label="关于 墨匠 MDWright">
     <img src="mdwright.ico" alt="" width="40" height="40">
     <div class="ab-name">墨匠 MDWright</div>
-    <div class="ab-ver">版本 <span id="aboutVer">3.2.4</span></div>
+    <div class="ab-ver">版本 <span id="aboutVer">3.4.0</span></div>
     <div class="ab-desc">Windows 单机 Markdown 写作台：写作照 Markdown 的来，输出照排版的来。</div>
     <div class="ab-lic">AGPL-3.0-or-later · 衍生自 MDEditor v2.0</div>
     <div class="ab-btns">
@@ -2831,6 +2835,8 @@ function parseMarkdown(src, fx){
         fetch('/api/export-docx',{method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({path:currentFile, markdown:cjkSpaceMarkdown(getText()), outPath:outPath,
             threeLine:!!(tsCfg&&tsCfg.table&&tsCfg.table.three), token:runDocKey().token,
+            latinFont:(tsCfg.docx&&tsCfg.docx.latin)||'',
+            cjkFont:(tsCfg.docx&&tsCfg.docx.cjk)||'',
             diagrams:diagrams})})
           .then(function(r){return r.json();})
           .then(function(j){
@@ -3200,6 +3206,21 @@ function parseMarkdown(src, fx){
   var IND_VALS=['none','first','hang'],IND_LBLS=['无','首行缩进','悬挂缩进'];
   var TS_KEYS=['p','h1','h2','h3','h4','quote','li','table','code','math','img'];
   var IND_KEYS=['p','quote','li'];
+  /* Word 导出字体：下拉值是 docx 里要写的**确切字体名**（SimSun / Times New Roman），
+     不是 CSS 字体栈——pandoc 出的 docx 只认这个名字。中文写 eastAsia 槽、西文写
+     ascii/hAnsi 槽；代码块在 docx 里本来就是显式 Consolas，不跟随这里。 */
+  var DOCX_DEFAULT={cjk:'SimSun',latin:'Times New Roman'};
+  var DOCX_PRESETS={
+    cjk:[['SimSun','宋体'],['NSimSun','新宋体'],['SimHei','黑体'],['Microsoft YaHei','微软雅黑'],
+         ['KaiTi','楷体'],['FangSong','仿宋'],['DengXian','等线']],
+    latin:[['Times New Roman','Times New Roman'],['Arial','Arial'],['Calibri','Calibri'],
+           ['Cambria','Cambria'],['Georgia','Georgia'],['Garamond','Garamond'],
+           ['Courier New','Courier New']]};
+  function docxFontName(v,kind){
+    v=(v||'').replace(/^\s+|\s+$/g,'');
+    if(!v||v.length>64||/[<>"&{}\[\]\\]/.test(v))return DOCX_DEFAULT[kind]||'';
+    return v;
+  }
   var TS_MAP={
     p:'#preview p, .markdown-body p',
     h1:'#preview h1, .markdown-body h1',
@@ -3250,6 +3271,8 @@ function parseMarkdown(src, fx){
         tpl:(pg.pn&&pg.pn.tpl)||'{p}',
         size:(function(v){v=parseFloat(v);return isNaN(v)?9:v;})(pg.pn&&pg.pn.size)},
       toc:{on:(pg.toc&&pg.toc.on==='on')?'on':'off',pos:(pg.toc&&pg.toc.pos)||'top',solo:pg.toc?(pg.toc.solo!==false):true}};
+    var dx=raw.docx||{};
+    o.docx={cjk:docxFontName(dx.cjk,'cjk'),latin:docxFontName(dx.latin,'latin')};
     return o;})();
   function applyTypeset(){
     var old=document.getElementById('ts-style');if(old)old.parentNode.removeChild(old);
@@ -3312,6 +3335,38 @@ function parseMarkdown(src, fx){
     }
     sel.appendChild(g);
   }
+  /* Word 字体下拉：常用组在前、本机字体在后；值是确切字体名（不带 CSS 兜底栈） */
+  function docxFontSels(){return document.querySelectorAll('select[data-docxfont]');}
+  function fillDocxFontSel(sel,fams){
+    var kind=sel.getAttribute('data-docxfont'),preset=DOCX_PRESETS[kind]||[];
+    sel.innerHTML='';
+    var g=document.createElement('optgroup');g.label='常用';
+    for(var i=0;i<preset.length;i++){
+      var o=document.createElement('option');o.value=preset[i][0];o.textContent=preset[i][1];
+      g.appendChild(o);
+    }
+    sel.appendChild(g);
+    if(fams&&fams.length){
+      var g2=document.createElement('optgroup');g2.label='本机字体';
+      for(var j=0;j<fams.length;j++){
+        var o2=document.createElement('option');o2.value=fams[j];o2.textContent=fams[j];
+        g2.appendChild(o2);
+      }
+      sel.appendChild(g2);
+    }
+  }
+  /* 记住的字体可能本机已经没有：补一个临时 option，绝不让选择被悄悄改掉 */
+  function setDocxFontSel(sel,val){
+    var v=String(val||'');
+    if(!v)return;
+    var hit=false;
+    for(var i=0;i<sel.options.length;i++){if(sel.options[i].value===v){hit=true;break;}}
+    if(!hit){
+      var o=document.createElement('option');o.value=v;o.textContent=v+'（已保存）';
+      (sel.querySelector('optgroup')||sel).appendChild(o);
+    }
+    sel.value=v;
+  }
   function tsFill(){
     var sels=document.querySelectorAll('select[data-ts]');
     for(var i=0;i<sels.length;i++){
@@ -3332,6 +3387,8 @@ function parseMarkdown(src, fx){
     if(cached&&cached.length){
       for(var k=0;k<sels.length;k++)addFontGroup(sels[k],cached);
     }
+    var dfs=docxFontSels();
+    for(var n=0;n<dfs.length;n++)fillDocxFontSel(dfs[n],cached);
   }
   function tsOpen(){
     document.getElementById('tsAuto').value=tsCfg.autoSaveMin;
@@ -3350,6 +3407,10 @@ function parseMarkdown(src, fx){
     document.getElementById('tsHeadColor').value=tsCfg.table.headColor;
     document.getElementById('tsColOn').checked=!!tsCfg.table.colOn;
     document.getElementById('tsColColor').value=tsCfg.table.colColor;
+    var dfs=docxFontSels();
+    for(var dd=0;dd<dfs.length;dd++){
+      setDocxFontSel(dfs[dd],tsCfg.docx[dfs[dd].getAttribute('data-docxfont')]);
+    }
     var pg=tsCfg.page;
     document.getElementById('tsPaper').value=pg.paper;
     document.getElementById('tsCustomRow').hidden=(pg.paper!=='custom');
@@ -3846,6 +3907,13 @@ function parseMarkdown(src, fx){
           for(var k=0;k<gs.length;k++)gs[k].parentNode.removeChild(gs[k]);
           addFontGroup(sels[i],j.fonts);
         }
+        /* Word 字体下拉重建时保住当前选择：重建会清空 options，值要先记下 */
+        var dfs=docxFontSels();
+        for(var n=0;n<dfs.length;n++){
+          var keep=dfs[n].value||tsCfg.docx[dfs[n].getAttribute('data-docxfont')];
+          fillDocxFontSel(dfs[n],j.fonts);
+          setDocxFontSel(dfs[n],keep);
+        }
       }).catch(function(){});
     }catch(e){}
   }
@@ -3871,6 +3939,11 @@ function parseMarkdown(src, fx){
     for(var c=0;c<ics.length;c++){
       var k2=ics[c].getAttribute('data-indchars');
       var iv=parseFloat(ics[c].value);tsCfg.indent[k2].chars=isNaN(iv)?2:Math.max(0,Math.min(8,iv));
+    }
+    var dfs=docxFontSels();
+    for(var dd=0;dd<dfs.length;dd++){
+      var kind=dfs[dd].getAttribute('data-docxfont');
+      tsCfg.docx[kind]=docxFontName(dfs[dd].value,kind);
     }
     tsCfg.table.three=document.getElementById('tsThree').checked;
     tsCfg.table.headOn=document.getElementById('tsHeadOn').checked;

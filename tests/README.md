@@ -46,7 +46,7 @@ python\python.exe tests\run_all.py --only parse
 |---|---|---|
 | 前端解析器 | `_test_escape` `_test_table_split` `_test_list_parse` `_test_deflist` `_test_callout` `_test_footnote` `_test_frontmatter` `_test_inline_ext` `_test_fence` `_test_img_width` `_test_highlight` | 从 `mdwright.html` 抽 `/*PARSER_START*/…/*PARSER_END*/` 段真实源码跑 Node，比的是真函数不是副本 |
 | 后端路由与生命周期 | `_test_routes` `_test_keepalive` `_test_splash_session` `_test_startup_perf` `_test_outpath` `_test_tools` | 本地服务起停、端口探活、外部工具探测 |
-| 导出 | `_test_docx` `_test_pdf` `_test_paged_e2e` `_test_export_css` `_test_export_ui` `_test_smd` `_test_smd_ann` | Word / PDF / 分页 HTML / `.smd` 打包与批注 |
+| 导出 | `_test_docx` `_test_docx_font` `_test_docx_font_ui` `_test_pdf` `_test_paged_e2e` `_test_export_css` `_test_export_ui` `_test_smd` `_test_smd_ann` | Word / PDF / 分页 HTML / `.smd` 打包与批注、Word 导出字体 |
 | 代码块执行 | `_test_run_py` `_test_run_r` `_test_llm_deepseek` `_test_llm_websearch` `_test_llm_ui` `_test_rag*` | 便携 Python、Rscript、AI 润色与检索 |
 | 浏览器级 UI | `_test_browser` `_test_menu_ui` `_test_live_view` `_test_live_blocks` `_test_syntax_ui` `_test_outline_jump` `_test_list_ui` `_test_copy_btn` | 起本地服务 + 无头浏览器，用 CDP 在页面里求值断言 |
 | 发布前自验 | `_test_dist_verify` | 按 `docs/分发清单.md` 最小集组装干净目录，从零启动跑全链路 |

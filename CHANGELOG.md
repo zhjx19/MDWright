@@ -11,6 +11,27 @@
 
 ---
 
+## v3.4.0（2026-10-27）
+
+**本次改动：导出 Word 可以选字体，默认中文宋体、西文 Times New Roman**
+
+**新增**
+
+- **Word 导出字体设置**：「设置 → 排版」新增中/西文两个下拉，默认宋体（SimSun）与 Times New Roman；选项为常用组 + 后端 `/api/fonts` 枚举的本机字体。标题与正文同一套字体（层级靠字号与加粗区分），代码块固定 Consolas 等宽、不跟随设置。
+- **`md_pandoc.set_docx_fonts()`**：pandoc 的参考文档把字体整体交给主题（`asciiTheme` / `eastAsiaTheme`），落到 Word 里是 Aptos / 等线 一类。导出后把 `word/styles.xml` 里所有 `w:rFonts` 的 `*Theme` 属性改成语义相同的显式字体名（中文写 `eastAsia` 槽，西文与 `cs` 写 `ascii/hAnsi` 槽），`word/theme/theme1.xml` 的 `majorFont/minorFont` 同步改写，兜住「导出后在 Word 里新插内容」的字体。原本就显式的非主题字体一律不动。
+
+**变更**
+
+- `/api/export-docx` 接收 `latinFont` / `cjkFont`，空值即默认宋体 + Times New Roman，响应回显实际生效的两项；字体名做字符白名单与长度校验，脏值静默回落默认，不会写坏文件。
+- 字体改写发生在 `os.replace` 落位之前，并走 `.part` + pandoc 回读自检：改坏了目标文件保持原样，不会留下半成品。
+
+**测试**
+
+- 新增 `_test_docx_font.py`：指定字体后主题属性清零、`docDefaults` 两槽写死、标题跟随、`VerbatimChar` 仍为 Consolas、theme 同步、默认值生效、脏字体名回落、与三线表同开互不打架、无残留 `.part`。
+- 新增 `_test_docx_font_ui.py`：两个下拉的默认值与常用/本机组填充、应用后写进 localStorage、重开面板回填、导出请求体确实带上 `latinFont` / `cjkFont`。
+
+---
+
 ## v3.3.4（2026-10-27）
 
 **本次改动：装完 .md 图标当场就换过来，不用手动「打开方式 → 始终」**
