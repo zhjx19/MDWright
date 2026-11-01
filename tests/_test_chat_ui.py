@@ -103,6 +103,74 @@ PROBE_SKELETON = r"""
 """
 
 
+PROBE_CHAT = r"""
+(function(){
+  function q(s){ return document.querySelector(s); }
+  var out = {err: null, bodies: [], disabledDuring: null};
+  var realFetch = window.fetch;
+  window.fetch = function(u, o){
+    if (String(u).indexOf('/api/chat') >= 0) {
+      out.bodies.push(JSON.parse(o.body));
+      var mode = out.mode || 'ok';
+      return Promise.resolve({ json: function(){
+        return Promise.resolve(mode === 'err'
+          ? {ok: false, error: '后端连不上'}
+          : {ok: true, text: '**加粗** 回答'});
+      }});
+    }
+    return realFetch.apply(window, arguments);
+  };
+  return new Promise(function(resolve){
+    var done = false;
+    function doneOnce(){ if (done) return; done = true; resolve(out); }
+    setTimeout(doneOnce, 8000);
+    try {
+      q('#btnAISidebar').click();               /* 无选区也能开 */
+      q('#aiInput').value = '这段什么意思';
+      q('#aiSend').click();
+      out.disabledDuring = q('#aiSend').disabled;
+      setTimeout(function(){
+        try {
+          var bots = document.querySelectorAll('.ai-msg.bot');
+          out.botCount = bots.length;
+          out.botHtml = bots.length ? bots[bots.length-1].querySelector('.ai-body').innerHTML : '';
+          out.botText = bots.length ? bots[bots.length-1].querySelector('.ai-body').textContent : '';
+          out.userText = (document.querySelector('.ai-msg.user .ai-body') || {}).textContent || '';
+          var b0 = out.bodies[0] || {};
+          out.msgRoles = (b0.messages || []).map(function(m){ return m.role; });
+          out.sentContent = (b0.messages && b0.messages[0]) ? b0.messages[0].content : '';
+          out.ctxSelection = b0.context ? b0.context.selection : 'no-context';
+          /* 错误 + 重试 */
+          out.mode = 'err';
+          q('#aiInput').value = '第二个问题';
+          q('#aiInput').dispatchEvent(new KeyboardEvent('keydown',
+            {key: 'Enter', bubbles: true}));
+          setTimeout(function(){
+            try {
+              var errs = document.querySelectorAll('.ai-msg.err');
+              out.errCount = errs.length;
+              out.errText = errs.length ? errs[errs.length-1].textContent : '';
+              var retry = document.querySelector('.ai-msg.err button[data-ai-do="retry"]');
+              out.hasRetry = !!retry;
+              out.beforeRetry = out.bodies.length;
+              if (retry) retry.click();
+              setTimeout(function(){
+                try {
+                  out.afterRetry = out.bodies.length;
+                  out.disabledAfter = q('#aiSend').disabled;
+                } catch (e) { out.err = String(e); }
+                doneOnce();
+              }, 200);
+            } catch (e) { out.err = String(e); doneOnce(); }
+          }, 200);
+        } catch (e) { out.err = String(e); doneOnce(); }
+      }, 200);
+    } catch (e) { out.err = String(e); doneOnce(); }
+  });
+})()
+"""
+
+
 if __name__ == "__main__":
     res = run_expr(PROBE_SKELETON)
     check("探测器无异常", not res.get("err"), str(res.get("err")))
@@ -123,6 +191,22 @@ if __name__ == "__main__":
     check("拖宽写入 localStorage", res.get("widthStored") == "420", repr(res.get("widthStored")))
     check("拖宽即时生效", res.get("basisAfter") == "420px",
           "%r -> %r" % (res.get("basisBefore"), res.get("basisAfter")))
+
+    res2 = run_expr(PROBE_CHAT)
+    check("对话探测器无异常", not res2.get("err"), str(res2.get("err")))
+    check("用户消息上屏", "这段什么意思" in (res2.get("userText") or ""), str(res2.get("userText")))
+    check("回答渲染 Markdown", "<strong>加粗</strong>" in (res2.get("botHtml") or ""),
+          str(res2.get("botHtml")))
+    check("请求只带 user 消息", res2.get("msgRoles") == ["user"], str(res2.get("msgRoles")))
+    check("请求内容正确", res2.get("sentContent") == "这段什么意思", str(res2.get("sentContent")))
+    check("无选区时 context.selection 为 null", res2.get("ctxSelection") is None,
+          repr(res2.get("ctxSelection")))
+    check("生成中禁用发送", res2.get("disabledDuring") is True, str(res2.get("disabledDuring")))
+    check("失败显示错误气泡", res2.get("errCount", 0) >= 1 and "后端连不上" in (res2.get("errText") or ""),
+          str(res2.get("errText")))
+    check("错误气泡带重试", res2.get("hasRetry") is True, str(res2.get("hasRetry")))
+    check("重试会重新发请求", (res2.get("afterRetry") or 0) > (res2.get("beforeRetry") or 0),
+          "%r -> %r" % (res2.get("beforeRetry"), res2.get("afterRetry")))
 
     print("\n%s" % ("ALL PASS" if not fails else "FAILED: %s" % fails))
     sys.exit(1 if fails else 0)

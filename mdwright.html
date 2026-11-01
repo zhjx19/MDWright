@@ -4645,7 +4645,118 @@ function parseMarkdown(src, fx){
     if(aiPane.hidden){ aiSetCtx(); aiShow(); aiInput.focus(); } else { aiHide(); }
   });
   document.getElementById('aiClose').addEventListener('click',aiHide);
-  function aiRenderMsgs(){ aiMsgsEl.innerHTML=''; }
+  function aiMeta(){
+    document.getElementById('aiMeta').textContent = ai.msgs.length ? (ai.msgs.length+' 条') : '';
+  }
+  function aiScrollBottom(){ aiMsgsEl.scrollTop=aiMsgsEl.scrollHeight; }
+  function aiRenderMsgs(){
+    aiMsgsEl.innerHTML='';
+    for(var i=0;i<ai.msgs.length;i++){
+      var m=ai.msgs[i];
+      var d=document.createElement('div');
+      d.className='ai-msg '+(m.role==='user'?'user':(m.error?'err':'bot'));
+      var who=document.createElement('div'); who.className='ai-who';
+      who.textContent=(m.role==='user'?'你':'AI')+(m.error?' · 失败':'');
+      d.appendChild(who);
+      var b=document.createElement('div'); b.className='ai-body';
+      if(m.role==='assistant'&&!m.error){ b.innerHTML=parseMarkdown(m.content); }
+      else{ b.textContent=m.content; }
+      d.appendChild(b);
+      if(m.role==='assistant'){
+        var acts=document.createElement('div'); acts.className='ai-actions';
+        acts.setAttribute('data-idx',String(i));
+        var html='<button type="button" data-ai-do="copy">复制</button>';
+        if(m.error){
+          html+='<button type="button" data-ai-do="retry">重试</button>';
+        }else{
+          html+='<button type="button" data-ai-do="insert">插入</button>'
+              + '<button type="button" data-ai-do="replace"'
+              + (ai.ctx&&!m.replaced?'':' disabled')+'>替换</button>';
+        }
+        acts.innerHTML=html;
+        d.appendChild(acts);
+      }
+      aiMsgsEl.appendChild(d);
+    }
+    aiMeta(); aiScrollBottom();
+  }
+  /* 发给服务端的历史：去掉占位与错误气泡，末尾必然是 user */
+  function aiRequestMessages(){
+    var out=[];
+    for(var i=0;i<ai.msgs.length;i++){
+      var m=ai.msgs[i];
+      if(m.error||m.pending) continue;
+      out.push({role:m.role,content:m.content});
+    }
+    return out;
+  }
+  function aiSubmit(){
+    var v=aiInput.value;
+    if(!v.trim()) return;
+    aiInput.value='';
+    aiSend(v);
+  }
+  function aiSend(text){
+    text=String(text||'').trim();
+    if(!text||ai.busy) return;
+    ai.msgs.push({role:'user',content:text});
+    var pend={role:'assistant',content:'正在生成…（本地模型可能需要一些时间）',pending:true};
+    ai.msgs.push(pend);
+    ai.busy=true; aiSendBtn.disabled=true; aiRenderMsgs();
+    var body={messages:aiRequestMessages(),
+              context:{selection:ai.ctx?ai.ctx.text:null,
+                       document:ai.withDoc?getText():null}};
+    fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body)})
+      .then(function(r){return r.json();})
+      .then(function(j){
+        ai.busy=false; aiSendBtn.disabled=false;
+        var idx=ai.msgs.indexOf(pend);
+        if(idx<0) return;
+        if(j&&j.ok){
+          ai.msgs[idx]={role:'assistant',content:j.text};
+          if(j.truncated){ showToast('上下文过长，已自动截断'); }
+        }else{
+          ai.msgs[idx]={role:'assistant',
+                        content:'请求失败：'+((j&&j.error)||'未知错误'),error:true};
+        }
+        aiRenderMsgs();
+      })
+      .catch(function(e){
+        ai.busy=false; aiSendBtn.disabled=false;
+        var idx=ai.msgs.indexOf(pend);
+        if(idx>=0){
+          ai.msgs[idx]={role:'assistant',content:'请求失败：'+e.message,error:true};
+          aiRenderMsgs();
+        }
+      });
+  }
+  function aiRetry(idx){
+    var m=ai.msgs[idx];
+    if(!m||!m.error) return;
+    var prev=null;
+    for(var i=idx-1;i>=0;i--){ if(ai.msgs[i].role==='user'){ prev=ai.msgs[i]; break; } }
+    if(!prev) return;
+    ai.msgs.splice(idx,1);
+    var at=ai.msgs.lastIndexOf(prev);
+    if(at>=0) ai.msgs.splice(at,1);
+    aiRenderMsgs();
+    aiSend(prev.content);
+  }
+  aiSendBtn.addEventListener('click',aiSubmit);
+  aiInput.addEventListener('keydown',function(e){
+    if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){ e.preventDefault(); aiSubmit(); }
+  });
+  aiMsgsEl.addEventListener('click',function(e){
+    var t=e.target;
+    if(!t||!t.getAttribute) return;
+    var doAct=t.getAttribute('data-ai-do');
+    if(!doAct) return;
+    var wrap=t.closest('.ai-actions');
+    if(!wrap) return;
+    var idx=parseInt(wrap.getAttribute('data-idx'),10);
+    if(doAct==='retry') aiRetry(idx);
+  });
   document.getElementById('aiNew').addEventListener('click',function(){
     ai.msgs=[]; aiRenderMsgs(); aiInput.focus();
   });
