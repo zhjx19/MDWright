@@ -177,6 +177,52 @@
   #outline .lvl-3{padding-left:30px; font-size:12px;}
   #editorPane{flex:1 1 0; border-right:1px solid var(--border);}
   #previewPane{flex:1 1 0;}
+  /* ── AI 侧栏：第三栏（默认隐藏，可拖宽，宽度记 localStorage）── */
+  #aiPane{flex:0 0 var(--ai-w,360px); min-width:280px; max-width:640px;
+    border-left:1px solid var(--border); background:var(--panel);
+    display:flex; flex-direction:column; min-height:0;}
+  #aiPane[hidden]{display:none !important;}
+  #aiResizer{flex:0 0 5px; cursor:col-resize; background:transparent;}
+  #aiResizer[hidden]{display:none !important;}
+  #aiResizer:hover{background:var(--accent-soft);}
+  .ai-head{display:flex;align-items:center;gap:8px;padding:9px 12px;
+    border-bottom:1px solid var(--border);font-size:13px;}
+  .ai-head .ai-title{font-weight:600;}
+  .ai-head .ai-meta{margin-left:auto;color:var(--muted);font-size:11px;}
+  .ai-head button{background:none;border:none;color:var(--muted);cursor:pointer;
+    font-size:16px;line-height:1;padding:0 4px;}
+  .ai-head button:hover{color:var(--text);}
+  #aiCtxBox{padding:8px 12px;border-bottom:1px solid var(--border);
+    font-size:12px;color:var(--muted);}
+  #aiCtxBox[hidden]{display:none !important;}
+  #aiCtxText{margin:0 0 6px;padding:8px 10px;background:var(--code-bg);
+    border-radius:6px;font-family:var(--mono);font-size:12px;white-space:pre-wrap;
+    word-break:break-word;max-height:76px;overflow:hidden;cursor:pointer;}
+  #aiCtxText.open{max-height:240px;overflow:auto;}
+  #aiMsgs{flex:1 1 auto;overflow:auto;padding:12px;display:flex;
+    flex-direction:column;gap:10px;font-size:13.5px;line-height:1.6;}
+  .ai-msg .ai-who{font-size:11px;color:var(--muted);margin-bottom:3px;}
+  .ai-msg .ai-body{border-radius:8px;padding:8px 10px;word-break:break-word;}
+  .ai-msg.user .ai-body{background:var(--accent-soft);}
+  .ai-msg.bot .ai-body{background:var(--code-bg);}
+  .ai-msg.err .ai-body{border:1px solid #b4544a;color:#e08b82;}
+  .ai-actions{display:flex;gap:6px;margin-top:5px;}
+  .ai-actions button{background:none;border:1px solid var(--border);border-radius:5px;
+    color:var(--muted);font-size:11px;padding:2px 8px;cursor:pointer;}
+  .ai-actions button:hover{color:var(--text);border-color:var(--accent);}
+  .ai-actions button[disabled]{opacity:.4;cursor:default;}
+  .ai-chips{display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 8px;}
+  .ai-chips button{background:none;border:1px solid var(--border);border-radius:12px;
+    color:var(--muted);font-size:11.5px;padding:3px 10px;cursor:pointer;}
+  .ai-chips button:hover{color:var(--text);border-color:var(--accent);}
+  .ai-compose{display:flex;gap:6px;padding:8px 12px;border-top:1px solid var(--border);}
+  #aiInput{flex:1;resize:none;min-height:56px;max-height:140px;background:var(--editor-bg);
+    color:var(--text);border:1px solid var(--border);border-radius:8px;
+    padding:8px 10px;font-family:inherit;font-size:13px;}
+  #aiSend{padding:0 14px;border:none;border-radius:8px;background:#4a6cf7;
+    color:#fff;cursor:pointer;}
+  #aiSend[disabled]{opacity:.5;cursor:default;}
+  .ai-foot{padding:0 12px 8px;font-size:10.5px;color:var(--muted);}
   #editor{
     display:block; width:100%; height:100%; border:none; outline:none; resize:none;
     background:var(--editor-bg); color:var(--text);
@@ -486,6 +532,8 @@
     <div class="menu">
       <button class="tb-btn menu-label" data-menu="ai" aria-haspopup="true" aria-expanded="false">AI</button>
       <div class="menu-pop" role="menu">
+        <button class="menu-item" id="btnAISidebar" role="menuitem">AI 侧栏（Ctrl+Shift+A）</button>
+        <div class="menu-sep"></div>
         <button class="menu-item" id="btnPolishSel" role="menuitem">润色选中文字…</button>
         <button class="menu-item" id="btnRagPolish" role="menuitem">RAG 润色选中文字…</button>
         <div class="menu-sep"></div>
@@ -512,6 +560,34 @@
   <section id="previewPane" class="pane">
     <article id="preview" class="markdown-body"></article>
   </section>
+  <div id="aiResizer" hidden></div>
+  <aside id="aiPane" hidden aria-label="AI 侧栏">
+    <div class="ai-head">
+      <span class="ai-title">AI 助手</span>
+      <span class="ai-meta" id="aiMeta"></span>
+      <button id="aiNew" title="新对话">＋</button>
+      <button id="aiClose" title="关闭侧栏">×</button>
+    </div>
+    <div id="aiCtxBox" hidden>
+      <div id="aiCtxText" title="点击展开 / 收起"></div>
+      <label style="display:flex;gap:6px;align-items:center;cursor:pointer;">
+        <input type="checkbox" id="aiWithDoc"> 每次附带整篇文档
+      </label>
+    </div>
+    <div id="aiMsgs"></div>
+    <div class="ai-chips" id="aiChips">
+      <button type="button" data-ai-act="explain">解释</button>
+      <button type="button" data-ai-act="polish">润色</button>
+      <button type="button" data-ai-act="translate">翻译成英文</button>
+      <button type="button" data-ai-act="compress">压缩成要点</button>
+      <button type="button" data-ai-act="critique">找问题</button>
+    </div>
+    <div class="ai-compose">
+      <textarea id="aiInput" placeholder="问点什么…（Enter 发送，Shift+Enter 换行）"></textarea>
+      <button id="aiSend" type="button">发送</button>
+    </div>
+    <div class="ai-foot">内容只发给你配置的 AI 后端</div>
+  </aside>
 </main>
 <footer id="status">
   <span id="statFile" class="saved">默认文档</span>
@@ -748,6 +824,7 @@
 <div id="selTools" hidden>
   <button id="selNote" title="给选中片段加批注">备注</button>
   <button id="selPolish" title="AI 润色选中片段">润色</button>
+  <button id="selAI" title="选中文本向 AI 提问">问 AI</button>
   <button id="selRun" title="把选中的代码片段按 R / Python 在本机执行">▶ 运行</button>
   <button id="selRagPolish" title="基于 RAG 知识库检索增强润色（需 RAG 服务在线）" disabled>RAG润色</button>
 </div>
@@ -4507,6 +4584,75 @@ function parseMarkdown(src, fx){
     setSel(s,e);
     insertPlainText(nv);                   /* 覆盖选区（含内部批注 span 一并替换，观察器自动剪枝） */
     scheduleRender();scheduleSave();
+  });
+
+  /* ── AI 侧栏：选区上下文 + 骨架（入口 / 拖宽 / 开关）───── */
+  var aiPane=document.getElementById('aiPane');
+  var aiResizer=document.getElementById('aiResizer');
+  var aiMsgsEl=document.getElementById('aiMsgs');
+  var aiInput=document.getElementById('aiInput');
+  var aiSendBtn=document.getElementById('aiSend');
+  var ai = {msgs:[], ctx:null, busy:false, withDoc:false, lastDoc:null};
+
+  function aiShow(){ aiPane.hidden=false; aiResizer.hidden=false; }
+  function aiHide(){ aiPane.hidden=true; aiResizer.hidden=true; }
+  function aiToggle(){ if(aiPane.hidden) aiShow(); else aiHide(); }
+
+  /* 宽度：记住上次拖到的位置（280–640），默认 360 */
+  try{
+    var _aiw=parseInt(localStorage.getItem('md-ai-w'),10);
+    if(_aiw>=280&&_aiw<=640) document.documentElement.style.setProperty('--ai-w',_aiw+'px');
+  }catch(e){}
+  (function(){
+    var drag=false;
+    aiResizer.addEventListener('mousedown',function(e){
+      drag=true; e.preventDefault(); document.body.style.userSelect='none';
+    });
+    document.addEventListener('mousemove',function(e){
+      if(!drag) return;
+      var w=Math.max(280,Math.min(640,window.innerWidth-e.clientX));
+      document.documentElement.style.setProperty('--ai-w',w+'px');
+    });
+    document.addEventListener('mouseup',function(){
+      if(!drag) return;
+      drag=false; document.body.style.userSelect='';
+      var w=parseInt(getComputedStyle(aiPane).flexBasis,10)||360;
+      try{ localStorage.setItem('md-ai-w',String(w)); }catch(e){}
+    });
+  })();
+
+  function aiSetCtx(){
+    var r=getSel();
+    if(r.e<=r.s){ ai.ctx=null; }
+    else{ ai.ctx={s:r.s,e:r.e,text:getText().substring(r.s,r.e)}; }
+    aiRenderCtx();
+  }
+  function aiRenderCtx(){
+    var box=document.getElementById('aiCtxBox');
+    if(!ai.ctx){ box.hidden=true; document.getElementById('aiCtxText').textContent=''; return; }
+    box.hidden=false;
+    var el=document.getElementById('aiCtxText');
+    el.textContent=ai.ctx.text; el.classList.remove('open');
+  }
+  document.getElementById('aiCtxText').addEventListener('click',function(){ this.classList.toggle('open'); });
+  document.getElementById('selAI').addEventListener('click',function(){
+    selTools.hidden=true;
+    aiSetCtx();
+    aiShow();
+    aiInput.focus();
+  });
+  document.getElementById('btnAISidebar').addEventListener('click',function(){
+    if(aiPane.hidden){ aiSetCtx(); aiShow(); aiInput.focus(); } else { aiHide(); }
+  });
+  document.getElementById('aiClose').addEventListener('click',aiHide);
+  function aiRenderMsgs(){ aiMsgsEl.innerHTML=''; }
+  document.getElementById('aiNew').addEventListener('click',function(){
+    ai.msgs=[]; aiRenderMsgs(); aiInput.focus();
+  });
+  document.addEventListener('keydown',function(e){
+    if((e.ctrlKey||e.metaKey)&&e.shiftKey&&(e.key==='a'||e.key==='A')){
+      e.preventDefault(); aiToggle();
+    }
   });
 
   /* ── LLM 设置 Modal ────────────────────────────────── */

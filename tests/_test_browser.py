@@ -123,7 +123,8 @@ class Browser(object):
             r = subprocess.run(["node", os.path.join(_ROOT, "tests", "_cdp.js"),
                                 str(self.port), url, path],
                                capture_output=True, text=True,
-                               encoding="utf-8", errors="replace")
+                               encoding="utf-8", errors="replace",
+                               timeout=180)
         finally:
             if os.path.exists(path):
                 os.remove(path)
