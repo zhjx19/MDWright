@@ -105,6 +105,55 @@ def arp_lines():
     return head, body
 
 
+ASSOC_TEST_KEY = r"Software\MDWrightAssocTest"
+
+
+def read_default(key):
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key) as k:
+            return winreg.QueryValueEx(k, "")[0]
+    except OSError:
+        return None
+
+
+def drop_assoc_key():
+    try:
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, ASSOC_TEST_KEY)
+    except OSError:
+        pass
+
+
+def restore_ps_line():
+    """抽出 uninstall.cmd 里还原 .md 默认关联的那条 PowerShell（不改写逻辑）。"""
+    with open(os.path.join(ROOT, "uninstall.cmd"), encoding="utf-8") as f:
+        lines = f.read().splitlines()
+    for ln in lines:
+        if "Get-ItemProperty" in ln and ".mdinstall.bak" in ln:
+            return ln.strip()
+    return ""
+
+
+def run_restore(tmp, bak_text, current):
+    """真跑 uninstall.cmd 的还原命令（键路径换成测试键）。"""
+    ps = restore_ps_line().replace(
+        r"Software\Classes\.md", r"Software\MDWrightAssocTest")
+    bak = os.path.join(tmp, ".mdinstall.bak")
+    if bak_text is None:
+        if os.path.exists(bak):
+            os.remove(bak)
+    else:
+        with open(bak, "w", encoding="utf-8") as f:
+            f.write(bak_text)
+    drop_assoc_key()
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, ASSOC_TEST_KEY) as k:
+        if current is not None:
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, current)
+    run_batch(tmp, 'set "__MDWHERE=%s"\r\n%s\r\n' % (tmp, ps), "restore.cmd")
+    got = read_default(ASSOC_TEST_KEY)
+    drop_assoc_key()
+    return got
+
+
 def run_batch(tmp, text, name):
     path = os.path.join(tmp, name)
     with open(path, "wb") as f:
@@ -151,10 +200,32 @@ def main():
               re.search(r'SetValue\("%s"' % field, setup) is not None)
     check("安装程序通知外壳刷新关联", "SHChangeNotify" in setup)
     check("安装程序重建图标缓存", "ie4uinit" in setup)
+    # v3.4.2 起：不再清「全系统」图标缓存（-ClearIconCache 会让所有程序图标重绘）
+    check("安装程序不清全系统图标缓存", "-ClearIconCache" not in setup)
 
     with open(os.path.join(ROOT, "install.cmd"), encoding="utf-8") as f:
         icmd_text = f.read()
     check("install.cmd 重建图标缓存", "ie4uinit" in icmd_text)
+    check("install.cmd 不再清全系统图标缓存", "-ClearIconCache" not in icmd_text)
+    # 默认不改全系统右键样式：只有显式 legacy 参数才写那个 CLSID
+    check("install.cmd 的 legacy 菜单是显式选项",
+          'if defined LEGACY' in icmd_text and "install.cmd legacy" in icmd_text)
+    check("install.cmd 备份 .smd 原关联", ".smdinstall.bak" in icmd_text)
+
+    with open(os.path.join(ROOT, "uninstall.cmd"), encoding="utf-8") as f:
+        ucmd_text = f.read()
+    check("uninstall 停服务包含 _md_run.py", "_md_run.py" in ucmd_text)
+    check("uninstall 停服务限定进程名", "$_.Name" in ucmd_text)
+    check("uninstall 清 OpenWithProgids 条目", "OpenWithProgids" in ucmd_text)
+    check("uninstall 按条件还原默认关联", "MDWright.md" in ucmd_text
+          and ".mdinstall.bak" in ucmd_text and "smdinstall.bak" in ucmd_text)
+
+    with open(os.path.join(ROOT, "md_app.pyw"), encoding="utf-8") as f:
+        app_src = f.read()
+    check("md_app 起不来时回退浏览器", "_open_browser(" in app_src
+          and "embedded window failed" in app_src)
+    check("md_app 预导入 webview", "_preload" in app_src)
+    check("md_app 支持「启动器已起服务」模式", "MDW_LAUNCH_SPAWNED" in app_src)
 
     head, body = arp_lines()
     check("install.cmd 里有卸载条目命令行", len(body) >= 4, "抽到 %d 行" % len(body))
@@ -197,6 +268,22 @@ def main():
         finally:
             drop_test_key()
             shutil.rmtree(tmp, ignore_errors=True)
+
+    # ---- 卸载还原关联：只在「当前默认仍指向本程序」时还原备份 ----
+    tmp = tempfile.mkdtemp(prefix="mdassoc-")
+    try:
+        check("能抽出还原命令", bool(restore_ps_line()))
+        got = run_restore(tmp, "Typora.md", "MDWright.md")
+        check("默认仍指向本程序 → 还原备份", got == "Typora.md", repr(got))
+        got = run_restore(tmp, "Typora.md", "Other.md")
+        check("用户后来改过 → 保留用户选择", got == "Other.md", repr(got))
+        got = run_restore(tmp, None, "MDWright.md")
+        check("没有备份 → 清掉默认值", got is None, repr(got))
+        got = run_restore(tmp, "MDWright.md", "MDWright.md")
+        check("备份也是本程序 → 清掉默认值", got is None, repr(got))
+    finally:
+        drop_assoc_key()
+        shutil.rmtree(tmp, ignore_errors=True)
 
     print("\n%s" % ("ALL PASS" if not fails else "FAILED: %s" % fails))
     sys.exit(1 if fails else 0)

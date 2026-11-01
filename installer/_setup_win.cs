@@ -148,20 +148,18 @@ namespace MDWrightSetup
         static extern int AssocQueryStringW(uint flags, int str, string assoc, string extra,
                                             System.Text.StringBuilder outBuf, ref uint outLen);
 
-        // 关联改完必须叫一声，否则资源管理器还用旧图标与旧默认程序，看着像「没关联上」
+        // 关联改完叫一声，让资源管理器重新读默认程序与扩展名图标。
+        // 只发一次通知 + ie4uinit -show；清全系统图标缓存的那个参数代价太大，
+        // 所有程序的图标都要重绘一遍，与收益不成比例（v3.3.4 起不再使用）。
         static void NotifyShell()
         {
             try { SHChangeNotify(0x08000000 /*SHCNE_ASSOCCHANGED*/, 0, IntPtr.Zero, IntPtr.Zero); }
             catch { }
-            // 光通知还不够：扩展名图标来自图标缓存，不重建的话双击已生效、图标仍是旧的，
-            // 用户得手动「打开方式 → 始终」才刷新（v3.3.3 实测如此）。
             string ie4 = Path.Combine(Environment.SystemDirectory, "ie4uinit.exe");
             if (File.Exists(ie4))
             {
-                foreach (var a in new[] { "-show", "-ClearIconCache" })
-                    try { RunHidden(ie4, a, null); } catch { }
+                try { RunHidden(ie4, "-show", null); } catch { }
             }
-            try { SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero); } catch { }
         }
 
         static string AssocExe(string ext)

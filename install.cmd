@@ -6,6 +6,16 @@ setlocal EnableExtensions
 set "HERE=%~dp0"
 if "%HERE:~-1%"=="\" set "HERE=%HERE:~0,-1%"
 
+REM Args: "nopause" = no final pause (used by the setup exe); "legacy" =
+REM opt in to the classic Windows 11 context menu (off by default: that switch
+REM restyles EVERY right-click menu on the machine, not just .md).
+set "LEGACY="
+set "NOPAUSE="
+if not "%~1"=="" for %%a in (%*) do (
+    if /i "%%a"=="legacy" set "LEGACY=1"
+    if /i "%%a"=="nopause" set "NOPAUSE=1"
+)
+
 set "PYW=%HERE%\python\pythonw.exe"
 if not exist "%PYW%" (
   echo [ERROR] Portable python not found:
@@ -79,6 +89,9 @@ reg add "HKCU\Software\Classes\.md\OpenWithProgids" /v MDWright.md /t REG_SZ /d 
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.md\OpenWithProgids" /v MDWright.md /t REG_SZ /d "" /f >nul 2>&1
 
 REM ---- Self-contained Markdown (.smd) file association ----
+REM Back up the previous .smd default so uninstall can put it back (same
+REM contract as .md above: only restored if it still points at us).
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -Command "$k='HKCU:\Software\Classes\.smd'; $v=Get-ItemProperty -Path $k -Name '(default)' -ErrorAction SilentlyContinue; if($v){($v.'(default)')}else{''}" > "%HERE%\.smdinstall.bak"
 reg add "HKCU\Software\Classes\.smd" /ve /t REG_SZ /d "MDWright.smd" /f
 reg add "HKCU\Software\Classes\.smd\shell\MDWright" /ve /t REG_SZ /d "Open with MDWright" /f
 reg add "HKCU\Software\Classes\.smd\shell\MDWright\command" /ve /t REG_SZ /d "%HERE%\MDWright.exe \"%%1\"" /f
@@ -92,13 +105,14 @@ echo [3/5] Create Desktop / Start Menu shortcuts...
 "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%HERE%\_mklnk.ps1" -Here "%HERE%"
 
 echo [4/5] Windows 11 context menu visibility...
-if /i "%~1"=="nolegacy" (
-  echo   Legacy menu NOT enabled. The item will appear under "Show more options".
-) else (
+if defined LEGACY (
   reg add "HKCU\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32" /ve /t REG_SZ /d "" /f
   echo   Legacy context menu enabled. The item shows directly on right-click.
-  echo   Note: this switches all right-click menus to classic style.
+  echo   Note: this switches ALL right-click menus to classic style system-wide.
   echo   Run uninstall.cmd to revert.
+) else (
+  echo   Legacy menu NOT enabled: the item appears under "Show more options".
+  echo   Run "install.cmd legacy" if you prefer the classic menu everywhere.
 )
 
 echo [5/5] Register "Apps & features" uninstall entry (HKCU)...
@@ -118,5 +132,5 @@ echo Tray icon lives in the notification area: new blank doc / exit.
 echo Uninstall: Settings - Apps - "墨匠 MDWright".
 REM pause hangs forever when install.cmd is invoked silently by the setup
 REM exe (no interactive console). The setup passes "nopause" to skip it.
-if /i not "%~1"=="nopause" pause
+if not defined NOPAUSE pause
 endlocal
