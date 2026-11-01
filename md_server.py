@@ -253,6 +253,60 @@ def _llm_from_request(obj):
 
 _LLM_ERR = _llm.LLMError if _llm is not None else RuntimeError
 
+# ---- AI 侧栏（/api/chat）的预算与提示词 ----
+CHAT_BUDGET = 32000
+CHAT_MAX_DOC = 30000
+CHAT_MAX_ONE = 20000
+_CHAT_SYS = ("你是文档写作与阅读助手。用户在编辑一篇 Markdown 文档，会就选中的文字提问"
+             "或要求改写。请围绕给定文本回答，使用 Markdown；不确定就说不确定，"
+             "不要编造原文没有的事实；除非用户要求，不要重复原文。")
+
+
+def _chat_prepare(obj):
+    """把 /api/chat 请求体收敛成 (消息列表, 选区, 全文, 是否截断)。
+
+    只接受 user/assistant 与已知字段；末尾的 assistant 丢掉（重试留下的半截
+    不能当问题发出去）；超预算先丢最早的一问一答，再截全文，最后截选区——
+    最后一轮问题永远保留。
+    """
+    ctx = obj.get("context") if isinstance(obj.get("context"), dict) else {}
+    sel_raw = str(ctx.get("selection") or "")
+    doc_raw = str(ctx.get("document") or "")
+    truncated = len(sel_raw) > CHAT_MAX_DOC or len(doc_raw) > CHAT_MAX_DOC
+    sel = sel_raw[:CHAT_MAX_DOC]
+    doc = doc_raw[:CHAT_MAX_DOC]
+    msgs = []
+    for m in (obj.get("messages") or []):
+        if not isinstance(m, dict) or m.get("role") not in ("user", "assistant"):
+            continue
+        c = str(m.get("content") or "")
+        if c.strip():
+            msgs.append({"role": m["role"], "content": c})
+    while msgs and msgs[-1]["role"] != "user":
+        msgs.pop()
+    if msgs and len(msgs[-1]["content"]) > CHAT_MAX_ONE:
+        msgs[-1]["content"] = msgs[-1]["content"][:CHAT_MAX_ONE]
+        truncated = True
+
+    def total():
+        return sum(len(m["content"]) for m in msgs) + len(sel) + len(doc)
+
+    while len(msgs) > 1 and total() > CHAT_BUDGET:
+        if len(msgs) >= 2 and msgs[0]["role"] == "user":
+            msgs = msgs[2:]
+        else:
+            msgs = msgs[1:]
+        truncated = True
+    over = total() - CHAT_BUDGET
+    if over > 0 and doc:
+        cut = min(len(doc), over)
+        doc, over = doc[:-cut], over - cut
+        truncated = True
+    if over > 0 and sel:
+        sel = sel[:-min(len(sel), over)]
+        truncated = True
+    return msgs, sel, doc, truncated
+
 
 # ---------------------------------------------------------------------------
 # RAG（rag-assistant 检索增强）：只检索不生成 —— /api/kb/query 拿上下文，
@@ -1560,6 +1614,54 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except _LLM_ERR as e:
                 self._send(200, json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False),
                            "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(500, json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
+            return
+        # ---- AI 侧栏：多轮对话（选区 / 全文作为 system 上下文）----
+        if u.path == "/api/chat":
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                obj = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+            except Exception as e:
+                self._send(200, json.dumps({"ok": False, "error": "请求体解析失败: %s" % e},
+                                           ensure_ascii=False), "application/json; charset=utf-8")
+                return
+            try:
+                msgs, sel, doc, truncated = _chat_prepare(obj)
+                if not msgs:
+                    self._send(200, json.dumps({"ok": False, "error": "没有可发送的消息"},
+                                               ensure_ascii=False), "application/json; charset=utf-8")
+                    return
+                client = _llm_from_request(obj)
+                if client.backend in ("ollama", "openai") and not client.model:
+                    self._send(200, json.dumps({"ok": False,
+                                                "error": "该后端需先在 AI 设置中选择模型"},
+                                               ensure_ascii=False), "application/json; charset=utf-8")
+                    return
+                sysp = _CHAT_SYS
+                ws_flag = "off"
+                ws_cfg = _llm_config_from_request(obj).get("web_search") or {}
+                if ws_cfg.get("enabled"):
+                    if _ws_mod is None:
+                        ws_flag = "degraded"
+                    else:
+                        sr = _ws_mod.WebSearch(ws_cfg).search(msgs[-1]["content"][:200])
+                        if sr.get("success") and sr.get("results"):
+                            ws_flag = "ok"
+                            sysp += "\n\n【联网资料】\n" + _ws_mod.format_results(sr["results"])
+                        else:
+                            ws_flag = "degraded"
+                if sel:
+                    sysp += "\n\n【选中文本】\n" + sel
+                if doc:
+                    sysp += "\n\n【整篇文档】\n" + doc
+                text = client.chat([{"role": "system", "content": sysp}] + msgs)
+                self._send(200, json.dumps({"ok": True, "text": text,
+                                            "web_search": ws_flag, "truncated": truncated},
+                                           ensure_ascii=False), "application/json; charset=utf-8")
+            except _LLM_ERR as e:
+                self._send(200, json.dumps({"ok": False, "error": str(e)},
+                                           ensure_ascii=False), "application/json; charset=utf-8")
             except Exception as e:
                 self._send(500, json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
             return
