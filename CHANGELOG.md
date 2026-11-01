@@ -11,6 +11,28 @@
 
 ---
 
+## v3.6.0（2026-11-01）
+
+**本次改动：Word 里的图表改成矢量（SVG），放大不糊；旧版 Word 与其它阅读器仍回退 PNG**
+
+**新增**
+
+- **Word 图表矢量化**：导出 Word 时，前端除 2 倍 PNG 外再交一份 SVG——序列化前把计算样式内联到每个节点，因为 Word 不保证认 `<style>` 里的 CSS 选择器（mermaid 的配色、描边、箭头标记全靠它）。后端在 pandoc 生成 docx 之后，按 PNG 字节的 sha256 找到对应媒体，把 SVG 作为 `<asvg:svgBlip>` 扩展挂上去，PNG 继续保留作回退。
+- **兼容性**：Word 2016+ 显示矢量（mermaid 节点/连线/箭头、Graphviz 节点与边都清晰）；旧版 Word、LibreOffice 等不认 `svgBlip` 的阅读器自动用 PNG，不会出现空白图。
+- **不依赖 pandoc 的 SVG 支持**：pandoc 各版本对 SVG→docx 行为不一（3.8 会嵌 SVG 但缺 rsvg-convert 时不留 PNG 回退，2.x 直接不支持），所以后处理只改 `document.xml`、`word/_rels/document.xml.rels` 与 `[Content_Types].xml`，pandoc 仍按位图处理。
+- **测试**：`_test_diagram_docx.py` 断言 SVG 部件、关系、内容类型、PNG 回退与「没给 SVG 就不注入」；`_test_diagram_export_ui.py` 断言请求体带 SVG、`xmlns` 齐全、样式已内联、无 `foreignObject`。
+
+**验证**
+
+- 真机 Word 365 打开导出的 docx → 导出 PDF → 逐页看图：mermaid（中文标签、菱形判断、箭头）与 Graphviz 都是矢量，线条与文字清晰；PNG 仍在包内。
+- 样张：`_setup_out/sample-vector.docx`（本地临时产物，不入库）。
+
+**说明**
+
+- docx 体积会略增（同一张图同时带 SVG 与 PNG）；单张图通常增加几十 KB。
+
+---
+
 ## v3.5.0（2026-11-01）
 
 **本次改动：选中文字就能在右侧连续追问 AI；启动快 0.6 秒；系统集成去掉三处系统级副作用**

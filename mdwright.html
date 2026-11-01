@@ -2827,6 +2827,33 @@ function parseMarkdown(src, fx){
     if(all||Date.now()>deadline){cb();return;}
     setTimeout(function(){waitDiagramsSettled(cb,deadline);},100);
   }
+  /* 把计算样式内联到克隆的 SVG 上：Word 的 SVG 渲染器不保证支持 <style> 里的
+     CSS 选择器（mermaid 全靠 class 着色），不内联会出现黑块/丢描边。只搬影响
+     外观的一小撮属性，避免整棵树的样式表把体积撑大。 */
+  function inlineSvgStyles(srcRoot, cloneRoot){
+    var src=srcRoot.querySelectorAll('*');
+    var dst=cloneRoot.querySelectorAll('*');
+    var PROPS=['fill','fill-opacity','fill-rule','stroke','stroke-width',
+               'stroke-opacity','stroke-dasharray','stroke-linecap','stroke-linejoin',
+               'opacity','font-family','font-size','font-weight','font-style',
+               'text-anchor','dominant-baseline','color','paint-order','visibility',
+               'marker-start','marker-mid','marker-end'];
+    var n=Math.min(src.length,dst.length);
+    for(var i=0;i<n;i++){
+      var cs=null;
+      try{ cs=window.getComputedStyle(src[i]); }catch(e){ continue; }
+      if(!cs) continue;
+      var s='';
+      for(var k=0;k<PROPS.length;k++){
+        var v=cs.getPropertyValue(PROPS[k]);
+        if(v) s+=PROPS[k]+':'+v+';';
+      }
+      if(s){
+        var old=dst[i].getAttribute('style')||'';
+        dst[i].setAttribute('style',old+s);
+      }
+    }
+  }
   function rasterizeDiagram(el,cb){
     var svg=el.querySelector('svg');
     if(!svg){cb(null,0);return;}
@@ -2844,7 +2871,9 @@ function parseMarkdown(src, fx){
     if(vb&&vb.width&&!clone.getAttribute('viewBox')){
       clone.setAttribute('viewBox',vb.x+' '+vb.y+' '+vb.width+' '+vb.height);
     }
-    var blob=new Blob([new XMLSerializer().serializeToString(clone)],
+    inlineSvgStyles(svg, clone);        /* 先内联样式，再同时用于栅格化与矢量子图 */
+    var svgText=new XMLSerializer().serializeToString(clone);
+    var blob=new Blob([svgText],
                       {type:'image/svg+xml;charset=utf-8'});
     var url=URL.createObjectURL(blob);
     var img=new Image();
@@ -2863,7 +2892,7 @@ function parseMarkdown(src, fx){
       }catch(e){ b64=null; }        /* 画布被跨源图污染：这张不导 */
       URL.revokeObjectURL(url);
       var host=preview.clientWidth||w;
-      cb(b64, Math.max(10,Math.min(100,Math.round(w/host*100))));
+      cb(b64, Math.max(10,Math.min(100,Math.round(w/host*100))), svgText);
     };
     img.onerror=function(){URL.revokeObjectURL(url);cb(null,0);};
     img.src=url;
@@ -2880,11 +2909,11 @@ function parseMarkdown(src, fx){
         if(i>=els.length){cb(out);return;}
         var el=els[i++];
         if(!el.querySelector('svg')){next();return;}
-        rasterizeDiagram(el,function(png,width){
+        rasterizeDiagram(el,function(png,width,svgText){
           if(png){
             out.push({lang:el.getAttribute('data-lang')||'',
                       code:decodeURIComponent(el.getAttribute('data-code')||''),
-                      png:png, width:width});
+                      png:png, svg:svgText||'', width:width});
           }
           next();
         });

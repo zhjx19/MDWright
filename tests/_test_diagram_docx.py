@@ -104,8 +104,12 @@ def main():
 
     with open(png, "rb") as f:
         b64 = base64.b64encode(f.read()).decode("ascii")
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="60" '
+           'viewBox="0 0 120 60"><rect width="120" height="60" fill="#eef"/>'
+           '<text x="10" y="35" font-size="16" fill="#333">矢量测试</text></svg>')
     md = "正文\n\n" + MERMAID + "\n" + DOT + "\n"
-    diagrams = [{"lang": "mermaid", "code": "graph TD\nA-->B", "png": b64, "width": 60}]
+    diagrams = [{"lang": "mermaid", "code": "graph TD\nA-->B", "png": b64,
+                 "svg": svg, "width": 60}]
     tmp = tempfile.mkdtemp(prefix="mddiag-")
     out_docx = os.path.join(tmp, "t.docx")
     stats = {}
@@ -118,14 +122,34 @@ def main():
         z = zipfile.ZipFile(out_docx)
         media = [n for n in z.namelist() if n.startswith("word/media/")]
         body = z.read("word/document.xml").decode("utf-8", "replace")
+        rels = z.read("word/_rels/document.xml.rels").decode("utf-8", "replace")
+        ctypes = z.read("[Content_Types].xml").decode("utf-8", "replace")
         z.close()
-        check("图片进 word/media", len(media) >= 1, str(media))
+        check("图片进 word/media", any(n.endswith(".png") for n in media), str(media))
+        check("SVG 子图进 word/media", any(n.endswith(".svg") for n in media), str(media))
         check("正文里有图", "<w:drawing>" in body)
+        check("PNG 仍作 fallback", any(n.endswith(".png") for n in media))
+        check("挂在 svgBlip 上", "svgBlip" in body and "asvg" in body, body[:200])
+        check("关系表登记了 SVG", ".svg" in rels, rels[-300:])
+        check("内容类型放行 svg", "image/svg+xml" in ctypes, ctypes[:200])
         check("mermaid 源码没残留", "graph TD" not in body)
         check("没有多出题注（alt 留空）", "图表" not in body, body[:200])
         check("未渲染的围栏仍是代码块", "digraph" in body, body[:200])
         check("回报嵌入了 1 张", stats.get("diagrams") == 1, str(stats))
+        check("回报补了 1 张矢量", stats.get("svgDiagrams") == 1, str(stats))
         check("源文里共 2 张图表", md_pandoc.count_diagram_fences(md) == 2)
+
+        # 没有 SVG 时：只嵌 PNG，不塞空的 svg 部件
+        out2 = os.path.join(tmp, "t2.docx")
+        md_pandoc.export_docx(md, None, out2, pandoc,
+                              diagrams=[{"lang": "mermaid", "code": "graph TD\nA-->B",
+                                         "png": b64, "width": 60}], stats={})
+        z2 = zipfile.ZipFile(out2)
+        media2 = [n for n in z2.namelist() if n.startswith("word/media/")]
+        body2 = z2.read("word/document.xml").decode("utf-8", "replace")
+        z2.close()
+        check("没给 SVG 时不补矢量", not any(n.endswith(".svg") for n in media2), str(media2))
+        check("没给 SVG 时没有 svgBlip", "svgBlip" not in body2)
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)

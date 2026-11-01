@@ -31,7 +31,7 @@
 | 图表 | Mermaid（流程/时序/状态/类）、Graphviz `dot`、WaveDrom 时序图、Vega-Lite 数据图 |
 | 排版 | 逐元素字体/字号、段落缩进、对齐、表格样式、页面纸张与页边距，全部可视化配置 |
 | 分页导出 | Paged.js 组版，纸张、页边距、页码、自动目录、目录独占一页；「导出 → 打印（分页 HTML）」生成成品并交给系统浏览器，浏览器里打印或存为 PDF |
-| Word 导出 | 经 pandoc 转 `.docx`，保留标题层级与公式；标题/正文的中文字体与西文字体可选（默认黑体 / 宋体 / Times New Roman），代码块固定等宽 |
+| Word 导出 | 经 pandoc 转 `.docx`，保留标题层级与公式；图表围栏以**矢量 SVG** 嵌入并保留 PNG 回退；标题/正文的中文字体与西文字体可选（默认黑体 / 宋体 / Times New Roman），代码块固定等宽 |
 | PDF 直出 | 调本机 Chromium 内核浏览器（Edge / Chrome）无头打印，边距与页码按当前设置 |
 | 批注 | 选区批注，随文档保存，可逐条跳转 |
 | 右键菜单 | 撤销/恢复 · 剪切/复制/粘贴 · 标题 / 强调 / 块 / 插入（二级菜单）· 运行选中代码 |
@@ -67,7 +67,7 @@
 |---|---|
 | Markdown 方言 | 脚注、Callout 五型（NOTE/TIP/IMPORTANT/WARNING/CAUTION）、`==高亮==`、`^{}` / `_{}` 上下标（与旧的 `^x^` / `~x~` 并存）、定义列表、YAML front matter；预览 / 独立 HTML / 分页 PDF / Word 四条链路各实现一遍并对齐口径 |
 | 代码高亮 | highlight.js 懒加载（仅按围栏语言着色，主题跟随明暗）+ 代码块复制按钮（导出时剥离，不进成品） |
-| Word 导出 | pandoc 转换、公式 LaTeX→OMML（Word 里可继续编辑）、导出后注入 `tblBorders` 做三线表、运行输出按「语言 + 代码原文」匹配带入；图表围栏由预览栅格化成 PNG 嵌入（渲染失败的保持代码块），宽度取围栏 `{N}` 或预览显示比例；导出后可按标题中文 / 正文中文 / 西文三档设字体（默认黑体 / 宋体 / Times New Roman，代码块保持 Consolas 等宽） |
+| Word 导出 | pandoc 转换、公式 LaTeX→OMML（Word 里可继续编辑）、导出后注入 `tblBorders` 做三线表、运行输出按「语言 + 代码原文」匹配带入；图表围栏在 pandoc 生成后补一份内联样式的 SVG（`svgBlip`，PNG 留作旧版回退；渲染失败的保持代码块），宽度取围栏 `{N}` 或预览显示比例；导出后可按标题中文 / 正文中文 / 西文三档设字体（默认黑体 / 宋体 / Times New Roman，代码块保持 Consolas 等宽） |
 | PDF 直出 | 本机 Edge / Chrome 无头打印，单会话 CDP 且等分页完成再 `printToPDF`，不留半截文件 |
 | 可执行代码块 | R（Rscript、控制台语义、ggplot 就地出图）、Python（随包内置 3.11.9 或指定本机解释器，matplotlib 图自动落 PNG）、同文档常驻会话变量跨块、结果落盘 `runs/` 并进 Word |
 | 外部工具 | pandoc / 浏览器 / Rscript / Python 的探测与手工指定路径，缺失即置灰并说明原因 |

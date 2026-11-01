@@ -11,6 +11,7 @@
 实测 `<m:oMath>` / `<m:sSup>` / `<m:f>` 齐全），不做图像化或文本化降级。
 """
 import base64
+import hashlib
 import os
 import re
 import shutil
@@ -569,6 +570,108 @@ def _workdir_for(md_path):
     return os.path.dirname(os.path.abspath(md_path))
 
 
+_SVG_EXT_URI = "{96DAC541-7B7A-43D3-8B79-37D633B846F1}"
+_ASVG_NS = "http://schemas.microsoft.com/office/drawing/2016/SVG/main"
+
+
+def _inject_svg_diagrams(docx_path, png_sha_to_svg):
+    """给图表 PNG 补一份 SVG 子图：Word 2016+ 用矢量显示，旧版/其它阅读器回退 PNG。
+
+    pandoc 对 SVG→docx 的支持随版本变化（3.8 会嵌 SVG，但缺 rsvg-convert 时不留
+    PNG fallback；2.x 直接不支持）。这里不依赖它：先让 pandoc 正常嵌位图，再在
+    生成好的 docx 上做后处理，把同一张图的 SVG 作为 `<asvg:svgBlip>` 扩展挂上去，
+    PNG 继续留作 fallback。按 PNG 字节的 sha256 匹配，不依赖 pandoc 起的媒体名。
+    """
+    if not png_sha_to_svg:
+        return 0
+    with zipfile.ZipFile(docx_path) as z:
+        items = {n: z.read(n) for n in z.namelist()}
+    doc = items.get("word/document.xml")
+    rels = items.get("word/_rels/document.xml.rels")
+    ct = items.get("[Content_Types].xml")
+    if doc is None or rels is None or ct is None:
+        return 0
+    doc_s = doc.decode("utf-8")
+    rels_s = rels.decode("utf-8")
+    ct_s = ct.decode("utf-8")
+
+    # 关系表：目标（media/xxx.png）→ rId；pandoc 的图片关系都指向 media/
+    rel_by_target = {}
+    for tag in re.findall(r"<Relationship\b[^>]*/>", rels_s):
+        mid = re.search(r'\bId="([^"]+)"', tag)
+        mtarget = re.search(r'\bTarget="([^"]+)"', tag)
+        if mid and mtarget:
+            rel_by_target[mtarget.group(1)] = mid.group(1)
+
+    injected = 0
+    new_rels = []
+    used_ids = set(rel_by_target.values())
+    for name in sorted(items.keys()):
+        if not name.startswith("word/media/") or not name.lower().endswith(".png"):
+            continue
+        svg = png_sha_to_svg.get(hashlib.sha256(items[name]).digest())
+        if not svg:
+            continue
+        target = name[len("word/"):]                 # media/rId9.png
+        png_rid = rel_by_target.get(target)
+        if not png_rid:
+            continue
+        svg_name = "word/media/diagram-svg-%02d.svg" % injected
+        bump = 0
+        while svg_name in items:
+            bump += 1
+            svg_name = "word/media/diagram-svg-%02d-%d.svg" % (injected, bump)
+        items[svg_name] = svg
+        svg_rid = "rIdSvg%d" % (injected + 1)
+        while svg_rid in used_ids:
+            svg_rid += "x"
+        used_ids.add(svg_rid)
+        new_rels.append(
+            '<Relationship Id="%s" Type="http://schemas.openxmlformats.org/'
+            'officeDocument/2006/relationships/image" Target="%s"/>'
+            % (svg_rid, svg_name[len("word/"):]))
+
+        pat = re.compile(
+            r'(<a:blip\b[^>]*\br:embed="%s"[^>]*?)(/>|>(.*?)</a:blip>)'
+            % re.escape(png_rid), re.S)
+        ext = ('<a:ext uri="%s"><asvg:svgBlip xmlns:asvg="%s" r:embed="%s"/></a:ext>'
+               % (_SVG_EXT_URI, _ASVG_NS, svg_rid))
+
+        def _sub(m, ext=ext):
+            if m.group(2) == "/>":
+                return (m.group(1) + "><a:extLst>" + ext +
+                        "</a:extLst></a:blip>")
+            inner = m.group(3) or ""
+            if "<a:extLst>" in inner:
+                inner = inner.replace("</a:extLst>", ext + "</a:extLst>", 1)
+            else:
+                inner += "<a:extLst>" + ext + "</a:extLst>"
+            return m.group(1) + ">" + inner + "</a:blip>"
+
+        new_doc, count = pat.subn(_sub, doc_s)
+        if count:
+            doc_s = new_doc
+            injected += 1
+    if not injected:
+        return 0
+    if 'Extension="svg"' not in ct_s:
+        ct_s = ct_s.replace(
+            "</Types>",
+            '<Default Extension="svg" ContentType="image/svg+xml"/></Types>', 1)
+    rels_s = rels_s.replace("</Relationships>",
+                            "".join(new_rels) + "</Relationships>", 1)
+    items["word/document.xml"] = doc_s.encode("utf-8")
+    items["word/_rels/document.xml.rels"] = rels_s.encode("utf-8")
+    items["[Content_Types].xml"] = ct_s.encode("utf-8")
+
+    tmp = docx_path + ".svg.tmp"
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+        for n, data in items.items():
+            z.writestr(n, data)
+    os.replace(tmp, docx_path)
+    return injected
+
+
 def export_docx(md_text, md_path, out_path, configured="", diagrams=None, stats=None,
                fonts=None):
     """跑 pandoc 出 docx。成功返回 pandoc 路径；失败抛 RuntimeError（文案面向用户）。
@@ -599,6 +702,7 @@ def export_docx(md_text, md_path, out_path, configured="", diagrams=None, stats=
     tmp_md = os.path.join(stage, "src.md")
     staged_out = os.path.join(out_dir, ".mdeditor-%s.docx.part" % uuid.uuid4().hex[:10])
     dmap = {}
+    svg_map = {}          # sha256(PNG 字节) -> SVG 字节：导出后给同一张图补矢量子图
     try:
         for idx, item in enumerate(diagrams or []):
             item = item if isinstance(item, dict) else {}
@@ -614,6 +718,9 @@ def export_docx(md_text, md_path, out_path, configured="", diagrams=None, stats=
             p = os.path.join(stage, "diagram_%02d.png" % idx)
             with open(p, "wb") as f:
                 f.write(raw)
+            svg_text = item.get("svg") or ""
+            if isinstance(svg_text, str) and svg_text.lstrip().startswith("<svg"):
+                svg_map[hashlib.sha256(raw).digest()] = svg_text.encode("utf-8")
             dmap[diagram_key(item.get("lang"), item.get("code"))] = {
                 "path": p, "width": item.get("width")}
         prepared = prepare_markdown(md_text, dmap)
@@ -638,6 +745,10 @@ def export_docx(md_text, md_path, out_path, configured="", diagrams=None, stats=
                                  f.get("heading") or "", pandoc, verify_dir=stage)
             if stats is not None:
                 stats["fonts"] = {"latin": got[0], "cjk": got[1], "heading": got[2]}
+        if svg_map:
+            injected = _inject_svg_diagrams(staged_out, svg_map)
+            if stats is not None:
+                stats["svgDiagrams"] = injected
         os.replace(staged_out, out_path)      # 同卷 → 原子落位
         return pandoc
     except PermissionError:

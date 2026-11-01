@@ -115,6 +115,10 @@ PROBE = r"""
           langs:items.map(function(d){return d.lang;}),
           lengths:items.map(function(d){return (d.png||'').length;}),
           heads:items.map(function(d){return (d.png||'').slice(0,12);}),
+          svgHeads:items.map(function(d){return (d.svg||'').slice(0,80);}),
+          svgLens:items.map(function(d){return (d.svg||'').length;}),
+          svgXmlns:items.map(function(d){return /<svg[^>]*xmlns=/.test(d.svg||'');}),          svgInline:items.map(function(d){return /style="/.test(d.svg||'');}),
+          svgForeign:items.map(function(d){return /foreignObject/.test(d.svg||'');}),
           widths:items.map(function(d){return d.width;}),
           codes:items.map(function(d){return d.code;}),
           markdown:body.markdown||'',
@@ -162,6 +166,18 @@ def main():
             check("宽度是 10~100 的百分比",
                   len(widths) == 2 and all(isinstance(w, int) and 10 <= w <= 100
                                            for w in widths), str(widths))
+            svg_heads = r.get("svgHeads") or []
+            check("同时交上 SVG 源码",
+                  len(svg_heads) == 2 and all(h.lstrip().startswith("<svg") for h in svg_heads),
+                  str(svg_heads)[:200])
+            check("SVG 带 xmlns", all(r.get("svgXmlns") or []) and
+                  len(r.get("svgXmlns") or []) == 2, str(r.get("svgXmlns")))
+            check("SVG 样式已内联", all(r.get("svgInline") or []) and
+                  len(r.get("svgInline") or []) == 2, str(r.get("svgInline")))
+            check("SVG 里没有 foreignObject",
+                  not any(r.get("svgForeign") or []), str(r.get("svgForeign")))
+            svg_lens = r.get("svgLens") or [0, 0]
+            check("SVG 不是空串", len(svg_lens) == 2 and min(svg_lens) > 500, str(svg_lens))
             codes = r.get("codes") or []
             check("源码原文逐字交回",
                   len(codes) == 2 and "graph TD" in codes[0] and "digraph" in codes[1]
