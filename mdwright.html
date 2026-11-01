@@ -3806,6 +3806,8 @@ function parseMarkdown(src, fx){
     annotationsLoad(null);
     render();
     updateFileIndicator('未命名.md');
+    /* 新建文档：无论上一个文档是哪个，会话都清空 */
+    if(typeof aiResetSession==='function') aiResetSession();
     updateSaveBtn();
     editor.focus();
   }
@@ -4115,6 +4117,8 @@ function parseMarkdown(src, fx){
     var name=p?String(p).replace(/^.*[\\/]/,''):'默认文档';
     document.getElementById('statFile').textContent=name;
     document.title=(name==='默认文档')?'墨匠 MDWright':'墨匠 MDWright - '+name;
+    /* 文档切换：AI 会话跟着换（函数声明提升，AI 段未执行时内部有 !ai 守卫） */
+    if(typeof aiDocChanged==='function') aiDocChanged();
   }
   function loadFile(p){
     currentBuiltin=-1;
@@ -4593,6 +4597,14 @@ function parseMarkdown(src, fx){
   var aiInput=document.getElementById('aiInput');
   var aiSendBtn=document.getElementById('aiSend');
   var ai = {msgs:[], ctx:null, busy:false, withDoc:false, lastDoc:null};
+  ai.lastDoc = (typeof currentFile !== 'undefined' && currentFile) ? currentFile : 'untitled';
+  try{ ai.withDoc = localStorage.getItem('md-ai-withdoc') === '1'; }catch(e){}
+  var aiWithDocEl = document.getElementById('aiWithDoc');
+  aiWithDocEl.checked = ai.withDoc;
+  aiWithDocEl.addEventListener('change', function(){
+    ai.withDoc = this.checked;
+    try{ localStorage.setItem('md-ai-withdoc', this.checked ? '1' : '0'); }catch(e){}
+  });
 
   function aiShow(){ aiPane.hidden=false; aiResizer.hidden=false; }
   function aiHide(){ aiPane.hidden=true; aiResizer.hidden=true; }
@@ -4743,6 +4755,73 @@ function parseMarkdown(src, fx){
     aiRenderMsgs();
     aiSend(prev.content);
   }
+
+  /* ── 回写：复制 / 插入 / 替换 ── */
+  function aiCopyFallback(text){
+    try{
+      var ta=document.createElement('textarea');
+      ta.value=text; ta.style.position='fixed'; ta.style.left='-9999px';
+      document.body.appendChild(ta); ta.select();
+      var ok=document.execCommand('copy');
+      document.body.removeChild(ta);
+      showToast(ok?'已复制':'复制失败');
+    }catch(e){ showToast('复制失败'); }
+  }
+  function aiCopy(text){
+    try{
+      if(navigator.clipboard&&navigator.clipboard.writeText){
+        navigator.clipboard.writeText(text).then(function(){ showToast('已复制'); },
+                                                function(){ aiCopyFallback(text); });
+        return;
+      }
+    }catch(e){}
+    aiCopyFallback(text);
+  }
+  function aiEditorVisible(){
+    var ep=document.getElementById('editorPane');
+    return !!(ep && ep.offsetParent!==null);
+  }
+  function aiReplace(idx,m){
+    if(!ai.ctx){ showToast('这次对话没有选区上下文，无法替换'); return; }
+    var now=getText(), s=ai.ctx.s, e=ai.ctx.e, orig=ai.ctx.text;
+    if(now.substring(s,e)!==orig){
+      var ix=now.indexOf(orig);
+      if(ix<0){ showToast('原文已变化，请重新选中后重试'); return; }
+      s=ix; e=ix+orig.length;
+    }
+    setSel(s,e);
+    insertPlainText(m.content);
+    m.replaced=true;
+    scheduleRender(); scheduleSave(); aiRenderMsgs();
+  }
+  var AI_CHIP_PROMPTS={
+    explain:'请解释这段文字在说什么，必要时补充背景，控制在 200 字以内。',
+    polish:'请润色这段文字：保持原意与 Markdown 标记不变，只让表达更通顺准确。',
+    translate:'请把这段文字翻译成英文，保持 Markdown 结构。',
+    compress:'请把这段文字压缩成 3 条以内的要点，保留关键信息。',
+    critique:'请指出这段文字的问题（事实、逻辑、表述），逐条列出。'
+  };
+  document.getElementById('aiChips').addEventListener('click',function(e){
+    var act=e.target&&e.target.getAttribute&&e.target.getAttribute('data-ai-act');
+    if(!act) return;
+    if(!ai.ctx){ showToast('先在编辑器里选中一段文字'); return; }
+    aiSend(AI_CHIP_PROMPTS[act]||'请就这段文字给出建议。');
+  });
+
+  /* 文档切换：会话与上下文一起清空，避免 A 文档的内容进入 B 文档的提问 */
+  function aiResetSession(msg){
+    var had=ai.msgs.length>0||!!ai.ctx;
+    ai.msgs=[]; ai.ctx=null;
+    aiRenderCtx(); aiRenderMsgs();
+    if(msg&&had) showToast(msg);
+  }
+  function aiDocChanged(){
+    if(!ai) return;
+    var k=(typeof currentFile!=='undefined'&&currentFile)?currentFile:'untitled';
+    if(ai.lastDoc===k) return;
+    ai.lastDoc=k;
+    aiResetSession('已切换文档，开始新对话');
+  }
   aiSendBtn.addEventListener('click',aiSubmit);
   aiInput.addEventListener('keydown',function(e){
     if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){ e.preventDefault(); aiSubmit(); }
@@ -4755,7 +4834,17 @@ function parseMarkdown(src, fx){
     var wrap=t.closest('.ai-actions');
     if(!wrap) return;
     var idx=parseInt(wrap.getAttribute('data-idx'),10);
-    if(doAct==='retry') aiRetry(idx);
+    var m=ai.msgs[idx];
+    if(!m) return;
+    if(doAct==='retry'){ aiRetry(idx); return; }
+    if(doAct==='copy'){ aiCopy(m.content); return; }
+    if(doAct==='insert'){
+      if(!aiEditorVisible()){ showToast('切到编辑视图后才能插入'); return; }
+      insertPlainText(m.content);
+      scheduleRender(); scheduleSave();
+      return;
+    }
+    if(doAct==='replace'){ aiReplace(idx,m); }
   });
   document.getElementById('aiNew').addEventListener('click',function(){
     ai.msgs=[]; aiRenderMsgs(); aiInput.focus();
