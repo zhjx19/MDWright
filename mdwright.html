@@ -389,7 +389,7 @@
   .markdown-body .code-wrap:hover .copy-btn{opacity:1;}
 
   @media print{
-    #toolbar,#status,#outline,#editorPane{display:none !important;}
+    #toolbar,#status,#outline,#editorPane,#aiPane,#aiResizer{display:none !important;}
     #main{display:block;}
     #previewPane{display:block !important; overflow:visible;}
     body,html{overflow:visible; background:#fff; color:#000;}
@@ -2662,6 +2662,7 @@ function parseMarkdown(src, fx){
             try { localStorage.setItem('md-lastdir', lastDir); } catch(e) {}
             var base = j.path.split(/[\\\/]/).pop();
             updateFileIndicator(base);
+            if(typeof aiResetSession==='function') aiResetSession('已切换文档，开始新对话');
             updateSaveBtn();
             addRecent(j.path, base);
             showToast('已打开：'+base);
@@ -2678,7 +2679,7 @@ function parseMarkdown(src, fx){
       return;
     }
     var rd=new FileReader();
-    rd.onload=function(){setText(rd.result);scheduleRender();scheduleSave();addRecent(null,f.name);updateFileIndicator(f.name);};
+    rd.onload=function(){setText(rd.result);scheduleRender();scheduleSave();addRecent(null,f.name);updateFileIndicator(f.name);if(typeof aiResetSession==='function') aiResetSession('已切换文档，开始新对话');};
     rd.readAsText(f);
     fileInput.value='';
   });
@@ -3243,6 +3244,7 @@ function parseMarkdown(src, fx){
         applyDocWithDraft(currentFile, d.txt, '已载入原文件');
         addRecent(currentFile);
         updateFileIndicator(currentFile);
+        if(typeof aiResetSession==='function') aiResetSession('已切换文档，开始新对话');
       })
       .catch(function(e){ showToast('读取文件失败：'+e.message); });
   }
@@ -4117,8 +4119,6 @@ function parseMarkdown(src, fx){
     var name=p?String(p).replace(/^.*[\\/]/,''):'默认文档';
     document.getElementById('statFile').textContent=name;
     document.title=(name==='默认文档')?'墨匠 MDWright':'墨匠 MDWright - '+name;
-    /* 文档切换：AI 会话跟着换（函数声明提升，AI 段未执行时内部有 !ai 守卫） */
-    if(typeof aiDocChanged==='function') aiDocChanged();
   }
   function loadFile(p){
     currentBuiltin=-1;
@@ -4129,6 +4129,7 @@ function parseMarkdown(src, fx){
         applyDocWithDraft(p, d.txt, '已载入');
         addRecent(p);
         updateFileIndicator(p);
+        if(typeof aiResetSession==='function') aiResetSession('已切换文档，开始新对话');
       })
       .catch(function(e){ showToast('读取文件失败：'+e.message); });
   }
@@ -4608,7 +4609,6 @@ function parseMarkdown(src, fx){
 
   function aiShow(){ aiPane.hidden=false; aiResizer.hidden=false; }
   function aiHide(){ aiPane.hidden=true; aiResizer.hidden=true; }
-  function aiToggle(){ if(aiPane.hidden) aiShow(); else aiHide(); }
 
   /* 宽度：记住上次拖到的位置（280–640），默认 360 */
   try{
@@ -4633,11 +4633,14 @@ function parseMarkdown(src, fx){
     });
   })();
 
-  function aiSetCtx(){
+  function aiSetCtx(keepIfEmpty){
     var r=getSel();
-    if(r.e<=r.s){ ai.ctx=null; }
+    if(r.e<=r.s){
+      if(!(keepIfEmpty&&ai.ctx)) ai.ctx=null;
+    }
     else{ ai.ctx={s:r.s,e:r.e,text:getText().substring(r.s,r.e)}; }
     aiRenderCtx();
+    aiRenderMsgs();   /* 上下文变了：已有回答的「替换」可用性要跟着刷新 */
   }
   function aiRenderCtx(){
     var box=document.getElementById('aiCtxBox');
@@ -4654,11 +4657,13 @@ function parseMarkdown(src, fx){
     aiInput.focus();
   });
   document.getElementById('btnAISidebar').addEventListener('click',function(){
-    if(aiPane.hidden){ aiSetCtx(); aiShow(); aiInput.focus(); } else { aiHide(); }
+    if(aiPane.hidden){ aiSetCtx(true); aiShow(); aiInput.focus(); } else { aiHide(); }
   });
   document.getElementById('aiClose').addEventListener('click',aiHide);
   function aiMeta(){
-    document.getElementById('aiMeta').textContent = ai.msgs.length ? (ai.msgs.length+' 条') : '';
+    var el=document.getElementById('aiMeta');
+    if(ai.ctx){ el.textContent='选中 '+ai.ctx.text.length+' 字'; return; }
+    el.textContent=ai.msgs.length?(ai.msgs.length+' 条'):'';
   }
   function aiScrollBottom(){ aiMsgsEl.scrollTop=aiMsgsEl.scrollHeight; }
   function aiRenderMsgs(){
@@ -4683,7 +4688,7 @@ function parseMarkdown(src, fx){
         }else{
           html+='<button type="button" data-ai-do="insert">插入</button>'
               + '<button type="button" data-ai-do="replace"'
-              + (ai.ctx&&!m.replaced?'':' disabled')+'>替换</button>';
+              + (m.ctx&&!m.replaced?'':' disabled')+'>替换</button>';
         }
         acts.innerHTML=html;
         d.appendChild(acts);
@@ -4703,6 +4708,7 @@ function parseMarkdown(src, fx){
     return out;
   }
   function aiSubmit(){
+    if(ai.busy){ showToast('等这次回答回来再发'); return; }
     var v=aiInput.value;
     if(!v.trim()) return;
     aiInput.value='';
@@ -4716,18 +4722,20 @@ function parseMarkdown(src, fx){
     ai.msgs.push(pend);
     ai.busy=true; aiSendBtn.disabled=true; aiRenderMsgs();
     var body={messages:aiRequestMessages(),
-              context:{selection:ai.ctx?ai.ctx.text:null,
-                       document:ai.withDoc?getText():null}};
+              context:{selection:ai.ctx?ai.ctx.text.slice(0,30000):null,
+                       document:ai.withDoc?getText().slice(0,30000):null}};
     fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(body)})
       .then(function(r){return r.json();})
       .then(function(j){
-        ai.busy=false; aiSendBtn.disabled=false;
         var idx=ai.msgs.indexOf(pend);
-        if(idx<0) return;
+        if(idx<0) return;   /* 等待期间切了文档：这条响应属于上一个会话，丢掉 */
+        ai.busy=false; aiSendBtn.disabled=false;
         if(j&&j.ok){
-          ai.msgs[idx]={role:'assistant',content:j.text};
+          ai.msgs[idx]={role:'assistant',content:j.text,
+                        ctx:ai.ctx?{s:ai.ctx.s,e:ai.ctx.e,text:ai.ctx.text}:null};
           if(j.truncated){ showToast('上下文过长，已自动截断'); }
+          if(j.web_search==='degraded'){ showToast('联网搜索失败，已用纯模型结果'); }
         }else{
           ai.msgs[idx]={role:'assistant',
                         content:'请求失败：'+((j&&j.error)||'未知错误'),error:true};
@@ -4735,17 +4743,17 @@ function parseMarkdown(src, fx){
         aiRenderMsgs();
       })
       .catch(function(e){
-        ai.busy=false; aiSendBtn.disabled=false;
         var idx=ai.msgs.indexOf(pend);
-        if(idx>=0){
-          ai.msgs[idx]={role:'assistant',content:'请求失败：'+e.message,error:true};
-          aiRenderMsgs();
-        }
+        if(idx<0) return;
+        ai.busy=false; aiSendBtn.disabled=false;
+        ai.msgs[idx]={role:'assistant',content:'请求失败：'+e.message,error:true};
+        aiRenderMsgs();
       });
   }
   function aiRetry(idx){
     var m=ai.msgs[idx];
     if(!m||!m.error) return;
+    if(ai.busy){ showToast('等这次回答回来再重试'); return; }
     var prev=null;
     for(var i=idx-1;i>=0;i--){ if(ai.msgs[i].role==='user'){ prev=ai.msgs[i]; break; } }
     if(!prev) return;
@@ -4782,8 +4790,10 @@ function parseMarkdown(src, fx){
     return !!(ep && ep.offsetParent!==null);
   }
   function aiReplace(idx,m){
-    if(!ai.ctx){ showToast('这次对话没有选区上下文，无法替换'); return; }
-    var now=getText(), s=ai.ctx.s, e=ai.ctx.e, orig=ai.ctx.text;
+    var c=m.ctx;
+    if(!c){ showToast('这条回答没有选区上下文，无法替换'); return; }
+    if(!aiEditorVisible()){ showToast('切到编辑视图后才能替换'); return; }
+    var now=getText(), s=c.s, e=c.e, orig=c.text;
     if(now.substring(s,e)!==orig){
       var ix=now.indexOf(orig);
       if(ix<0){ showToast('原文已变化，请重新选中后重试'); return; }
@@ -4808,19 +4818,15 @@ function parseMarkdown(src, fx){
     aiSend(AI_CHIP_PROMPTS[act]||'请就这段文字给出建议。');
   });
 
-  /* 文档切换：会话与上下文一起清空，避免 A 文档的内容进入 B 文档的提问 */
+  /* 文档切换：会话与上下文一起清空，避免 A 文档的内容进入 B 文档的提问。
+     只在「真正换文档」的入口调用（打开文件 / 内置文档 / 新建），
+     「另存为」只是换名字，不清会话。 */
   function aiResetSession(msg){
+    if(!ai) return;
     var had=ai.msgs.length>0||!!ai.ctx;
-    ai.msgs=[]; ai.ctx=null;
+    ai.msgs=[]; ai.ctx=null; ai.busy=false; aiSendBtn.disabled=false;
     aiRenderCtx(); aiRenderMsgs();
     if(msg&&had) showToast(msg);
-  }
-  function aiDocChanged(){
-    if(!ai) return;
-    var k=(typeof currentFile!=='undefined'&&currentFile)?currentFile:'untitled';
-    if(ai.lastDoc===k) return;
-    ai.lastDoc=k;
-    aiResetSession('已切换文档，开始新对话');
   }
   aiSendBtn.addEventListener('click',aiSubmit);
   aiInput.addEventListener('keydown',function(e){
@@ -4851,7 +4857,8 @@ function parseMarkdown(src, fx){
   });
   document.addEventListener('keydown',function(e){
     if((e.ctrlKey||e.metaKey)&&e.shiftKey&&(e.key==='a'||e.key==='A')){
-      e.preventDefault(); aiToggle();
+      e.preventDefault();
+      if(aiPane.hidden){ aiSetCtx(true); aiShow(); aiInput.focus(); } else { aiHide(); }
     }
   });
 

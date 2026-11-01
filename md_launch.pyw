@@ -31,12 +31,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW
 
 
-def _read_server_version(default=11):
+def _read_server_version():
     """从 md_server.py 里读版本号，不 import 它。
 
     启动器只需要一个整数，为此导入 150KB 的 md_server（连同 md_runs / llm_client /
     rag_client / web_search）要多花约 0.1s 与 20MB 内存，纯属白付。版本常量由
-    md_server 单一维护，这里只做只读解析；解析不到就退回默认值（与旧行为一致）。
+    md_server 单一维护，这里只做只读解析；解析不到返回 None——那表示「不知道版本」，
+    此时宁可复用正在跑的服务，也不要因为 11 != 79 反复杀掉重拉。
     """
     try:
         with open(os.path.join(HERE, "md_server.py"), "r",
@@ -46,10 +47,14 @@ def _read_server_version(default=11):
                     return int(line.split("=", 1)[1].split("#")[0].strip())
     except Exception:
         pass
-    return default
+    return None
 
 
 VERSION = _read_server_version()
+
+
+def _version_matches(running):
+    return running is not None and (VERSION is None or running == VERSION)
 
 
 def port_open():
@@ -79,11 +84,16 @@ def server_version(timeout=0.3):
 def start_server():
     si = subprocess.STARTUPINFO()
     si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-    subprocess.Popen(
-        [sys.executable, os.path.join(HERE, "_md_run.py")],
-        startupinfo=si,
-        creationflags=subprocess.CREATE_NO_WINDOW,
-    )
+    try:
+        subprocess.Popen(
+            [sys.executable, os.path.join(HERE, "_md_run.py")],
+            startupinfo=si,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        return True
+    except Exception:
+        # 起不来就走「等版本超时 → 浏览器兜底」的老路，不要让启动器直接崩掉
+        return False
 
 
 def _list_pythonw_cmdlines():
@@ -163,7 +173,7 @@ def wait_version(timeout=15):
     while time.time() < end:
         # 0.1s：这一支只用于「刚拉起/刚换代」后等就绪，探测失败=还没起来，
         # 立刻重试即可；本机未监听端口会把短超时等满，0.3s 会让就绪感知白晚 0.2s。
-        if server_version(timeout=0.1) == VERSION:
+        if _version_matches(server_version(timeout=0.1)):
             return True
         time.sleep(0.05)
     return False
@@ -303,7 +313,7 @@ def main():
     # 不互斥窗口：多开的每个窗口独立打开对应文件；页面 no-store，
     # 新窗口必然加载当前代码。服务仅版本不匹配时换代。
     if port_open():
-        if server_version() == VERSION:
+        if _version_matches(server_version()):
             open_ui(path)   # 版本匹配，直接复用（服务已在跑，窗口立刻起）
             return
         # 旧版服务占着端口：自愈换代。这一支保持串行——先杀掉旧服务、等新服务就绪，

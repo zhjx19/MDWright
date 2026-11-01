@@ -34,7 +34,16 @@ del /f /q "%APPDATA%\Microsoft\Windows\Start Menu\Programs\MDWright.lnk" >nul 2>
 del /f /q "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Uninstall MDWright.lnk" >nul 2>&1
 
 echo [4/6] Restore Windows 11 default context menu...
-reg delete "HKCU\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}" /f >nul 2>&1
+REM Only revert the classic menu if THIS install enabled it (marker written by
+REM "install.cmd legacy"). A user who had classic menus before installing keeps
+REM their own setting after uninstall.
+if exist "%HERE%\.legacy.menu" (
+  reg delete "HKCU\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}" /f >nul 2>&1
+  del /f /q "%HERE%\.legacy.menu" >nul 2>&1
+  echo   Classic context menu reverted (this install had enabled it).
+) else (
+  echo   Classic context menu was not enabled by this install; left as is.
+)
 
 echo [5/6] Stop running md_server backend...
 REM Match the process image too: a bare command-line substring match would

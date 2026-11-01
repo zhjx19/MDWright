@@ -61,8 +61,9 @@ def wait_ready(timeout=15):
 def stop_all():
     subprocess.run(
         ["powershell", "-NoProfile", "-Command",
-         "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine "
-         "-like '*md_server.py*' -or $_.CommandLine -like '*_md_run.py*' } | "
+         "Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'python.exe' "
+         "-or $_.Name -eq 'pythonw.exe') -and ($_.CommandLine -like '*md_server.py*' "
+         "-or $_.CommandLine -like '*_md_run.py*') } | "
          "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"],
         capture_output=True, creationflags=NO_WINDOW)
     for _ in range(30):
@@ -232,8 +233,8 @@ def main():
 
     # --- 5) wait_version 新实现（time.time 计时 + 0.05 粒度）逻辑等价 ---
     import md_launch
-    check("wait_version returns True on live service",
-          md_launch.wait_version(timeout=3) is False or True)  # 服务已停，仅调用不崩
+    check("wait_version returns False when no service",
+          md_launch.wait_version(timeout=0.5) is False)
     t0 = time.perf_counter()
     md_launch.wait_version(timeout=0.5)
     dt = time.perf_counter() - t0

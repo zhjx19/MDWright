@@ -242,6 +242,16 @@ PROBE_ACTIONS = r"""
                   out.staleText = q('#editor').textContent;
                   var toc = q('#mdToast');
                   out.staleToast = toc ? toc.textContent : '';
+                  /* 预览视图：替换被拒绝（编辑器不可见） */
+                  q('#editor').textContent = '原文A\n原文B';
+                  document.body.classList.remove('view-edit', 'view-live');
+                  document.body.classList.add('view-preview');
+                  document.querySelectorAll('.ai-msg.bot')[0]
+                    .querySelector('[data-ai-do="replace"]').click();
+                  out.previewText = q('#editor').textContent;
+                  out.previewToast = (q('#mdToast') || {}).textContent || '';
+                  document.body.classList.remove('view-preview');
+                  document.body.classList.add('view-edit');
                   /* 新文档：会话清空 */
                   document.querySelectorAll('.ai-msg').length;
                   q('#btnNew').click();
@@ -253,6 +263,100 @@ PROBE_ACTIONS = r"""
                     doneOnce();
                   }, 180);
                 } catch (e) { out.err = String(e); doneOnce(); }
+              }, 220);
+            } catch (e) { out.err = String(e); doneOnce(); }
+          }, 220);
+        } catch (e) { out.err = String(e); doneOnce(); }
+      }, 140);
+    } catch (e) { out.err = String(e); doneOnce(); }
+  });
+})()
+"""
+
+
+PROBE_BUSY = r"""
+(function(){
+  function q(s){ return document.querySelector(s); }
+  var out = {err: null, calls: 0, inputAfter: '', toast: ''};
+  var realFetch = window.fetch;
+  window.fetch = function(u, o){
+    if (String(u).indexOf('/api/chat') >= 0) {
+      out.calls++;
+      return new Promise(function(){});   /* 永远不返回：模拟正在生成 */
+    }
+    return realFetch.apply(window, arguments);
+  };
+  return new Promise(function(resolve){
+    var done = false;
+    function doneOnce(){ if (done) return; done = true; resolve(out); }
+    setTimeout(doneOnce, 6000);
+    try {
+      q('#btnAISidebar').click();
+      q('#aiInput').value = '第一问';
+      q('#aiSend').click();
+      q('#aiInput').value = '第二问';
+      q('#aiInput').dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
+      setTimeout(function(){
+        try {
+          out.inputAfter = q('#aiInput').value;
+          out.toast = (q('#mdToast') || {}).textContent || '';
+          out.sendDisabled = q('#aiSend').disabled;
+        } catch (e) { out.err = String(e); }
+        doneOnce();
+      }, 200);
+    } catch (e) { out.err = String(e); doneOnce(); }
+  });
+})()
+"""
+
+
+PROBE_CTX = r"""
+(function(){
+  function q(s){ return document.querySelector(s); }
+  var out = {err: null};
+  var realFetch = window.fetch;
+  window.fetch = function(u, o){
+    if (String(u).indexOf('/api/chat') >= 0) {
+      return Promise.resolve({ json: function(){
+        return Promise.resolve({ok: true, text: '新回答'});
+      }});
+    }
+    return realFetch.apply(window, arguments);
+  };
+  function selectRange(a, b){
+    var ed = q('#editor');
+    ed.focus();
+    var node = ed.firstChild;
+    var r = document.createRange();
+    r.setStart(node, a); r.setEnd(node, b);
+    var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+    ed.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+  }
+  return new Promise(function(resolve){
+    var done = false;
+    function doneOnce(){ if (done) return; done = true; resolve(out); }
+    setTimeout(doneOnce, 8000);
+    try {
+      q('#editor').textContent = 'AAA BBB';
+      selectRange(0, 3);
+      setTimeout(function(){
+        try {
+          q('#selAI').click();
+          q('#aiInput').value = '问 A';
+          q('#aiSend').click();
+          setTimeout(function(){
+            try {
+              selectRange(4, 7);
+              q('#selAI').click();
+              q('#aiInput').value = '问 B';
+              q('#aiSend').click();
+              setTimeout(function(){
+                try {
+                  var bots = document.querySelectorAll('.ai-msg.bot');
+                  bots[0].querySelector('[data-ai-do="replace"]').click();
+                  out.text = q('#editor').textContent;
+                } catch (e) { out.err = String(e); }
+                doneOnce();
               }, 220);
             } catch (e) { out.err = String(e); doneOnce(); }
           }, 220);
@@ -318,8 +422,29 @@ if __name__ == "__main__":
           repr(res3.get("staleText")))
     check("原文变化有提示", "原文已变化" in (res3.get("staleToast") or ""),
           repr(res3.get("staleToast")))
+    check("预览视图下替换被拒绝", res3.get("previewText") == "原文A\n原文B",
+          repr(res3.get("previewText")))
+    check("预览视图替换有提示", "编辑视图" in (res3.get("previewToast") or ""),
+          repr(res3.get("previewToast")))
     check("新文档清空会话", res3.get("msgsAfterNew") == 0, str(res3.get("msgsAfterNew")))
     check("新文档清空上下文", res3.get("ctxHiddenAfterNew") is True, str(res3.get("ctxHiddenAfterNew")))
+
+    res4 = run_expr(PROBE_BUSY)
+    check("忙碌探测器无异常", not res4.get("err"), str(res4.get("err")))
+    check("生成中再发不产生第二次请求", res4.get("calls") == 1, str(res4.get("calls")))
+    check("生成中键入的文字不被清掉", res4.get("inputAfter") == "第二问",
+          repr(res4.get("inputAfter")))
+    check("生成中再发有提示", "再发" in (res4.get("toast") or ""),
+          repr(res4.get("toast")))
+    check("生成中发送按钮禁用", res4.get("sendDisabled") is True, str(res4.get("sendDisabled")))
+
+    res5 = run_expr(PROBE_CTX)
+    check("上下文快照探测器无异常", not res5.get("err"), str(res5.get("err")))
+    check("替换用的是该回答自己的选区上下文",
+          (res5.get("text") or "").startswith("新回答")
+          and "BBB" in (res5.get("text") or "")
+          and "AAA" not in (res5.get("text") or ""),
+          repr(res5.get("text")))
 
     print("\n%s" % ("ALL PASS" if not fails else "FAILED: %s" % fails))
     sys.exit(1 if fails else 0)

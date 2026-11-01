@@ -129,6 +129,24 @@ try:
     check("chat: 裁剪后条数变少", len(msgs) < len(long_hist) + 1,
           "%d vs %d" % (len(msgs), len(long_hist) + 1))
 
+    # 4b) 连续两条 user（上一条失败后客户端只发两次 user）+ 长文档：
+    #     裁剪绝不能把最后一轮问题一起丢掉，否则下一次重试还是同样形状，会话卡死
+    reset()
+    j = post({"config": CFG,
+              "messages": [{"role": "user", "content": "上一问" + "甲" * 2000},
+                           {"role": "user", "content": "最后这个问题"}],
+              "context": {"selection": "", "document": "文" * 30000}})
+    msgs = CAP["messages"] or []
+    check("chat: 连续 user + 长文不丢最后一轮",
+          j.get("ok") is True and bool(msgs) and msgs[-1]["role"] == "user"
+          and msgs[-1]["content"] == "最后这个问题", str(j))
+    check("chat: 该情形仍标 truncated", j.get("truncated") is True, str(j.get("truncated")))
+
+    # 4c) 非对象 body 不能落成 500
+    reset()
+    j = post([])
+    check("chat: 非对象 body 走 200+ok:false", j.get("ok") is False, str(j))
+
     # 5) 整篇文档
     reset()
     post({"config": CFG,

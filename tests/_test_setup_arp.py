@@ -133,6 +133,36 @@ def restore_ps_line():
     return ""
 
 
+def install_backup_ps_line():
+    """抽出 install.cmd 里备份 .md 原默认关联的那条 PowerShell（不改写逻辑）。"""
+    with open(os.path.join(ROOT, "install.cmd"), encoding="utf-8") as f:
+        lines = f.read().splitlines()
+    for ln in lines:
+        if "Set-Content" in ln and ".mdinstall.bak" in ln:
+            return ln.strip()
+    return ""
+
+
+def run_install_backup(tmp, current, clear_bak=True):
+    """真跑 install.cmd 的备份命令（键路径换成测试键），返回写出的备份内容。"""
+    ps = install_backup_ps_line().replace(
+        r"Software\Classes\.md", r"Software\MDWrightAssocTest")
+    bak = os.path.join(tmp, ".mdinstall.bak")
+    if clear_bak and os.path.exists(bak):
+        os.remove(bak)
+    drop_assoc_key()
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, ASSOC_TEST_KEY) as k:
+        if current is not None:
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, current)
+    run_batch(tmp, 'set "__MDWHERE=%s"\r\n%s\r\n' % (tmp, ps), "ibak.cmd")
+    got = None
+    if os.path.exists(bak):
+        with open(bak, encoding="utf-8", errors="replace") as f:
+            got = f.read().strip()
+    drop_assoc_key()
+    return got
+
+
 def run_restore(tmp, bak_text, current):
     """真跑 uninstall.cmd 的还原命令（键路径换成测试键）。"""
     ps = restore_ps_line().replace(
@@ -211,6 +241,10 @@ def main():
     check("install.cmd 的 legacy 菜单是显式选项",
           'if defined LEGACY' in icmd_text and "install.cmd legacy" in icmd_text)
     check("install.cmd 备份 .smd 原关联", ".smdinstall.bak" in icmd_text)
+    check("install.cmd 不覆盖本程序的备份",
+          "$cur -ne 'MDWright.md'" in icmd_text and "$cur -ne 'MDWright.smd'" in icmd_text)
+    check("install.cmd legacy 分支写标记",
+          r'legacy> "%HERE%\.legacy.menu"' in icmd_text)
 
     with open(os.path.join(ROOT, "uninstall.cmd"), encoding="utf-8") as f:
         ucmd_text = f.read()
@@ -219,6 +253,8 @@ def main():
     check("uninstall 清 OpenWithProgids 条目", "OpenWithProgids" in ucmd_text)
     check("uninstall 按条件还原默认关联", "MDWright.md" in ucmd_text
           and ".mdinstall.bak" in ucmd_text and "smdinstall.bak" in ucmd_text)
+    check("uninstall 只在有标记时还原经典菜单",
+          r'if exist "%HERE%\.legacy.menu"' in ucmd_text)
 
     with open(os.path.join(ROOT, "md_app.pyw"), encoding="utf-8") as f:
         app_src = f.read()
@@ -281,6 +317,13 @@ def main():
         check("没有备份 → 清掉默认值", got is None, repr(got))
         got = run_restore(tmp, "MDWright.md", "MDWright.md")
         check("备份也是本程序 → 清掉默认值", got is None, repr(got))
+
+        # ---- 升级重装不能把自己的 ProgID 写进备份（否则卸载会「还原」成空）----
+        check("能抽出安装备份命令", bool(install_backup_ps_line()))
+        got = run_install_backup(tmp, "Typora.md")
+        check("首次安装备份原关联", got == "Typora.md", repr(got))
+        got = run_install_backup(tmp, "MDWright.md", clear_bak=False)
+        check("重装不覆盖已有备份", got == "Typora.md", repr(got))
     finally:
         drop_assoc_key()
         shutil.rmtree(tmp, ignore_errors=True)

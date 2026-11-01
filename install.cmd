@@ -5,6 +5,7 @@ chcp 65001 >nul
 setlocal EnableExtensions
 set "HERE=%~dp0"
 if "%HERE:~-1%"=="\" set "HERE=%HERE:~0,-1%"
+set "__MDWHERE=%HERE%"
 
 REM Args: "nopause" = no final pause (used by the setup exe); "legacy" =
 REM opt in to the classic Windows 11 context menu (off by default: that switch
@@ -60,7 +61,10 @@ reg add "HKCU\Software\Classes\.md\shell\MDWright" /ve /t REG_SZ /d "Open with M
 reg add "HKCU\Software\Classes\.md\shell\MDWright\command" /ve /t REG_SZ /d "%HERE%\MDWright.exe \"%%1\"" /f
 
 echo [2/5] Set .md default association (double-click opens this editor)...
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -Command "$k='HKCU:\Software\Classes\.md'; $v=Get-ItemProperty -Path $k -Name '(default)' -ErrorAction SilentlyContinue; if($v){($v.'(default)')}else{''}" > "%HERE%\.mdinstall.bak"
+REM Back up the previous .md default, but never overwrite an existing backup
+REM with our own ProgID: on upgrade that would make uninstall "restore" to
+REM empty and silently drop the user's original association.
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -Command "$k='HKCU:\Software\Classes\.md'; $cur=((Get-ItemProperty -Path $k -Name '(default)' -ErrorAction SilentlyContinue).'(default)'+''); if($cur -ne 'MDWright.md'){ Set-Content -LiteralPath (Join-Path $env:__MDWHERE '.mdinstall.bak') -Value $cur -NoNewline -Encoding ASCII }"
 reg add "HKCU\Software\Classes\.md" /ve /t REG_SZ /d "MDWright.md" /f
 reg add "HKCU\Software\Classes\MDWright.md" /ve /t REG_SZ /d "Markdown Document (MDWright)" /f
 REM Win11 OpenWith picker shows the command exe's FileDescription ("Python") unless
@@ -89,9 +93,8 @@ reg add "HKCU\Software\Classes\.md\OpenWithProgids" /v MDWright.md /t REG_SZ /d 
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.md\OpenWithProgids" /v MDWright.md /t REG_SZ /d "" /f >nul 2>&1
 
 REM ---- Self-contained Markdown (.smd) file association ----
-REM Back up the previous .smd default so uninstall can put it back (same
-REM contract as .md above: only restored if it still points at us).
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -Command "$k='HKCU:\Software\Classes\.smd'; $v=Get-ItemProperty -Path $k -Name '(default)' -ErrorAction SilentlyContinue; if($v){($v.'(default)')}else{''}" > "%HERE%\.smdinstall.bak"
+REM Same backup contract as .md above: never overwrite with our own ProgID.
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -Command "$k='HKCU:\Software\Classes\.smd'; $cur=((Get-ItemProperty -Path $k -Name '(default)' -ErrorAction SilentlyContinue).'(default)'+''); if($cur -ne 'MDWright.smd'){ Set-Content -LiteralPath (Join-Path $env:__MDWHERE '.smdinstall.bak') -Value $cur -NoNewline -Encoding ASCII }"
 reg add "HKCU\Software\Classes\.smd" /ve /t REG_SZ /d "MDWright.smd" /f
 reg add "HKCU\Software\Classes\.smd\shell\MDWright" /ve /t REG_SZ /d "Open with MDWright" /f
 reg add "HKCU\Software\Classes\.smd\shell\MDWright\command" /ve /t REG_SZ /d "%HERE%\MDWright.exe \"%%1\"" /f
@@ -107,6 +110,7 @@ echo [3/5] Create Desktop / Start Menu shortcuts...
 echo [4/5] Windows 11 context menu visibility...
 if defined LEGACY (
   reg add "HKCU\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32" /ve /t REG_SZ /d "" /f
+  echo legacy> "%HERE%\.legacy.menu"
   echo   Legacy context menu enabled. The item shows directly on right-click.
   echo   Note: this switches ALL right-click menus to classic style system-wide.
   echo   Run uninstall.cmd to revert.
