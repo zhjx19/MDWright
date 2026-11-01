@@ -4326,6 +4326,7 @@ function parseMarkdown(src, fx){
     document.getElementById('annQuote').textContent=a.text;
     document.getElementById('annNote').value=a.note;
     document.getElementById('annOverlay').hidden=false;
+    ragProbe();   /* 只在用到「RAG 解释」时探测一次（加载时不再空转） */
     setTimeout(function(){ document.getElementById('annNote').focus(); },60);
   }
   function annModalClose(){
@@ -4623,7 +4624,7 @@ function parseMarkdown(src, fx){
         ragFillKb([],j.rag.kb||'');
       }
       ragRenderStatus(null);
-      ragProbe();                        /* 打开即探测一次 */
+      ragPollStart();                    /* 面板打开：探测一次并开始轮询 */
       document.getElementById('llmTestMsg').textContent='';
       document.getElementById('llmOverlay').hidden=false;
       llmRefreshModels(true);   /* 静默预取一次 */
@@ -4631,9 +4632,10 @@ function parseMarkdown(src, fx){
   });
   document.getElementById('llmClose').addEventListener('click',function(){
     document.getElementById('llmOverlay').hidden=true;
+    ragPollStop();
   });
   document.getElementById('llmOverlay').addEventListener('click',function(e){
-    if(e.target===this) this.hidden=true;
+    if(e.target===this){ this.hidden=true; ragPollStop(); }
   });
   document.getElementById('llmBackend').addEventListener('change',function(){
     /* 切后端时，空地址或旧后端默认地址跟随切换 */
@@ -4736,8 +4738,17 @@ function parseMarkdown(src, fx){
       if(!document.getElementById('llmOverlay').hidden){ ragRenderStatus(j); }
     }).catch(function(){});
   }
-  ragProbe();
-  setInterval(ragProbe,15000);
+  /* 启动时不再无条件探测：RAG 未开时 /api/rag-status 要等 0.5s 端口超时，
+     每次加载都白占一个服务线程。改为「用到才探测」——打开 AI 设置面板时
+     探测并每 15s 轮询，关掉就停；批注弹窗打开时也探一次。 */
+  var _ragTimer=null;
+  function ragPollStart(){
+    ragProbe();
+    if(!_ragTimer) _ragTimer=setInterval(ragProbe,15000);
+  }
+  function ragPollStop(){
+    if(_ragTimer){ clearInterval(_ragTimer); _ragTimer=null; }
+  }
   document.getElementById('ragRefresh').addEventListener('click',ragProbe);
   document.getElementById('ragStart').addEventListener('click',function(){
     var btn=this; btn.disabled=true;
@@ -4765,7 +4776,7 @@ function parseMarkdown(src, fx){
   updateAnnCount();
   document.addEventListener('keydown',function(e){
     if(e.key!=='Escape') return;
-    if(!document.getElementById('llmOverlay').hidden){ document.getElementById('llmOverlay').hidden=true; }
+    if(!document.getElementById('llmOverlay').hidden){ document.getElementById('llmOverlay').hidden=true; ragPollStop(); }
     else if(!document.getElementById('annOverlay').hidden){ annModalClose(); }
     else if(!document.getElementById('rwOverlay').hidden){ closeRw(); }
     else { selTools.hidden=true; }

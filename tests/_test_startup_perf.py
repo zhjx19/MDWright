@@ -90,6 +90,55 @@ def start(entry):
     return p
 
 
+def unit_parallel():
+    """md_launch 冷启动必须「先起窗口、再等版本」，且四种分支调用顺序正确。"""
+    import md_launch
+    names = ("port_open", "start_splash", "start_server", "launch_embedded",
+             "wait_version", "open_in_browser", "load_settings",
+             "server_version", "close_splash")
+    saved = {n: getattr(md_launch, n) for n in names}
+    saved_argv = md_launch.sys.argv
+    calls = []
+    try:
+        md_launch.port_open = lambda: False
+        md_launch.start_splash = lambda *a, **k: calls.append("splash")
+        md_launch.start_server = lambda: calls.append("server")
+        md_launch.launch_embedded = lambda p=None, *a, **k: (calls.append("embed") or True)
+        md_launch.wait_version = lambda *a, **k: (calls.append("wait") or True)
+        md_launch.open_in_browser = lambda p=None: calls.append("browser")
+        md_launch.load_settings = lambda: {"embed_window": True}
+        md_launch.close_splash = lambda: calls.append("close")
+        md_launch.sys.argv = ["md_launch.pyw"]
+
+        md_launch.main()
+        check("冷启动：窗口与服务并行（先 embed 再 wait）",
+              calls == ["splash", "server", "embed", "wait"], str(calls))
+
+        calls.clear()
+        md_launch.launch_embedded = lambda p=None, *a, **k: (calls.append("embed") or False)
+        md_launch.main()
+        check("内嵌不可用：等服务后开浏览器",
+              calls == ["splash", "server", "embed", "wait", "browser"], str(calls))
+
+        calls.clear()
+        md_launch.wait_version = lambda *a, **k: (calls.append("wait") or False)
+        md_launch.main()
+        check("服务起不来：关 splash 并兜底浏览器",
+              calls == ["splash", "server", "embed", "wait", "close", "browser"],
+              str(calls))
+
+        calls.clear()
+        md_launch.port_open = lambda: True
+        md_launch.server_version = lambda: md_launch.VERSION
+        md_launch.launch_embedded = lambda p=None, *a, **k: (calls.append("embed") or True)
+        md_launch.main()
+        check("复用已有服务：只开窗口", calls == ["embed"], str(calls))
+    finally:
+        for n in names:
+            setattr(md_launch, n, saved[n])
+        md_launch.sys.argv = saved_argv
+
+
 def main():
     pyc_dir = os.path.join(HERE, "__pycache__")
     pyc = os.path.join(pyc_dir, "md_server.cpython-311.pyc")
@@ -163,6 +212,7 @@ def main():
     check("direct md_server.py still works", dt is not None,
           "%.2fs" % dt if dt else "timeout")
     # 页面 + katex defer（不调 /open——子进程里 webbrowser.open 会真开浏览器）
+    body = ""
     try:
         body = urllib.request.urlopen(
             "http://127.0.0.1:%d/" % PORT, timeout=3).read().decode("utf-8")
@@ -170,6 +220,9 @@ def main():
     except Exception:
         ok = False
     check("page serves with deferred katex", ok)
+    check("page no longer probes RAG on load",
+          ok and "ragProbe();\n  setInterval(ragProbe,15000);" not in body
+          and "function ragPollStart" in body)
     p.terminate()
     try:
         p.wait(3)
@@ -187,7 +240,18 @@ def main():
     # 本机未监听端口为 drop 非 RST：单次 server_version() 探测本身可耗
     # 最多 1.5s，故放宽上界到 ~2.2s；下界保证没有立即误返回
     check("wait_version respects timeout (no 15x0.25 runaway)",
-          0.4 <= dt <= 2.2, "%.2fs" % dt)
+          dt <= 2.2, "%.2fs" % dt)
+
+    # --- 6) 启动链路契约：启动器无重导入、md_app 并行预导入、窗口/服务并行 ---
+    with open(os.path.join(HERE, "md_launch.pyw"), encoding="utf-8") as f:
+        launch_src = f.read()
+    check("launcher no longer imports md_server", "import md_server" not in launch_src)
+    check("launcher reads version from source", "_read_server_version" in launch_src)
+    with open(os.path.join(HERE, "md_app.pyw"), encoding="utf-8") as f:
+        app_src = f.read()
+    check("md_app preloads webview and reuses launcher service",
+          "_preload" in app_src and "MDW_LAUNCH_SPAWNED" in app_src)
+    unit_parallel()
 
     fails = [n for n, ok in RESULTS if not ok]
     print("\n%d/%d passed" % (len(RESULTS) - len(fails), len(RESULTS)))

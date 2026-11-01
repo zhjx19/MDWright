@@ -27,32 +27,50 @@ import urllib.request
 import webbrowser
 
 PORT = 18766
-try:
-    # 版本单一来源：直接读 md_server，杜绝两边手改漏同步
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from md_server import MD_SERVER_VERSION as VERSION
-except Exception:
-    VERSION = 11
 HERE = os.path.dirname(os.path.abspath(__file__))
 NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW
 
 
+def _read_server_version(default=11):
+    """从 md_server.py 里读版本号，不 import 它。
+
+    启动器只需要一个整数，为此导入 150KB 的 md_server（连同 md_runs / llm_client /
+    rag_client / web_search）要多花约 0.1s 与 20MB 内存，纯属白付。版本常量由
+    md_server 单一维护，这里只做只读解析；解析不到就退回默认值（与旧行为一致）。
+    """
+    try:
+        with open(os.path.join(HERE, "md_server.py"), "r",
+                  encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if line.startswith("MD_SERVER_VERSION"):
+                    return int(line.split("=", 1)[1].split("#")[0].strip())
+    except Exception:
+        pass
+    return default
+
+
+VERSION = _read_server_version()
+
+
 def port_open():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.settimeout(0.3)
+    # 0.3s 太长：本机未监听端口是 drop 而非 RST，每次冷启动都要把超时等满
+    # （实测 310ms）。监听中的端口在 loopback 上握手是亚毫秒级，100ms 足够。
+    s.settimeout(0.1)
     try:
         return s.connect_ex(("127.0.0.1", PORT)) == 0
     finally:
         s.close()
 
 
-def server_version():
+def server_version(timeout=0.3):
     """端口上服务的版本号；无 /api/version（旧版）或连接失败返回 None。
-    timeout 收紧到 0.3s：本机未监听端口是 drop 非 RST，长超时会让
-    wait_version 的首轮探测白挂（服务就绪被感知延迟 1.5s+）"""
+    默认 0.3s：这是「决定要不要换代」的判据，宁可慢也不能把响应稍慢的
+    正常服务误判成旧版。wait_version 传更短的超时——那一支已经确定服务
+    是我们刚拉起的，探测失败只是「还没起来」，重试即可。"""
     try:
         r = urllib.request.urlopen(
-            "http://127.0.0.1:%d/api/version" % PORT, timeout=0.3)
+            "http://127.0.0.1:%d/api/version" % PORT, timeout=timeout)
         return json.loads(r.read().decode("utf-8")).get("version", 0)
     except Exception:
         return None
@@ -143,7 +161,9 @@ def kill_port_holder():
 def wait_version(timeout=15):
     end = time.time() + timeout
     while time.time() < end:
-        if server_version() == VERSION:
+        # 0.1s：这一支只用于「刚拉起/刚换代」后等就绪，探测失败=还没起来，
+        # 立刻重试即可；本机未监听端口会把短超时等满，0.3s 会让就绪感知白晚 0.2s。
+        if server_version(timeout=0.1) == VERSION:
             return True
         time.sleep(0.05)
     return False
@@ -195,7 +215,7 @@ def embedded_available():
     return False
 
 
-def launch_embedded(path=None):
+def launch_embedded(path=None, service_started_by_us=False):
     """尝试用内嵌窗口打开；成功返回 True。"""
     if not embedded_available():
         return False
@@ -205,8 +225,13 @@ def launch_embedded(path=None):
     args = [exe, os.path.join(HERE, "md_app.pyw")]
     if path:
         args.append(path)
+    env = dict(os.environ)
+    if service_started_by_us:
+        # 告诉 md_app「服务已经由启动器拉起，你只管等」——否则两边同时 spawn，
+        # Windows 的 SO_REUSEADDR 会让两个服务绑同一个端口。
+        env["MDW_LAUNCH_SPAWNED"] = "1"
     try:
-        subprocess.Popen(args, cwd=HERE, creationflags=0x08000000)
+        subprocess.Popen(args, cwd=HERE, creationflags=0x08000000, env=env)
         return True
     except Exception:
         return False
@@ -264,38 +289,54 @@ def close_splash():
             pass
 
 
+def open_ui(path, service_started_by_us=False):
+    """开窗口；内嵌不可用时退回浏览器。"""
+    st = load_settings()
+    if st.get("embed_window") and launch_embedded(path, service_started_by_us):
+        return True
+    open_in_browser(path)
+    return False
+
+
 def main():
     path = sys.argv[1] if len(sys.argv) > 1 else None
     # 不互斥窗口：多开的每个窗口独立打开对应文件；页面 no-store，
     # 新窗口必然加载当前代码。服务仅版本不匹配时换代。
     if port_open():
         if server_version() == VERSION:
-            pass  # 版本匹配，直接复用
-        else:
-            # 旧版服务占着端口：自愈换代
-            start_splash()
-            kill_stale_services()
-            kill_port_holder()
-            time.sleep(0.6)
-            start_server()
-            if not wait_version():
-                close_splash()
-                open_in_browser(path)  # 兜底：至少把页面打开
-                return
-    else:
+            open_ui(path)   # 版本匹配，直接复用（服务已在跑，窗口立刻起）
+            return
+        # 旧版服务占着端口：自愈换代。这一支保持串行——先杀掉旧服务、等新服务就绪，
+        # 再开窗口，避免窗口连到正在被替换的服务上。
         start_splash()
+        kill_stale_services()
+        kill_port_holder()
+        time.sleep(0.6)
         start_server()
         if not wait_version():
             close_splash()
             open_in_browser(path)  # 兜底：至少把页面打开
             return
-    # 成功路径不关 splash：由它自己轮询"页面会话上线"（窗口真正加载
-    # 完成）后淡出；服务就绪 ≠ 窗口可见，中间的 WebView2/浏览器冷启动
-    # 空档正是启动画面该覆盖的。失败路径已在分支内 close_splash 硬关。
-    st = load_settings()
-    if st.get("embed_window") and launch_embedded(path):
+        open_ui(path, service_started_by_us=True)
         return
-    open_in_browser(path)
+
+    # 全新启动：服务与窗口并行。原先是「等服务就绪 → 再起 WebView2」串行，
+    # 两段各约 0.7s；并行后窗口创建（pythonw + pywebview 导入 + WebView2 初始化）
+    # 与服务启动同时进行，关键路径少一段。
+    start_splash()
+    start_server()
+    st = load_settings()
+    embedded = False
+    if st.get("embed_window"):
+        embedded = launch_embedded(path, service_started_by_us=True)
+    if not wait_version():
+        close_splash()
+        open_in_browser(path)  # 兜底：服务没起来也至少把页面打开
+        return
+    if not embedded:
+        open_in_browser(path)
+    # 内嵌成功时 splash 不在这里关：由它自己轮询「页面会话上线」后淡出，
+    # 服务就绪 ≠ 窗口可见，中间那段 WebView2 冷启动空档正是它该覆盖的。
 
 
 if __name__ == "__main__":

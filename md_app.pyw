@@ -18,6 +18,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+import webbrowser
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PORT = 18766
@@ -64,30 +65,47 @@ def ensure_default_settings():
 def service_alive(min_ver=0):
     try:
         d = json.loads(urllib.request.urlopen(
-            "http://127.0.0.1:%d/api/version" % PORT, timeout=0.3).read().decode())
+            "http://127.0.0.1:%d/api/version" % PORT, timeout=0.1).read().decode())
         return int(d.get("version", 0)) >= min_ver if min_ver else True
     except Exception:
         return False
 
 
-def ensure_service():
+def ensure_service(start=True):
+    """等服务就绪；start=False 时只等不拉起（启动器已经起过服务了）。
+
+    start=False 是并行启动的关键：`md_launch` 会在 spawn 服务后立刻拉起本窗口，
+    两件事同时跑。此时若这里再 spawn 一次，Windows 的 SO_REUSEADDR 会让两个
+    服务同时绑定 18766（请求随机落到其中一个），所以必须区分「谁负责起服务」。
+    """
     if service_alive():
         return True
-    try:
-        exe = os.path.join(HERE, "python", "pythonw.exe")
-        if not os.path.exists(exe):
-            exe = sys.executable
-        subprocess.Popen([exe, os.path.join(HERE, "_md_run.py")],
-                         cwd=HERE, creationflags=0x08000000)
-    except Exception as e:
-        log("start service failed: %s" % e)
-        return False
+    if start:
+        try:
+            exe = os.path.join(HERE, "python", "pythonw.exe")
+            if not os.path.exists(exe):
+                exe = sys.executable
+            subprocess.Popen([exe, os.path.join(HERE, "_md_run.py")],
+                             cwd=HERE, creationflags=0x08000000)
+        except Exception as e:
+            log("start service failed: %s" % e)
+            return False
     end = time.time() + 15
     while time.time() < end:
         if service_alive():
             return True
         time.sleep(0.05)
     return False
+
+
+def _open_browser(target):
+    """内嵌窗口起不来时至少把页面开出来（浏览器模式仍然完整可用）。"""
+    q = ("?file=" + urllib.parse.quote(target)) if target else ""
+    try:
+        webbrowser.open("http://127.0.0.1:%d/%s" % (PORT, q))
+        log("fallback: opened in default browser")
+    except Exception as e:
+        log("fallback browser open failed: %s" % e)
 
 
 def load_window_size():
@@ -273,11 +291,7 @@ def main():
     log("start, target=%s" % target)
     _install_hang_watchdog()
 
-    if not ensure_service():
-        log("service unavailable, abort")
-        return 1
-
-    # 自带内核优先
+    # 自带内核优先（必须在 webview 初始化前设好环境变量）
     if os.path.isdir(BUNDLED_RUNTIME) and os.path.exists(
             os.path.join(BUNDLED_RUNTIME, "msedgewebview2.exe")):
         os.environ["WEBVIEW2_BROWSER_EXECUTABLE_FOLDER"] = BUNDLED_RUNTIME
@@ -286,23 +300,53 @@ def main():
         log("bundled runtime missing, fallback to system")
     os.environ.setdefault("WEBVIEW2_USER_DATA_FOLDER", USER_DATA)
 
-    import webview
+    # 预导入 pywebview（pythonnet 约 0.7s）与等服务并行：这段开销正好藏在
+    # 服务启动后面，不占关键路径。
+    _wv = {}
+
+    def _preload():
+        try:
+            import webview as _w
+            _wv["m"] = _w
+        except Exception as e:
+            _wv["err"] = e
+
+    _loader = threading.Thread(target=_preload, daemon=True)
+    _loader.start()
+
+    # 启动器刚 spawn 过服务时不要重复起（见 ensure_service 注释）
+    launcher_spawned = os.environ.get("MDW_LAUNCH_SPAWNED") == "1"
+    if not ensure_service(start=not launcher_spawned):
+        log("service unavailable, abort")
+        return 1
+    _loader.join(timeout=20)
+
+    webview = _wv.get("m")
+    if webview is None:
+        log("pywebview import failed: %s" % _wv.get("err"))
+        _open_browser(target)
+        return 1
     api = Api()
     w, h = load_window_size()
-    win = webview.create_window("墨匠 MDWright", "http://127.0.0.1:%d/%s" % (PORT, q),
-                                width=w, height=h, min_size=(900, 600),
-                                js_api=api)
-    api.window = win
-    win._serializable = False  # 打断 js_api 序列化循环引用（api.window ↔ win.js_api），否则 get_functions 无限递归卡死
-    win.events.closing += on_closing
-    ensure_default_settings()
-    st = load_settings()
-    start_args = ["--disable-gpu"] if st.get("disable_gpu") else None
-    if start_args:
-        log("disable_gpu settings -> software rendering")
-
-
-    webview.start(icon=os.path.join(HERE, "mdwright.ico"), args=start_args)
+    try:
+        win = webview.create_window("墨匠 MDWright", "http://127.0.0.1:%d/%s" % (PORT, q),
+                                    width=w, height=h, min_size=(900, 600),
+                                    js_api=api)
+        api.window = win
+        win._serializable = False  # 打断 js_api 序列化循环引用（api.window ↔ win.js_api），否则 get_functions 无限递归卡死
+        win.events.closing += on_closing
+        ensure_default_settings()
+        st = load_settings()
+        start_args = ["--disable-gpu"] if st.get("disable_gpu") else None
+        if start_args:
+            log("disable_gpu settings -> software rendering")
+        webview.start(icon=os.path.join(HERE, "mdwright.ico"), args=start_args)
+    except Exception as e:
+        # 常见于 WebView2 运行时缺失 / pythonnet 被安全策略挡住：至少开浏览器，
+        # 而不是像以前那样写一行 fatal 就没了下文（用户看不到任何窗口）。
+        log("embedded window failed: %s" % e)
+        _open_browser(target)
+        return 1
     log("window closed")
     return 0
 
