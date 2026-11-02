@@ -65,15 +65,15 @@
 
 | 方向 | 内容 |
 |---|---|
-| Markdown 方言 | 脚注、Callout 五型（NOTE/TIP/IMPORTANT/WARNING/CAUTION）、`==高亮==`、`^{}` / `_{}` 上下标（与旧的 `^x^` / `~x~` 并存）、定义列表、YAML front matter；预览 / 独立 HTML / 分页 PDF / Word 四条链路各实现一遍并对齐口径 |
+| Markdown 方言 | 脚注、Callout 五型（NOTE/TIP/IMPORTANT/WARNING/CAUTION）、`==高亮==`、`^{}` / `_{}` 上下标（与旧的 `^x^` / `~x~` 并存）、定义列表、YAML front matter、图注（图片 `title`）；预览 / 独立 HTML / 分页 PDF / Word 四条链路各实现一遍并对齐口径 |
 | 代码高亮 | highlight.js 懒加载（仅按围栏语言着色，主题跟随明暗）+ 代码块复制按钮（导出时剥离，不进成品） |
-| Word 导出 | pandoc 转换、公式 LaTeX→OMML（Word 里可继续编辑）、导出后注入 `tblBorders` 做三线表、运行输出按「语言 + 代码原文」匹配带入；图表围栏在 pandoc 生成后补一份内联样式的 SVG（`svgBlip`，PNG 留作旧版回退；渲染失败的保持代码块），宽度取围栏 `{N}` 或预览显示比例；导出后可按标题中文 / 正文中文 / 西文三档设字体（默认黑体 / 宋体 / Times New Roman，代码块保持 Consolas 等宽） |
+| Word 导出 | pandoc 转换、公式 LaTeX→OMML（Word 里可继续编辑）、导出后注入 `tblBorders` 做三线表（表头底色随面板）、按「分页」面板写 `pgSz` / `pgMar`（默认 A4）、中文版式（正文缩进 / 1.5 倍行距 / 标题黑体黑色 / 代码块边框 / 引用左边框）、标题自动编号（1 / 1.1 / …，可选）、页码（`PAGE` / `NUMPAGES` 域，可选）、目录（TOC 域，可选）、独行图对齐（默认居中，`{l}/{r}/{c}` 生效）、运行输出按「语言 + 代码原文」匹配带入；图表围栏在 pandoc 生成后补一份内联样式的 SVG（`svgBlip`，PNG 留作旧版回退；渲染失败的保持代码块），宽度取围栏 `{N}` 或预览显示比例；导出后可按标题中文 / 正文中文 / 西文三档设字体（默认黑体 / 宋体 / Times New Roman，代码块保持 Consolas 等宽） |
 | PDF 直出 | 本机 Edge / Chrome 无头打印，单会话 CDP 且等分页完成再 `printToPDF`，不留半截文件 |
 | 可执行代码块 | R（Rscript、控制台语义、ggplot 就地出图）、Python（随包内置 3.11.9 或指定本机解释器，matplotlib 图自动落 PNG）、同文档常驻会话变量跨块、结果落盘 `runs/` 并进 Word |
 | 外部工具 | pandoc / 浏览器 / Rscript / Python 的探测与手工指定路径，缺失即置灰并说明原因 |
 | AI | DeepSeek 升为一等后端（地址与模型预设、`reasoner` 不传采样参数） |
 | 写作交互 | 菜单栏 + 统一设置面板、编辑区右键菜单、中英混排补空格（只作用于渲染与导出）、视图四态显式下拉、`Ctrl+S` |
-| 排版 | 三线表与表头底色默认开启；Word 表格也是三线表 |
+| 排版 | 三线表与表头底色默认开启；Word 表格也是三线表，表头底色同样带过去；导出 Word 的纸张/边距跟「分页」面板 |
 | 稳定性 | 后端掉线自愈（提示条 + 2.5 秒重连 + 内嵌桥重启后端）；测试收敛到 `tests/` + 统一 runner（62 个用例，浏览器级真跑） |
 
 ### 三、名字一样、来源不同，别混着看
@@ -86,8 +86,15 @@
 ### Word 与 PDF：两种能直接交出去的成品
 
 - **Word**：pandoc 转换，公式走 **LaTeX → OMML**，到 Word 里是可继续编辑的原生公式，不是图片。上游的方言在这里会原样露出记法，所以导出前先把 Callout、图片宽度、图表围栏改写成 pandoc 认得的 Markdown；图表则用预览里已经渲染好的 SVG 栅格化成 PNG 嵌进去（Word 不认这些源码）。
-- **Word 的表格边框是自己写进去的**：pandoc 只给表格挂 `tblStyle`、不写任何显式边框，样式来自内置模板，排版面板的开关到不了 Word。导出后改 `word/document.xml`，按 OOXML 顺序注入 `tblBorders` 与表头行底边，改完用 `pandoc -f docx` 回读自检，读不出就判失败——不落打不开的文件。
+- **Word 的表格边框是自己写进去的**：pandoc 只给表格挂 `tblStyle`、不写任何显式边框，样式来自内置模板，排版面板的开关到不了 Word。导出后改 `word/document.xml`，按 OOXML 顺序注入 `tblBorders` 与表头行底边，改完用 `pandoc -f docx` 回读自检，读不出就判失败——不落打不开的文件。三线表的**表头底色**同一趟写进首行 `tcPr/shd`（默认开、`#dbe5ff`，与预览同源；关掉或色值不合法就不写）。
+- **Word 的纸张与页边距是自己写进去的**：pandoc 的 `sectPr` 只写脚注设置，成品打开时的纸张与边距由 Word 本机默认值决定（可能是 Letter / 1 英寸）。导出后按「设置 → 分页」的纸张与四边距注入 `pgSz` / `pgMar`，默认 **A4 + 25/18/25/18mm**，与预览 / PDF 一致；自定义纸张同样生效，脏值整盒回落 A4。
 - **Word 的字体是自己写死的**：pandoc 的内置模板把字体整体交给 Word 主题（`asciiTheme` / `eastAsiaTheme`），落到成品里是 Aptos / 等线 一类，不是中文稿要的样子。导出后改 `word/styles.xml`，把主题引用换成语义相同的显式字体名；判据是原值属于 `major*`（pandoc 的各级标题，落到「标题中文」）还是 `minor*`（`docDefaults` 那条正文根，落到「正文中文」），`word/theme/theme1.xml` 的 `majorFont` / `minorFont` 两组同步改写，兜住导出后新插的内容。默认**标题黑体、正文宋体、西文 Times New Roman**，在「设置 → 排版 → Word 导出字体」里改（常用字体 + 自动枚举的本机字体）；**代码块仍是显式 Consolas 等宽**——它本来就不走主题，因此不参与这两档。
+- **Word 的中文版式是自己写进样式的**：pandoc 的默认样式是西文口径——正文无缩进、标题蓝色、代码块只是一段等宽文字。导出后改 `word/styles.xml`：正文首行缩进 2 字符 + 1.5 倍行距，标题去掉蓝色、加粗并按小二/三号/小三/小四排，代码块四周 1pt 边框 + 浅底 + 左缩进 3 字符，行内代码浅底，引用左侧 3pt 边框，表格单元格五号，图注去斜体并居中。默认开启，在「设置 → 排版 → 中文版式」里关；**预览与 PDF 仍按各元素的排版设置渲染**，这档只作用于 Word 成品。
+- **标题自动编号是自己写进 `numbering.xml` 的**：`numbering.xml` 里加一个六级 decimal 多级列表（`1` / `1.1` / …），再把 `Heading1..6` 的 `pPr` 绑到对应层级。Word 里是自动编号字段，增删标题、调整层级会重排，正文文本里没有号码。默认关闭，在「设置 → 排版 → 标题自动编号」里勾。
+- **Word 页码是域，不是写死的文字**：按「分页 → 页码」生成页眉/页脚部件——`{p}` 落成 `PAGE` 域、`{P}` 落成 `NUMPAGES` 域；位置沿用外侧（奇右偶左，自动开 `evenAndOddHeaders`）/ 底部左中右 / 顶部中右，字号与灰度同面板。`settings.xml` 写 `updateFields`，Word 打开或打印时刷新页码。默认关闭。
+- **Word 的独行图对齐跟着面板走**：默认居中；`{l}` / `{r}` / `{c}` 分别落成 `FigureLeft` / `FigureRight` / `Figure` 段落样式（`jc` 写死），不再像以前那样一律左对齐。带题注的图仍走 `CaptionedFigure`（居中）。
+- **Word 目录是 TOC 域**：勾选后 pandoc 在文首插 1~3 级目录，标题「目录」，`settings.xml` 开 `updateFields`，Word 打开时自动生成条目与页码。默认关闭。
+- **图注按 title 走**：独占一行的图 `![替代文本](x.png "图 1 结构")`，引号里的文字是题注；预览 / 独立 HTML / 分页 PDF 在图下显示，Word 用同一段文字做 `ImageCaption`（居中、非斜体）。没有 title 就不出题注——Word 不再把 alt 当题注；行内图与 `@@ fill` 并排图也不产生题注。
 - **Word 会带上代码块的运行输出**：按「语言 + 代码原文」从侧车匹配，命中才插入。代码改过就匹配不到，因此不会把过期结果贴进交付物。
 - **PDF 直出**：调本机 Edge / Chrome 的无头模式打印，边距与页码沿用当前排版设置。走单会话 CDP 并**等分页完成再 `printToPDF`**，避免生成半截文件。
 

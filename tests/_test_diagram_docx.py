@@ -128,6 +128,7 @@ def main():
         check("图片进 word/media", any(n.endswith(".png") for n in media), str(media))
         check("SVG 子图进 word/media", any(n.endswith(".svg") for n in media), str(media))
         check("正文里有图", "<w:drawing>" in body)
+        check("图表图段用 Figure 样式（居中）", 'w:pStyle w:val="Figure"' in body, body[:300])
         check("PNG 仍作 fallback", any(n.endswith(".png") for n in media))
         check("挂在 svgBlip 上", "svgBlip" in body and "asvg" in body, body[:200])
         check("关系表登记了 SVG", ".svg" in rels, rels[-300:])

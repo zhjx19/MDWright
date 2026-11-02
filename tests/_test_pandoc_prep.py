@@ -38,8 +38,8 @@ def check(name, cond, detail=""):
         fails.append(name)
 
 
-def prep(s):
-    return md_pandoc.prepare_markdown(s)
+def prep(s, **kw):
+    return md_pandoc.prepare_markdown(s, **kw)
 
 
 def main():
@@ -51,13 +51,34 @@ def main():
     out = prep("> 普通引用\n")
     check("普通引用不动", out.strip() == "> 普通引用", out)
 
-    # 2 图片 {N} → pandoc {width=N%}
+    # 2 图片 {N} → pandoc {width=N%}；独行图包 Figure Div（Word 对齐/居中）
     out = prep("![图](a.png){30}\n")
     check("图片宽度转 pandoc 属性", "{width=30%}" in out and "{30}" not in out, out)
+    check("独行图默认居中", '::: {custom-style="Figure"}' in out, out)
     out = prep("![图](a.png)\n")
-    check("无宽度图片不动", out.strip() == "![图](a.png)", out)
+    check("无 title 的图不出题注（alt 清空）", "![](a.png)" in out, out)
     out = prep("![图](a.png){150}\n")
     check("超 100 钳到 100", "{width=100%}" in out, out)
+    # 图注口径：title 作题注（pandoc 用 alt 当 caption），alt 只是替代文本
+    out = prep('![说明](a.png "图 1 结构")\n')
+    check("title 换成 caption", "![图 1 结构](a.png)" in out, out)
+    out = prep('![说明](a.png "图 2"){30 c}\n')
+    check("题注与宽度/对齐共存",
+          "![图 2](a.png){width=30%}" in out and "{30 c}" not in out, out)
+    out = prep("![图](a.png){l}\n")
+    check("{l} → FigureLeft", 'custom-style="FigureLeft"' in out, out)
+    out = prep("![图](a.png){r}\n")
+    check("{r} → FigureRight", 'custom-style="FigureRight"' in out, out)
+    out = prep("![图](a.png)\n", img_align="left")
+    check("面板默认左对齐 → FigureLeft", 'custom-style="FigureLeft"' in out, out)
+    out = prep('文字 ![说明](a.png "图注")\n')
+    check("行内图不换题注", out.strip() == '文字 ![说明](a.png "图注")', out)
+    out = prep('@@ begin fill {50|50}\n![a](a.png "题 A")\n![b](b.png "题 B")\n@@ end fill\n')
+    check("并排块里的图不换题注", '![a](a.png "题 A")' in out, out)
+    check("并排块不包 Figure Div", "custom-style" not in out, out)
+    out = prep("> ![图](a.png)\n")
+    check("引用里的图包 Div 且保留 > 前缀",
+          "> ::: {custom-style=\"Figure\"}" in out, out)
 
     # 3 图表围栏：剥掉 {N}，语言保留（pandoc 当普通代码块）
     out = prep("```mermaid {30}\ngraph TD\nA-->B\n```\n")

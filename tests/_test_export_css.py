@@ -80,6 +80,7 @@ def main():
                             ("独立版 定义列表", ".markdown-body dl"),
                             ("独立版 脚注区", ".markdown-body .footnotes"),
                             ("独立版 脚注上标", ".fn-ref"),
+                            ("独立版 图注", ".markdown-body .img-cap"),
                             ("独立版 标题取 front matter", "<title>我的标题</title>")]:
             check(key, needle in html, "缺: " + needle)
 
@@ -104,6 +105,7 @@ def main():
         for key, needle in [("分页版 callout 样式", ".markdown-body .callout"),
                             ("分页版 行内高亮", ".markdown-body mark"),
                             ("分页版 脚注区样式", ".markdown-body .footnotes"),
+                            ("分页版 图注", ".markdown-body .img-cap"),
                             ("分页版 标题取 front matter", "<title>我的标题</title>")]:
             check(key, needle in paged, "缺: " + needle)
 

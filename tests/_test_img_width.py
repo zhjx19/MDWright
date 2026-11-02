@@ -53,7 +53,7 @@ def js_part():
     harness = js + r"""
 const cases = [
   ["![a](x.png){30}", '<img src="x.png" alt="a" style="width:30%">'],
-  ['![a](x.png "t"){45}', '<img src="x.png" alt="a" title="t" style="width:45%">'],
+  ['![a](x.png "t"){45}', '<img src="x.png" alt="a" title="t" data-cap="t" style="width:45%">'],
   ["![a](x.png){150}", '<img src="x.png" alt="a" style="width:100%">'],
   ["![a](x.png){0}", null],                       // {0} 不进参数组，原样留在正文
   ["![a](x.png){abc}", null],                     // 非数字同上

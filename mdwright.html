@@ -354,6 +354,9 @@
   #preview p.p-img.al-r,.markdown-body p.p-img.al-r{text-align:right !important;}
   #preview .img-fill,.markdown-body .img-fill{display:grid; gap:.7em; align-items:start; margin:.8em 0;}
   #preview .img-fill img,.markdown-body .img-fill img{width:100%; height:auto; margin:0;}
+  /* 图注：独占一行的图，title 作题注（alt 只作替代文本）。块级一行，不吃首行缩进 */
+  #preview .img-cap,.markdown-body .img-cap{display:block; margin-top:.45em; font-size:.86em;
+    line-height:1.5; color:var(--muted); text-indent:0 !important;}
   .markdown-body .toc-anchor{color:var(--muted);}
   /* ── R1 新语法样式（与 md_server.py 的 SYNTAX_CSS 一一对应）──────
      两处必须同步：前端用 CSS 变量跟随主题，导出用固定色值（导出文档无变量）。 */
@@ -668,14 +671,17 @@
         <div class="ts-row"><label>标题中文</label><select data-docxfont="heading"></select></div>
         <div class="ts-row"><label>正文中文</label><select data-docxfont="cjk"></select></div>
         <div class="ts-row"><label>西文（标题与正文）</label><select data-docxfont="latin"></select></div>
-        <p class="set-note">作用于「导出 Word（.docx）」：标题用「标题中文」，正文/表格/列表/引用用「正文中文」，西文两档共用。默认<b>标题黑体、正文宋体、西文 Times New Roman</b>；下拉里的「本机字体」由后端枚举注册表。改动在下次导出时生效——PDF / 打印仍走上面各元素的字体设置。</p>
+        <div class="ts-row"><label>中文版式（正文首行缩进 2 字符 / 1.5 倍行距 / 标题黑体黑色）</label><input id="tsDocxCn" type="checkbox" checked></div>
+        <div class="ts-row"><label>标题自动编号（1 / 1.1 / 1.1.1，仅 Word）</label><input id="tsDocxNum" type="checkbox"></div>
+        <div class="ts-row"><label>Word 目录（1~3 级，打开时自动更新）</label><input id="tsDocxToc" type="checkbox"></div>
+        <p class="set-note">作用于「导出 Word（.docx）」：标题用「标题中文」，正文/表格/列表/引用用「正文中文」，西文两档共用。默认<b>标题黑体、正文宋体、西文 Times New Roman</b>；下拉里的「本机字体」由后端枚举注册表。中文版式还带来的正文缩进、1.5 倍行距、代码块边框与引用左边框、以及标题自动编号，也都只在 Word 里生效——预览与 PDF 仍按上面各元素的设置渲染。改动在下次导出时生效。</p>
       </section>
       <section class="set-sec" data-sec="page" hidden>
-        <div class="ts-sep"><span>页面（作用于「打印」与「导出 PDF」）</span></div>
+        <div class="ts-sep"><span>页面（作用于「打印」「导出 PDF」与「导出 Word」）</span></div>
         <div class="ts-row"><label>纸张</label><select id="tsPaper"><option>A4</option><option>A3</option><option>A5</option><option>B5</option><option>B4</option><option>Letter</option><option>Legal</option><option>Ledger</option><option>A0</option><option>A1</option><option>A2</option><option>B0</option><option>B1</option><option>B2</option><option>B3</option><option value="custom">自定义</option></select></div>
         <div class="ts-row" id="tsCustomRow" hidden><label>自定义宽 × 高（mm）</label><input id="tsPw" type="number" min="50" max="3000" step="1" placeholder="宽"><input id="tsPh" type="number" min="50" max="3000" step="1" placeholder="高"></div>
         <div class="ts-row"><label>页边距 上/右/下/左（mm）</label><input id="tsMt" type="number" min="0" max="100" step="0.5" value="25"><input id="tsMr" type="number" min="0" max="100" step="0.5" value="18"><input id="tsMb" type="number" min="0" max="100" step="0.5" value="25"><input id="tsMl" type="number" min="0" max="100" step="0.5" value="18"></div>
-        <div class="ts-sep"><span>页码（打印导出时渲染）</span></div>
+        <div class="ts-sep"><span>页码（打印 / PDF / Word）</span></div>
         <div class="ts-row"><label>页码</label><select id="tsPnOn"><option value="off">无</option><option value="on">显示</option></select><select id="tsPnPos"><option value="outer">外侧（奇右偶左）</option><option value="bc">底部居中</option><option value="br">底部右侧</option><option value="bl">底部左侧</option><option value="tc">顶部居中</option><option value="tr">顶部右侧</option></select></div>
         <div class="ts-row"><label>页码模板与字号（{p}=页码，{P}=正文总页数）</label><input id="tsPnTpl" type="text" value="{p}"><input id="tsPnSize" type="number" min="6" max="24" step="0.5" value="9"></div>
         <div class="ts-sep"><span>目录（打印导出时自动生成，条目带页码）</span></div>
@@ -1058,6 +1064,9 @@ function parseInline(text, fx){
      参数不合法（0、非数字、未知 token、重复、空组）时整组原样留在正文，fail-closed。
      参数组在 `)` 之外，保存时的路径改写只动括号内路径，天然不触碰后缀。 */
   text=text.replace(/!\[([^\]]*)\]\(([^)]+?)(?:\s+"([^"]*)")?\)(?:\s*\{([^{}]*)\})?/g,function(m,alt,src,title,prm){
+    /* title 是题注（Chrome 的 tooltip 由 title 提供，题注用 data-cap 交给段落层渲染）：
+       title 已在上面过 escapeHtml，属性里可直接用（正则保证不含双引号）。 */
+    var capAttr=title?' data-cap="'+title+'"':'';
     var w='', al='';
     if(prm!==undefined){
       var ok=true, ps=prm.trim().split(/\s+/);
@@ -1072,12 +1081,12 @@ function parseInline(text, fx){
       if(!ok){
         /* 参数写坏：图照渲染，{..} 原样留在正文可见（CHANGELOG v2.0.0 口径）。
            绝不能把整段交回文本——那样会被后面的链接正则吃掉，变成"链接+花括号"。 */
-        toks.push('<img src="'+escAttr(src)+'" alt="'+escAttr(alt)+'"'+(title?' title="'+escAttr(title)+'"':'')+'>');
+        toks.push('<img src="'+escAttr(src)+'" alt="'+escAttr(alt)+'"'+(title?' title="'+escAttr(title)+'"':'')+capAttr+'>');
         return '\x00T'+(toks.length-1)+'\x00{'+prm+'}';
       }
     }
     toks.push('<img src="'+escAttr(src)+'" alt="'+escAttr(alt)+'"'+(title?' title="'+escAttr(title)+'"':'')
-      +(w?' style="width:'+w+'"':'')+(al?' data-al="'+al+'"':'')+'>');
+      +capAttr+(w?' style="width:'+w+'"':'')+(al?' data-al="'+al+'"':'')+'>');
     return '\x00T'+(toks.length-1)+'\x00';
   });
   text=text.replace(/\[([^\]]+)\]\(([^)]+?)(?:\s+"([^"]*)")?\)/g,function(m,txt,href,title){
@@ -1380,7 +1389,9 @@ function parseMarkdown(src, fx){
     var imOnly=/^<img\b([^>]*)>$/.exec(pInner);
     if(imOnly){
       var imAl=/\sdata-al="([clr])"/.exec(imOnly[1]);
-      html+='<p class="p-img'+(imAl?' al-'+imAl[1]:'')+'">'+pInner+'</p>';
+      var imCap=/\sdata-cap="([^"]*)"/.exec(imOnly[1]);
+      html+='<p class="p-img'+(imAl?' al-'+imAl[1]:'')+'">'+pInner
+        +(imCap?'<span class="img-cap">'+imCap[1]+'</span>':'')+'</p>';
     }else{
       html+='<p>'+pInner+'</p>';
     }
@@ -2943,6 +2954,13 @@ function parseMarkdown(src, fx){
         fetch('/api/export-docx',{method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({path:currentFile, markdown:cjkSpaceMarkdown(getText()), outPath:outPath,
             threeLine:!!(tsCfg&&tsCfg.table&&tsCfg.table.three), token:runDocKey().token,
+            tableHeadOn:!!(tsCfg&&tsCfg.table&&tsCfg.table.headOn),
+            tableHeadColor:(tsCfg&&tsCfg.table&&tsCfg.table.headColor)||'',
+            page:(tsCfg&&tsCfg.page)||null,
+            docxCn:!!(tsCfg.docx&&tsCfg.docx.cn),
+            docxNumbering:!!(tsCfg.docx&&tsCfg.docx.num),
+            docxToc:!!(tsCfg.docx&&tsCfg.docx.toc),
+            imgAlign:(tsCfg.fonts&&tsCfg.fonts.img&&tsCfg.fonts.img.a)||'center',
             latinFont:(tsCfg.docx&&tsCfg.docx.latin)||'',
             cjkFont:(tsCfg.docx&&tsCfg.docx.cjk)||'',
             headingFont:(tsCfg.docx&&tsCfg.docx.heading)||'',
@@ -3386,7 +3404,10 @@ function parseMarkdown(src, fx){
       toc:{on:(pg.toc&&pg.toc.on==='on')?'on':'off',pos:(pg.toc&&pg.toc.pos)||'top',solo:pg.toc?(pg.toc.solo!==false):true}};
     var dx=raw.docx||{};
     o.docx={heading:docxFontName(dx.heading,'heading'),
-      cjk:docxFontName(dx.cjk,'cjk'),latin:docxFontName(dx.latin,'latin')};
+      cjk:docxFontName(dx.cjk,'cjk'),latin:docxFontName(dx.latin,'latin'),
+      cn:(dx.cn===undefined?true:!!dx.cn),
+      num:!!dx.num,
+      toc:!!dx.toc};
     return o;})();
   function applyTypeset(){
     var old=document.getElementById('ts-style');if(old)old.parentNode.removeChild(old);
@@ -3525,6 +3546,9 @@ function parseMarkdown(src, fx){
     for(var dd=0;dd<dfs.length;dd++){
       setDocxFontSel(dfs[dd],tsCfg.docx[dfs[dd].getAttribute('data-docxfont')]);
     }
+    document.getElementById('tsDocxCn').checked=tsCfg.docx.cn!==false;
+    document.getElementById('tsDocxNum').checked=!!tsCfg.docx.num;
+    document.getElementById('tsDocxToc').checked=!!tsCfg.docx.toc;
     var pg=tsCfg.page;
     document.getElementById('tsPaper').value=pg.paper;
     document.getElementById('tsCustomRow').hidden=(pg.paper!=='custom');
@@ -4061,6 +4085,9 @@ function parseMarkdown(src, fx){
       var kind=dfs[dd].getAttribute('data-docxfont');
       tsCfg.docx[kind]=docxFontName(dfs[dd].value,kind);
     }
+    tsCfg.docx.cn=document.getElementById('tsDocxCn').checked;
+    tsCfg.docx.num=document.getElementById('tsDocxNum').checked;
+    tsCfg.docx.toc=document.getElementById('tsDocxToc').checked;
     tsCfg.table.three=document.getElementById('tsThree').checked;
     tsCfg.table.headOn=document.getElementById('tsHeadOn').checked;
     tsCfg.table.headColor=document.getElementById('tsHeadColor').value;

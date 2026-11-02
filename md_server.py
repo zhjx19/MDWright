@@ -73,10 +73,10 @@ except Exception as _e:
 PORT = int(os.environ.get("MD_PORT") or 18766)
 HERE = os.path.dirname(os.path.abspath(__file__))
 EDITOR_HTML = os.path.join(HERE, "mdwright.html")
-MD_SERVER_VERSION = 80  # 每次服务端路由/能力变更时 +1；md_launch 依此自愈换代
+MD_SERVER_VERSION = 81  # 每次服务端路由/能力变更时 +1；md_launch 依此自愈换代
 # 应用版本号（「关于」窗口显示）：单一来源在这里，/api/version 带出 app 字段。
 # 发版时必须与 CHANGELOG 首段、MD_SERVER_VERSION 同步（见 AGENTS.md「发布必改三处」）。
-APP_VERSION = "3.6.0"
+APP_VERSION = "3.7.0"
 SETTINGS_PATH = os.path.join(HERE, "runtime", "settings.json")
 
 # .smd 自包含文档格式（v1.2.0）；导入失败落错误日志，相关路由返回明确错误而非静默
@@ -1378,6 +1378,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 cfg = cfg if isinstance(cfg, dict) else {}
                 import md_tools
                 three_line = bool(obj.get("threeLine"))
+                head_on = bool(obj.get("tableHeadOn"))
+                head_color = str(obj.get("tableHeadColor") or "").strip()
+                docx_cn = obj.get("docxCn")
+                docx_cn = True if docx_cn is None else bool(docx_cn)
+                docx_num = bool(obj.get("docxNumbering"))
+                docx_toc = bool(obj.get("docxToc"))
+                img_align = str(obj.get("imgAlign") or "center")
+                page = _docx_page_mm(obj.get("page"))
+                page_cfg = obj.get("page") if isinstance(obj.get("page"), dict) else {}
+                pn = page_cfg.get("pn") if isinstance(page_cfg.get("pn"), dict) else None
                 # 图表位图：前端在预览里渲染好、栅格化后一起交上来；空数组 = 全按代码块
                 diagrams = obj.get("diagrams") or []
                 if not isinstance(diagrams, list):
@@ -1404,12 +1414,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
                          "cjk": (obj.get("cjkFont") or "").strip(),
                          "heading": (obj.get("headingFont") or "").strip()}
                 md_pandoc.export_docx(md_text, md_path, out, pandoc,
-                                      diagrams=diagrams, stats=stats, fonts=fonts)
-                if three_line:
-                    md_pandoc.three_line_tables(out, md_tools.find_pandoc(pandoc))
+                                      diagrams=diagrams, stats=stats, fonts=fonts,
+                                      page=page, cn=docx_cn, num=docx_num, pn=pn,
+                                      img_align=img_align, toc=docx_toc)
+                if three_line or (head_on and head_color):
+                    md_pandoc.three_line_tables(out, md_tools.find_pandoc(pandoc),
+                                                header_fill=head_color if head_on else "",
+                                                borders=three_line)
                 self._send(200, json.dumps({"ok": True, "path": out,
                     "diagrams": stats.get("diagrams", 0),
                     "fonts": stats.get("fonts", {}),
+                    "page": stats.get("page", {}),
+                    "docxCn": bool(stats.get("docxCn", False)),
+                    "docxNumbering": bool(stats.get("docxNumbering", False)),
+                    "pageNumbers": bool(stats.get("pageNumbers", False)),
+                    "docxToc": bool(stats.get("docxToc", False)),
                     "diagramTotal": md_pandoc.count_diagram_fences(md_text)},
                     ensure_ascii=False))
             except Exception as e:
@@ -2056,6 +2075,30 @@ PAPER_W_MM = {"A0": 841, "A1": 594, "A2": 420, "A3": 297, "A4": 210, "A5": 148,
               "B0": 1000, "B1": 707, "B2": 500, "B3": 353, "B4": 250, "B5": 176,
               "Letter": 215.9, "Legal": 215.9, "Ledger": 279.4}
 
+
+def _docx_page_mm(cfg):
+    """排版面板的 page 配置 → Word 版面（mm）。纸张名复用分页那两张表，
+    custom 取面板里的 pw/ph；字符串/缺失/脏值在这里先落成数字，范围校验交给
+    md_pandoc（整盒回落到 A4）。
+    """
+    cfg = cfg if isinstance(cfg, dict) else {}
+    paper = str(cfg.get("paper") or "A4")
+    try:
+        if paper == "custom" and cfg.get("pw") and cfg.get("ph"):
+            w, h = float(cfg["pw"]), float(cfg["ph"])
+        else:
+            w = float(PAPER_W_MM.get(paper, 210.0))
+            h = float(PAPER_H_MM.get(paper, 297.0))
+    except (TypeError, ValueError):
+        w, h = 210.0, 297.0
+    box = {"w": w, "h": h}
+    for key, default in (("mt", 25), ("mr", 18), ("mb", 25), ("ml", 18)):
+        try:
+            box[key] = float(cfg.get(key, default))
+        except (TypeError, ValueError):
+            box[key] = float(default)
+    return box
+
 # 分页导出基础正文样式（镜像编辑器预览 .markdown-body；固定色值——
 # 导出文档里 CSS 变量未定义，不能直接搬预览样式；排版规范借鉴
 # Cogito_Scribit STYLE_GUIDE 一章（表格）与十一章（版面缩放纪律））：
@@ -2325,6 +2368,9 @@ SYNTAX_CSS = (
     "break-inside:avoid;}"
     ".markdown-body .img-fill div{min-width:0;}"
     ".markdown-body .img-fill img{width:100%;height:auto;margin:0;}"
+    # 图注（与 mdwright.html 主样式同步）：独占一行的图，title 作题注
+    ".markdown-body .img-cap{display:block;margin-top:6px;font-size:.86em;"
+    "line-height:1.5;color:#666;text-indent:0 !important;}"
 )
 
 

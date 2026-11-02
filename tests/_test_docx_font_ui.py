@@ -122,7 +122,9 @@ def main():
           min(sysf.get("heading") or 0, sysf.get("cjk") or 0,
               sysf.get("latin") or 0) > 50, str(sysf))
     check("应用后写进 localStorage",
-          (res.get("saved") or {}) == {"heading": "KaiTi", "cjk": "SimHei", "latin": "Georgia"},
+          (res.get("saved") or {}) == {"heading": "KaiTi", "cjk": "SimHei",
+                                       "latin": "Georgia", "cn": True,
+                                       "num": False, "toc": False},
           str(res.get("saved")))
     check("重开面板回填已保存字体",
           (res.get("reopen") or {}) == {"heading": "KaiTi", "cjk": "SimHei", "latin": "Georgia"},

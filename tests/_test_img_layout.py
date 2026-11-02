@@ -122,6 +122,21 @@ cases.push(t('比例非数字原样', '@@ begin fill {a|b}\n![a](a.png)\n![b](b.
 cases.push(t('缺比例原样', '@@ begin fill\n![a](a.png)\n![b](b.png)\n@@ end fill',
   ['@@ begin fill'], ['img-fill']));
 
+/* ── 6. 图注：title 作题注，alt 只是替代文本 ─────────────── */
+cases.push(t('title 作题注', '![说明](x.png "图 1 结构")',
+  ['<p class="p-img"><img', 'class="img-cap">图 1 结构</span>'],
+  ['alt="图 1 结构"']));
+cases.push(t('只有 alt 不出题注', '![说明](x.png)',
+  ['<img src="x.png" alt="说明"'], ['img-cap']));
+cases.push(t('图文混排的 title 不作题注', '看 ![说明](x.png "图注")',
+  ['title="图注"'], ['img-cap']));
+cases.push(t('题注与对齐/宽度共存', '![说明](x.png "图 2"){30 c}',
+  ['class="p-img al-c"', 'style="width:30%"', 'img-cap">图 2</span>']));
+cases.push(t('题注走 HTML 转义', '![说明](x.png "<b>粗</b>")',
+  ['&lt;b&gt;粗&lt;/b&gt;'], ['<b>粗</b>']));
+cases.push(t('并排图不出题注', fill2('![a](a.png "题 A")', '![b](b.png "题 B")'),
+  ['img-fill'], ['img-cap']));
+
 console.log(JSON.stringify(cases));
 """
 
