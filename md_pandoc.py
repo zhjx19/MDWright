@@ -1019,7 +1019,7 @@ def set_docx_update_fields(docx_path, pandoc_exe="", verify_dir=""):
     return True
 
 
-def three_line_tables(docx_path, pandoc_exe, header_fill="", borders=True):
+def three_line_tables(docx_path, pandoc_exe, header_fill="", borders=True, center=True):
     """把 docx 里所有表格改成三线表（上/下 + 表头下，共三条线，无竖线）。
 
     直接改 word/document.xml：pandoc 只写 tblStyle、不写任何显式边框，
@@ -1029,6 +1029,8 @@ def three_line_tables(docx_path, pandoc_exe, header_fill="", borders=True):
     header_fill：表头底色（`#RRGGBB` 或 `RRGGBB`）。空值或脏值不写，
     预览里「表头底色」是默认开的，这里由调用方传面板值，保持两边一致。
     borders=False：只写表头底色，不注入三线表边框（预览里两个开关互相独立）。
+    center：表格整体居中（`tblPr/jc`）。pandoc 默认左对齐，中文稿的表格通常居中；
+    与 borders / fill 互不影响，关掉三线表也照样居中。
     """
     import xml.etree.ElementTree as ET
 
@@ -1047,12 +1049,22 @@ def three_line_tables(docx_path, pandoc_exe, header_fill="", borders=True):
         others = {n: z.read(n) for n in names if n != "word/document.xml"}
     ET.register_namespace("w", _W_NS)
     root = ET.fromstring(raw)
-    for tbl in root.iter(q("tbl")):
-        if borders:
-            pr = tbl.find(q("tblPr"))
-            if pr is None:
-                pr = ET.Element(q("tblPr"))
-                tbl.insert(0, pr)
+    tables = list(root.iter(q("tbl")))
+    if not tables:
+        return
+    for tbl in tables:
+        pr = tbl.find(q("tblPr"))
+        if (borders or center) and pr is None:
+            pr = ET.Element(q("tblPr"))
+            tbl.insert(0, pr)
+        if center and pr is not None:
+            oldjc = pr.find(q("jc"))
+            if oldjc is not None:
+                pr.remove(oldjc)
+            jc = ET.Element(q("jc"))
+            jc.set(q("val"), "center")
+            _insert_ordered(pr, jc, _TBL_PR_ORDER)
+        if borders and pr is not None:
             old = pr.find(q("tblBorders"))
             if old is not None:
                 pr.remove(old)

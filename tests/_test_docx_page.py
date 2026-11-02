@@ -180,6 +180,10 @@ def main():
         check("底色写入值为大写六位", 'w:fill="DBE5FF"' in head,
               str(re.findall(r"<w:shd\b[^>]*/>", head)))
         check("表体行不吃底色", "<w:shd" not in body, body[:300])
+        check("表格默认居中",
+              bool(re.search(r"<w:tblPr>.*?<w:jc w:val=\"center\"\s*/>.*?</w:tblPr>", d5, re.S)),
+              re.search(r"<w:tblPr>.*?</w:tblPr>", d5, re.S).group(0)[:300]
+              if re.search(r"<w:tblPr>.*?</w:tblPr>", d5, re.S) else "缺 tblPr")
         ok5, detail5 = readable(out5)
         check("表头底色 docx 结构可读", ok5, detail5)
 
@@ -257,6 +261,9 @@ def main():
                 check("API 只填底色时写 shd", 'w:fill="DBE5FF"' in d9)
                 check("API 关三线表时不注入边框",
                       "<w:tblBorders>" not in d9 and "<w:tcBorders>" not in d9)
+                check("API 关三线表时表格仍居中",
+                      bool(re.search(r"<w:tblPr>.*?<w:jc w:val=\"center\"\s*/>.*?</w:tblPr>",
+                                     d9, re.S)))
         finally:
             httpd.shutdown()
             httpd.server_close()

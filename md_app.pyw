@@ -285,6 +285,80 @@ def _install_hang_watchdog():
         log("hang watchdog failed: %s" % e)
 
 
+def _open_dropped(win, path):
+    try:
+        win.evaluate_js("window.mdwDropOpen && window.mdwDropOpen(%s)"
+                        % json.dumps(path))
+    except Exception as e:
+        log("drop open failed: %s" % e)
+
+
+def _enable_native_file_drop(win):
+    """把 Windows 的「拖 .md 到窗口」接到页面。
+
+    WebView2 的 File 对象不暴露本机路径（Chromium 安全限制），只靠 JS 的 drop
+    事件拿不到该打开哪个文件。这里从 WinForms 宿主窗体/控件接 DragDrop：
+    AllowExternalDrop=False 让 WebView2 不再自己吞掉拖放，再由宿主取
+    DataFormats.FileDrop 的完整路径，交给页面的 window.mdwDropOpen。
+    """
+    def install():
+        try:
+            from webview.platforms import winforms as wf
+            form = wf.BrowserView.instances.get(win.uid)
+            if form is None:
+                log("drop hook: form not found")
+                return
+            view = getattr(form, "webview", None)
+            if view is not None and hasattr(view, "AllowExternalDrop"):
+                try:
+                    view.AllowExternalDrop = False
+                except Exception as e:
+                    log("drop hook: AllowExternalDrop off failed: %s" % e)
+            last = {"t": 0.0, "p": ""}
+
+            def on_enter(sender, e):
+                try:
+                    ok = e.Data.GetDataPresent(wf.WinForms.DataFormats.FileDrop)
+                except Exception:
+                    ok = False
+                e.Effect = (wf.WinForms.DragDropEffects.Copy if ok
+                            else getattr(wf.WinForms.DragDropEffects, "None"))
+
+            def on_drop(sender, e):
+                try:
+                    data = e.Data.GetData(wf.WinForms.DataFormats.FileDrop)
+                    files = [str(x) for x in (data if data is not None else [])]
+                except Exception as ex:
+                    log("drop read failed: %s" % ex)
+                    return
+                for p in files:
+                    if os.path.splitext(p)[1].lower() in (".md", ".smd"):
+                        now = time.time()
+                        if p == last["p"] and now - last["t"] < 0.6:
+                            return          # 窗体与控件都绑了事件，去重
+                        last["t"], last["p"] = now, p
+                        threading.Thread(target=_open_dropped,
+                                         args=(win, p), daemon=True).start()
+                        return
+
+            for target in (form, view):
+                if target is None:
+                    continue
+                try:
+                    target.AllowDrop = True
+                    target.DragEnter += on_enter
+                    target.DragDrop += on_drop
+                except Exception as ex:
+                    log("drop hook bind failed: %s" % ex)
+            log("native file drop enabled")
+        except Exception as e:
+            log("drop hook failed: %s" % e)
+    try:
+        win.events.before_show += install
+    except Exception as e:
+        log("drop hook register failed: %s" % e)
+
+
 def main():
     target = sys.argv[1] if len(sys.argv) > 1 else ""
     q = ("?file=" + urllib.parse.quote(target)) if target else ""
@@ -335,6 +409,7 @@ def main():
         api.window = win
         win._serializable = False  # 打断 js_api 序列化循环引用（api.window ↔ win.js_api），否则 get_functions 无限递归卡死
         win.events.closing += on_closing
+        _enable_native_file_drop(win)
         ensure_default_settings()
         st = load_settings()
         start_args = ["--disable-gpu"] if st.get("disable_gpu") else None

@@ -2664,20 +2664,7 @@ function parseMarkdown(src, fx){
       .then(function(j){
         if(!(j&&j.ok)){ fileInput.click(); return; }   // 服务端弹框失败 → 兜底
         if(!j.path){ return; }                          // 用户取消
-        return fetchDocInto(j.path)
-          .then(function(d){
-            applyDocWithDraft(j.path, d.txt, '已载入原文件');
-            currentFile = j.path;
-            currentBase = d.base;
-            lastDir = j.path.replace(/[\\\/][^\\\/]*$/,'');
-            try { localStorage.setItem('md-lastdir', lastDir); } catch(e) {}
-            var base = j.path.split(/[\\\/]/).pop();
-            updateFileIndicator(base);
-            if(typeof aiResetSession==='function') aiResetSession('已切换文档，开始新对话');
-            updateSaveBtn();
-            addRecent(j.path, base);
-            showToast('已打开：'+base);
-          });
+        return openPath(j.path);
       })
       .catch(function(){ fileInput.click(); });
   }
@@ -4176,6 +4163,27 @@ function parseMarkdown(src, fx){
     document.getElementById('statFile').textContent=name;
     document.title=(name==='默认文档')?'墨匠 MDWright':'墨匠 MDWright - '+name;
   }
+  /* 统一「按完整路径打开」：原生打开框与拖放共用。拖放的路径来自 WinForms
+     宿主的 DragDrop（WebView2 的 File 对象拿不到本机路径），见 md_app.pyw。 */
+  function openPath(p){
+    return fetchDocInto(p).then(function(d){
+      applyDocWithDraft(p, d.txt, '已载入原文件');
+      currentFile=p;
+      currentBase=d.base;
+      lastDir=p.replace(/[\\\/][^\\\/]*$/,'');
+      try{localStorage.setItem('md-lastdir',lastDir);}catch(e){}
+      var base=p.split(/[\\\/]/).pop();
+      updateFileIndicator(base);
+      if(typeof aiResetSession==='function')aiResetSession('已切换文档，开始新对话');
+      updateSaveBtn();
+      addRecent(p, base);
+      showToast('已打开：'+base);
+    });
+  }
+  window.mdwDropOpen=function(p){
+    if(!p) return;
+    openPath(String(p)).catch(function(e){ showToast('读取文件失败：'+e.message); });
+  };
   function loadFile(p){
     currentBuiltin=-1;
     fetchDocInto(p)

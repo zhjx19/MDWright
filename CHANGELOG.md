@@ -13,10 +13,12 @@
 
 ## v3.7.0（2026-11-02）
 
-**本次改动：Word 的纸张/页边距与中文版式跟面板一致；图注口径统一；可选标题自动编号、页码与目录；独行图对齐；三线表可写表头底色**
+**本次改动：Word 的纸张/页边距与中文版式跟面板一致；图注口径统一；可选标题自动编号、页码与目录；独行图对齐；表格默认居中；拖放打开文档；三线表可写表头底色**
 
 **新增**
 
+- **Word 表格默认居中**：`tblPr` 补 `jc=center`，与三线表 / 表头底色解耦——关掉三线表后表格仍居中；三线表的边框与表头底色行为不变。
+- **拖放打开文档**：把 `.md` / `.smd` 从资源管理器拖到窗口即可打开（不是插入文本）。WebView2 的 File 对象拿不到本机路径，所以在 `md_app.pyw` 的 WinForms 宿主上接 `DragDrop`，取 `DataFormats.FileDrop` 的完整路径后交给页面新增的 `window.mdwDropOpen`；页面侧与「打开」菜单共用 `openPath()`。非 `.md/.smd` 忽略；浏览器模式没有宿主钩子，不改变原行为。
 - **Word 中文版式**：默认开启（「设置 → 排版 → 中文版式」可关）。按中文稿件口径改 `word/styles.xml`：正文首行缩进 2 字符（`firstLineChars="200"`）+ 1.5 倍行距（`line="360" auto`）；标题去掉 pandoc 的 accent1 蓝色、加粗，小二 / 三号 / 小三 / 小四；代码块四周 1pt 边框 + 浅底 + 左缩进 3 字符、五号；行内代码浅底、仍为 Consolas；引用左侧 3pt 边框、去首行缩进；表格单元格（`Compact`）五号；`Caption` 去斜体并缩到 10.5pt，`ImageCaption` / `Figure` 居中。
 - **Word 版面**：导出时把「分页 → 纸张 / 页边距」写进 `sectPr`（`pgSz` + `pgMar`），默认 A4 + 25/18/25/18mm。此前 `sectPr` 只有脚注设置，纸张与边距由 Word 本机默认值决定，与预览 / PDF 的 A4 版面不是一回事。改的是 `word/document.xml` 的字符串级插入，按 OOXML 子元素顺序落位，写完用 pandoc 回读自检。
 - **自定义纸张**：面板里的 custom 宽高与字符串数值（localStorage 原样）同样生效。脏值（0 / 负数 / 非数字）整盒回落到 A4 + 默认边距——半个自定义纸张配半个默认边距会得到版心不可预期的文档，所以不做逐项回落。
@@ -26,11 +28,12 @@
 - **Word 独行图对齐**：以前 Word 里所有独行图一律左对齐（预览却按面板居中）。`prepare_markdown` 现在把独行图包进带 `custom-style` 的 Div：默认与 `{c}` → `Figure`（居中），`{l}` → `FigureLeft`（左），`{r}` → `FigureRight`（右）；面板「排版 → 图片」的默认对齐在没写参数时生效。三个段落样式由 `set_docx_figure_styles()` 补齐，左右两档基于 `Figure`（不带正文首行缩进）。带题注的图仍走 `CaptionedFigure`（居中）。
 - **Word 目录**：默认关闭（「设置 → 排版 → Word 目录」）。开启后 pandoc 在文首插入 1~3 级 TOC 域，标题取 `toc-title=目录`；`settings.xml` 打开 `updateFields`，Word 打开时自动生成条目与页码。与「分页 → 目录」是两套：后者仍只作用于打印 / PDF。
 - **表头底色**：三线表后处理新增 `header_fill`，把面板的「表头底色」（默认开、`#dbe5ff`）写进首行 `tcPr/shd`；关掉或色值不合法就不写。预览里默认开的表头底色，Word 里不再缺失。两个开关互相独立：关掉三线表仍可单独开表头底色（此时只写 `shd`，不注入边框）。
-- **测试**：`_test_docx_page.py`（A4 / 自定义 / 脏值 / 不传 page / 表头底色 / API 落位与回显）、`_test_docx_page_ui.py`（导出请求体真的带 `page`、表头底色与页码四项）、`_test_docx_cn.py`（正文/标题/代码/引用/表格/图注样式与关闭档）、`_test_docx_cn_ui.py`（开关默认、持久化与请求体）、`_test_docx_heading_numbering.py`（六级编号、numPr、关闭档、与中文版式同开）、`_test_docx_heading_numbering_ui.py`（开关默认、持久化与请求体）、`_test_docx_page_numbers.py`（底部居中 / 外侧奇偶 / 顶部 / 关闭档 / 模板字段）、`_test_docx_toc.py`（TOC 域、中文标题、关闭档、与页码同开）、`_test_docx_toc_ui.py`（开关默认、持久化与请求体）、`_test_docx_img_align.py`（默认/`{l}`/`{r}`/`{c}`/题注/行内/并排与三个样式）、`_test_docx_img_align_ui.py`（面板默认对齐进请求体）、`_test_figure_caption_docx.py`（Word 只出一处题注、题注取 title）、`_test_img_layout.py` 的图注解析用例、`_test_pandoc_prep.py` 的题注与 Div 改写用例。
+- **测试**：`_test_docx_page.py`（A4 / 自定义 / 脏值 / 不传 page / 表头底色 / API 落位与回显）、`_test_docx_page_ui.py`（导出请求体真的带 `page`、表头底色与页码四项）、`_test_docx_cn.py`（正文/标题/代码/引用/表格/图注样式与关闭档）、`_test_docx_cn_ui.py`（开关默认、持久化与请求体）、`_test_docx_heading_numbering.py`（六级编号、numPr、关闭档、与中文版式同开）、`_test_docx_heading_numbering_ui.py`（开关默认、持久化与请求体）、`_test_docx_page_numbers.py`（底部居中 / 外侧奇偶 / 顶部 / 关闭档 / 模板字段）、`_test_docx_toc.py`（TOC 域、中文标题、关闭档、与页码同开）、`_test_docx_toc_ui.py`（开关默认、持久化与请求体）、`_test_docx_img_align.py`（默认/`{l}`/`{r}`/`{c}`/题注/行内/并排与三个样式）、`_test_docx_img_align_ui.py`（面板默认对齐进请求体）、`_test_figure_caption_docx.py`（Word 只出一处题注、题注取 title）、`_test_img_layout.py` 的图注解析用例、`_test_pandoc_prep.py` 的题注与 Div 改写用例、`_test_drop_open.py`（页面 `mdwDropOpen` 真的载入目标文档）。
 
 **变更**
 
-- `export_docx(..., page=None, cn=None, num=None, pn=None, img_align="center", toc=None)`、`three_line_tables(..., header_fill="", borders=True)`：不传就不动版面/样式/编号/页码/目录，图片默认居中；截图等旁路调用保持原样。`/api/export-docx` 响应新增 `page`、`docxCn`、`docxNumbering`、`pageNumbers` 与 `docxToc` 回显；`docxCn` 缺省为 `true`，`docxNumbering` / `docxToc` 缺省为 `false`，页码由 `page.pn.on` 决定，图片默认对齐取 `imgAlign`（缺省 center）。
+- `export_docx(..., page=None, cn=None, num=None, pn=None, img_align="center", toc=None)`、`three_line_tables(..., header_fill="", borders=True, center=True)`：不传就不动版面/样式/编号/页码/目录，图片默认居中、表格默认居中；截图等旁路调用保持原样。`/api/export-docx` 响应新增 `page`、`docxCn`、`docxNumbering`、`pageNumbers` 与 `docxToc` 回显；`docxCn` 缺省为 `true`，`docxNumbering` / `docxToc` 缺省为 `false`，页码由 `page.pn.on` 决定，图片默认对齐取 `imgAlign`（缺省 center）。
+- **拖放入口**：`md_app.pyw` 新增 `_enable_native_file_drop()`，在 `before_show` 里给 WinForms 窗体/WebView2 控件绑 `DragEnter` / `DragDrop`（WebView2 关掉 `AllowExternalDrop`，避免它自己吞掉拖放），过滤 `.md/.smd` 后调用页面 `window.mdwDropOpen`；页面新增 `openPath()`，与「打开」菜单共用。`MD_SERVER_VERSION 81 → 82`。
 - `prepare_markdown()` 新增图注改写：`![alt](src "title")` → `![title](src)`、无 title 的 `![alt](src)` → `![](src)`。**旧文档若靠 alt 出题注，需要把说明移到 title**。
 - 字体改写里重复的「写 `.part` + pandoc 回读」收成 `_verify_docx()`，字体 / 版面 / 中文版式共用一套校验与清理。
 - 「分页」页签的说明改为同时作用于「打印」「导出 PDF」「导出 Word」。
@@ -44,6 +47,8 @@
 - 页码核对：底部居中生成一个 `footerN.xml`，含 `PAGE`/`NUMPAGES`、`jc=center`、`sz=18`、`color=595959`；外侧生成两个 footer（右 / 左）且 settings 有 `evenAndOddHeaders`；顶部生成 header 并由 `sectPr` 引用；关闭档不生成部件、不写引用；只写 `{p}` 时不含 `NUMPAGES`。
 - 目录核对：开启后 `document.xml` 有 `TOC \o "1-3"` 域与「目录」标题（`docPartGallery` 里的英文名不算正文）；settings 有 `updateFields`；关闭档两者都不出现；与页码同开时 `updateFields` 只写一次。
 - 图对齐核对：默认 / `{c}` → `Figure`，`{l}` → `FigureLeft`，`{r}` → `FigureRight`；三个样式的 `jc` 分别为 center / left / right，左右两档 `basedOn="Figure"` 且无 `firstLine`；题注图仍是 `CaptionedFigure`，行内图与并排图不套 Figure。
+- 表格居中核对：`tblPr` 有 `jc=center`；关掉三线表后仍居中（边框与居中互不影响）；无表格的文档直接跳过，不产生无意义的改写。
+- 拖放核对：页面侧 `mdwDropOpen` 调用后编辑器内容、文件名、标题都切到目标文档；原生 WinForms 拖放需要真机拖一次（浏览器测试覆盖不到）。
 - 每条改写后 `pandoc -f docx` 回读通过（结构自检），文档目录无残留 `.part`。
 - 真机 Word 的目视核对（页面设置、标题/代码块/引用样式与预览观感）留待发布前按门面清单补。
 
