@@ -18,7 +18,8 @@
 **新增**
 
 - **Word 表格默认居中**：`tblPr` 补 `jc=center`，与三线表 / 表头底色解耦——关掉三线表后表格仍居中；三线表的边框与表头底色行为不变。
-- **拖放打开文档**：把 `.md` / `.smd` 从资源管理器拖到窗口即可打开（不是插入文本）。WebView2 的 File 对象拿不到本机路径，所以在 `md_app.pyw` 的 WinForms 宿主上接 `DragDrop`，取 `DataFormats.FileDrop` 的完整路径后交给页面新增的 `window.mdwDropOpen`；页面侧与「打开」菜单共用 `openPath()`。非 `.md/.smd` 忽略；浏览器模式没有宿主钩子，不改变原行为。
+- **拖放打开文档**：把 `.md` / `.smd` 从资源管理器拖到窗口即可打开（不是插入文本）。WebView2 的 File 对象拿不到本机路径，所以在 `md_app.pyw` 的 WinForms 宿主上接 `DragDrop`，取 `DataFormats.FileDrop` 的完整路径后交给页面新增的 `window.mdwDropOpen`；页面侧与「打开」菜单共用 `openPath()`。非 `.md/.smd` 忽略；浏览器模式没有宿主钩子，不改变原行为。**实测修正**：pywebview 的 `shown` / `loaded` 回调在非 UI 线程，且 `before_show` 时设的 `AllowDrop` 会被 WebView2 初始化覆盖（表现为禁止图标）——现在用 `form.Invoke` 切回 UI 线程，在 `shown` 与 `loaded` 各补一次，并把 `AllowExternalDrop` 关掉。
+- **卸载条目与图标**：ARP 的 `DisplayIcon` 改成带引号的 `"…\mdwright.ico",0`（安装目录含空格时不再显示成通用/错乱图标）；卸载程序在 `uninstall.cmd` 之后再兜底删除 ARP 键，并通知 Shell 刷新图标与关联——不再出现「卸载后条目还在、再点卸载找不到文件」的死条目。
 - **Word 中文版式**：默认开启（「设置 → 排版 → 中文版式」可关）。按中文稿件口径改 `word/styles.xml`：正文首行缩进 2 字符（`firstLineChars="200"`）+ 1.5 倍行距（`line="360" auto`）；标题去掉 pandoc 的 accent1 蓝色、加粗，小二 / 三号 / 小三 / 小四；代码块四周 1pt 边框 + 浅底 + 左缩进 3 字符、五号；行内代码浅底、仍为 Consolas；引用左侧 3pt 边框、去首行缩进；表格单元格（`Compact`）五号；`Caption` 去斜体并缩到 10.5pt，`ImageCaption` / `Figure` 居中。
 - **Word 版面**：导出时把「分页 → 纸张 / 页边距」写进 `sectPr`（`pgSz` + `pgMar`），默认 A4 + 25/18/25/18mm。此前 `sectPr` 只有脚注设置，纸张与边距由 Word 本机默认值决定，与预览 / PDF 的 A4 版面不是一回事。改的是 `word/document.xml` 的字符串级插入，按 OOXML 子元素顺序落位，写完用 pandoc 回读自检。
 - **自定义纸张**：面板里的 custom 宽高与字符串数值（localStorage 原样）同样生效。脏值（0 / 负数 / 非数字）整盒回落到 A4 + 默认边距——半个自定义纸张配半个默认边距会得到版心不可预期的文档，所以不做逐项回落。
@@ -48,7 +49,8 @@
 - 目录核对：开启后 `document.xml` 有 `TOC \o "1-3"` 域与「目录」标题（`docPartGallery` 里的英文名不算正文）；settings 有 `updateFields`；关闭档两者都不出现；与页码同开时 `updateFields` 只写一次。
 - 图对齐核对：默认 / `{c}` → `Figure`，`{l}` → `FigureLeft`，`{r}` → `FigureRight`；三个样式的 `jc` 分别为 center / left / right，左右两档 `basedOn="Figure"` 且无 `firstLine`；题注图仍是 `CaptionedFigure`，行内图与并排图不套 Figure。
 - 表格居中核对：`tblPr` 有 `jc=center`；关掉三线表后仍居中（边框与居中互不影响）；无表格的文档直接跳过，不产生无意义的改写。
-- 拖放核对：页面侧 `mdwDropOpen` 调用后编辑器内容、文件名、标题都切到目标文档；原生 WinForms 拖放需要真机拖一次（浏览器测试覆盖不到）。
+- 拖放核对：页面侧 `mdwDropOpen` 调用后编辑器内容、文件名、标题都切到目标文档；原生 WinForms 拖放需要真机拖一次（浏览器测试覆盖不到）。宿主钩子在 `shown` / `loaded` 经 `form.Invoke` 于 UI 线程完成绑定（`runtime/md_app.log` 出现 `native file drop enabled (ui thread)`）。
+- 卸载器核对：`UninstallMDWright.cs` 用系统 csc 预编译通过（52,736 字节）；`install.cmd` / Setup 写入的 `DisplayIcon` 为带引号的 `"…\mdwright.ico",0`；卸载后 ARP 键由 C# 兜底删除并调用 `SHChangeNotify`。
 - 每条改写后 `pandoc -f docx` 回读通过（结构自检），文档目录无残留 `.part`。
 - 真机 Word 的目视核对（页面设置、标题/代码块/引用样式与预览观感）留待发布前按门面清单补。
 

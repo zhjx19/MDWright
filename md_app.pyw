@@ -300,20 +300,32 @@ def _enable_native_file_drop(win):
     事件拿不到该打开哪个文件。这里从 WinForms 宿主窗体/控件接 DragDrop：
     AllowExternalDrop=False 让 WebView2 不再自己吞掉拖放，再由宿主取
     DataFormats.FileDrop 的完整路径，交给页面的 window.mdwDropOpen。
+
+    时机很重要：pywebview 的 shown / loaded 回调在**非 UI 线程**，而
+    AllowDrop / AllowExternalDrop 必须在 UI 线程上设；且在 before_show 设会被
+    WebView2 初始化覆盖（实测 shown 时 view.AllowDrop 仍是 False）。所以用
+    form.Invoke 切回 UI 线程，在 shown 与 loaded 各补一次。
     """
-    def install():
+    state = {"installed": False, "handlers": None}
+
+    def on_ui(form):
         try:
             from webview.platforms import winforms as wf
-            form = wf.BrowserView.instances.get(win.uid)
-            if form is None:
-                log("drop hook: form not found")
-                return
             view = getattr(form, "webview", None)
             if view is not None and hasattr(view, "AllowExternalDrop"):
                 try:
                     view.AllowExternalDrop = False
                 except Exception as e:
                     log("drop hook: AllowExternalDrop off failed: %s" % e)
+            for target in (form, view):
+                if target is None:
+                    continue
+                try:
+                    target.AllowDrop = True
+                except Exception as e:
+                    log("drop hook: AllowDrop failed: %s" % e)
+            if state["installed"]:
+                return
             last = {"t": 0.0, "p": ""}
 
             def on_enter(sender, e):
@@ -345,16 +357,34 @@ def _enable_native_file_drop(win):
                 if target is None:
                     continue
                 try:
-                    target.AllowDrop = True
                     target.DragEnter += on_enter
                     target.DragDrop += on_drop
                 except Exception as ex:
                     log("drop hook bind failed: %s" % ex)
-            log("native file drop enabled")
+            state["handlers"] = (on_enter, on_drop)   # 防 GC
+            state["installed"] = True
+            log("native file drop enabled (ui thread)")
         except Exception as e:
-            log("drop hook failed: %s" % e)
+            log("drop hook ui failed: %s" % e)
+
+    def poke(window):
+        try:
+            from System import Action
+            from webview.platforms import winforms as wf
+            form = wf.BrowserView.instances.get(win.uid)
+            if form is None:
+                return
+
+            def work():
+                on_ui(form)
+
+            form.Invoke(Action(work))
+        except Exception as e:
+            log("drop hook poke failed: %s" % e)
+
     try:
-        win.events.before_show += install
+        win.events.shown += poke
+        win.events.loaded += poke
     except Exception as e:
         log("drop hook register failed: %s" % e)
 

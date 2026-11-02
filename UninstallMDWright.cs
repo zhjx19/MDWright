@@ -16,6 +16,7 @@ using System.IO;
 using System.Text;
 using System.Windows.Forms;
 using Microsoft.Win32;
+using System.Runtime.InteropServices;
 
 namespace MDWrightUninstall
 {
@@ -36,6 +37,22 @@ namespace MDWrightUninstall
         readonly CheckBox _chkFiles = new CheckBox();
         readonly TextBox _txtLog = new TextBox();
         readonly Button _btnGo = new Button();
+
+        [DllImport("shell32.dll")]
+        static extern void SHChangeNotify(int eventId, uint flags, IntPtr item1, IntPtr item2);
+
+        static void NotifyShell()
+        {
+            try { SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero); } catch { }
+            try
+            {
+                var psi = new ProcessStartInfo(
+                    Path.Combine(Environment.SystemDirectory, "ie4uinit.exe"), "-show")
+                { UseShellExecute = false, CreateNoWindow = true };
+                Process.Start(psi);
+            }
+            catch { }
+        }
 
         public UninstallForm()
         {
@@ -127,6 +144,20 @@ namespace MDWrightUninstall
             {
                 Log("[!] " + ex.Message);
             }
+
+            // uninstall.cmd 可能因为文件被删/半途失败而没清掉 ARP，这里再兜一次：
+            // 否则「设置 → 应用」会留下一个点不动的死条目（v3.7.0 实测）。
+            try
+            {
+                using (var k = Registry.CurrentUser.OpenSubKey(
+                    @"Software\Microsoft\Windows\CurrentVersion\Uninstall", true))
+                {
+                    if (k != null) k.DeleteSubKeyTree("MDWright", false);
+                }
+                Log("「设置 → 应用」卸载条目已清除。");
+            }
+            catch (Exception ex) { Log("[!] 卸载条目清除失败：" + ex.Message); }
+            NotifyShell();
 
             if (_chkFiles.Checked)
             {

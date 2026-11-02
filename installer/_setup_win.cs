@@ -219,7 +219,7 @@ namespace MDWrightSetup
                     k.SetValue("DisplayVersion", Version);
                     k.SetValue("Publisher", "wUwproject");
                     k.SetValue("InstallLocation", target);
-                    k.SetValue("DisplayIcon", ico);
+                    k.SetValue("DisplayIcon", "\"" + ico + "\",0");
                     k.SetValue("UninstallString", "\"" + unins + "\"");
                     k.SetValue("NoModify", 1, RegistryValueKind.DWord);
                     k.SetValue("NoRepair", 1, RegistryValueKind.DWord);
@@ -343,7 +343,11 @@ namespace MDWrightSetup
                     string unins = k == null ? "" : (k.GetValue("UninstallString") as string ?? "");
                     string loc = k == null ? "" : (k.GetValue("InstallLocation") as string ?? "");
                     lines.Add("arp_display_name=" + name);
-                    lines.Add("arp_icon_abs=" + (icon == Path.Combine(tmp, "mdwright.ico") ? 1 : 0));
+                    string wantIco = Path.Combine(tmp, "mdwright.ico");
+                    bool iconOk = icon == wantIco
+                        || icon == "\"" + wantIco + "\",0"
+                        || icon == wantIco + ",0";
+                    lines.Add("arp_icon_abs=" + (iconOk ? 1 : 0));
                     lines.Add("arp_unins_abs=" +
                               (unins == "\"" + Path.Combine(tmp, "UninstallMDWright.exe") + "\"" ? 1 : 0));
                     lines.Add("arp_install_location=" + (loc == tmp ? 1 : 0));
