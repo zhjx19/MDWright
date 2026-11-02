@@ -1605,6 +1605,9 @@ function parseMarkdown(src, fx){
     if(PLAINTEXT_ONLY) return;
     var dt=e.dataTransfer;
     if(!dt) return;
+    /* 文件拖放交给宿主（md_app.pyw 的 CoreWebView2 钩子）：这里若把
+       text/plain 当文本插进去并 preventDefault，就把「拖 .md 打开」吞掉了。 */
+    if(dt.files && dt.files.length) return;
     var txt=dt.getData('text/plain');
     if(txt){ e.preventDefault(); insertPlainText(txt); }
   });

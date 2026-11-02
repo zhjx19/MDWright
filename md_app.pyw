@@ -293,79 +293,74 @@ def _open_dropped(win, path):
         log("drop open failed: %s" % e)
 
 
+def _drop_path_from_uri(uri):
+    """file:///C:/x.md → C:\\x.md；非 .md/.smd 返回空串。"""
+    try:
+        u = urllib.parse.urlparse(uri or "")
+        if u.scheme.lower() != "file":
+            return ""
+        p = urllib.parse.unquote(u.path or "")
+        if u.netloc and u.netloc.lower() not in ("", "localhost"):
+            p = "//" + u.netloc + p
+        elif len(p) > 2 and p[0] == "/" and p[2] == ":":
+            p = p[1:]
+        p = os.path.normpath(p)
+        return p if os.path.splitext(p)[1].lower() in (".md", ".smd") else ""
+    except Exception:
+        return ""
+
+
 def _enable_native_file_drop(win):
     """把 Windows 的「拖 .md 到窗口」接到页面。
 
-    WebView2 的 File 对象不暴露本机路径（Chromium 安全限制），只靠 JS 的 drop
-    事件拿不到该打开哪个文件。这里从 WinForms 宿主窗体/控件接 DragDrop：
-    AllowExternalDrop=False 让 WebView2 不再自己吞掉拖放，再由宿主取
-    DataFormats.FileDrop 的完整路径，交给页面的 window.mdwDropOpen。
-
-    时机很重要：pywebview 的 shown / loaded 回调在**非 UI 线程**，而
-    AllowDrop / AllowExternalDrop 必须在 UI 线程上设；且在 before_show 设会被
-    WebView2 初始化覆盖（实测 shown 时 view.AllowDrop 仍是 False）。所以用
-    form.Invoke 切回 UI 线程，在 shown 与 loaded 各补一次。
+    WebView2 的 File 对象不暴露本机路径，但**默认允许外部拖放**：把文件拖进
+    窗口时它会尝试打开一个 file:// 新窗口/导航。我们不去关 AllowExternalDrop
+    （关掉反而会显示禁止图标、宿主也收不到 DragDrop），而是拦下这两个动作，
+    从 URI 里还原完整路径，交给页面的 window.mdwDropOpen。
     """
-    state = {"installed": False, "handlers": None}
+    state = {"installed": False, "handlers": None, "last": (0.0, "")}
 
-    def on_ui(form):
-        try:
-            from webview.platforms import winforms as wf
-            view = getattr(form, "webview", None)
-            if view is not None and hasattr(view, "AllowExternalDrop"):
-                try:
-                    view.AllowExternalDrop = False
-                except Exception as e:
-                    log("drop hook: AllowExternalDrop off failed: %s" % e)
-            for target in (form, view):
-                if target is None:
-                    continue
-                try:
-                    target.AllowDrop = True
-                except Exception as e:
-                    log("drop hook: AllowDrop failed: %s" % e)
-            if state["installed"]:
-                return
-            last = {"t": 0.0, "p": ""}
+    def open_once(p):
+        now = time.time()
+        last_t, last_p = state["last"]
+        if p == last_p and now - last_t < 1.0:
+            return
+        state["last"] = (now, p)
+        threading.Thread(target=_open_dropped, args=(win, p), daemon=True).start()
 
-            def on_enter(sender, e):
+    def install(core):
+        if state["installed"] or core is None:
+            return
+
+        def on_new_window(sender, e):
+            p = _drop_path_from_uri(e.Uri)
+            if p:
                 try:
-                    ok = e.Data.GetDataPresent(wf.WinForms.DataFormats.FileDrop)
+                    e.Handled = True
                 except Exception:
-                    ok = False
-                e.Effect = (wf.WinForms.DragDropEffects.Copy if ok
-                            else getattr(wf.WinForms.DragDropEffects, "None"))
+                    pass
+                open_once(p)
 
-            def on_drop(sender, e):
+        def on_nav(sender, e):
+            p = _drop_path_from_uri(e.Uri)
+            if p:
                 try:
-                    data = e.Data.GetData(wf.WinForms.DataFormats.FileDrop)
-                    files = [str(x) for x in (data if data is not None else [])]
-                except Exception as ex:
-                    log("drop read failed: %s" % ex)
-                    return
-                for p in files:
-                    if os.path.splitext(p)[1].lower() in (".md", ".smd"):
-                        now = time.time()
-                        if p == last["p"] and now - last["t"] < 0.6:
-                            return          # 窗体与控件都绑了事件，去重
-                        last["t"], last["p"] = now, p
-                        threading.Thread(target=_open_dropped,
-                                         args=(win, p), daemon=True).start()
-                        return
+                    e.Cancel = True
+                except Exception:
+                    pass
+                open_once(p)
+            elif e.Uri and e.Uri.lower().startswith("file:"):
+                # 拖进来的不是 .md/.smd：别让窗口变成一段纯文本
+                try:
+                    e.Cancel = True
+                except Exception:
+                    pass
 
-            for target in (form, view):
-                if target is None:
-                    continue
-                try:
-                    target.DragEnter += on_enter
-                    target.DragDrop += on_drop
-                except Exception as ex:
-                    log("drop hook bind failed: %s" % ex)
-            state["handlers"] = (on_enter, on_drop)   # 防 GC
-            state["installed"] = True
-            log("native file drop enabled (ui thread)")
-        except Exception as e:
-            log("drop hook ui failed: %s" % e)
+        core.NewWindowRequested += on_new_window
+        core.NavigationStarting += on_nav
+        state["handlers"] = (on_new_window, on_nav)   # 防 GC
+        state["installed"] = True
+        log("native file drop enabled (corewebview2)")
 
     def poke(window):
         try:
@@ -376,7 +371,11 @@ def _enable_native_file_drop(win):
                 return
 
             def work():
-                on_ui(form)
+                try:
+                    view = getattr(form, "webview", None)
+                    install(view.CoreWebView2 if view is not None else None)
+                except Exception as e:
+                    log("drop hook ui failed: %s" % e)
 
             form.Invoke(Action(work))
         except Exception as e:
