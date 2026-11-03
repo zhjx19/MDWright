@@ -61,9 +61,9 @@ typesetting  chinese  offline  python  webview2  code-runner  agpl
 5. `git push origin main`；
 6. 网页发 Release（见下）。
 
-### 为什么 exe 只能手动上传
+### 为什么 exe 只能从本机上传
 
-`_setup_out/` 在 `.gitignore` 里（安装包不入库，避免仓库体积膨胀），所以资产只能从本机上载。本机没装 `gh`、也没有可用 token，网页是唯一通道——不要为了省这一步去改 `.gitignore`。
+`_setup_out/` 在 `.gitignore` 里（安装包不入库，避免仓库体积膨胀），所以资产只能从本机上载。本机没装 `gh`，但 git 凭据管理器里有可用 token：`git credential fill`（`protocol=https` + `host=github.com`）取到后即可走 REST API——`POST /repos/zhjx19/MDWright/releases` 建 Release（`tag_name` / `target_commitish=main` / `draft=false`），再 `POST https://uploads.github.com/repos/zhjx19/MDWright/releases/<id>/assets?name=<文件名>` 传 exe。两个坑：本机 `curl.exe --proxy` 一律报 `(43) bad argument`，`api.github.com` 直连即可；`github.com` 的资产下载若要过代理，用 Python `urllib` + `ProxyHandler`。网页端仍是零依赖的兜底通道。
 
 ### 网页端六步
 
@@ -150,7 +150,7 @@ v3.2.4 发布时的实际状态：Release 挂得很好（tag、Latest、资产�
 |---|---|
 | About · Description | 已填（按第一节文案） |
 | About · Topics | 已填 14 个（按第一节列表） |
-| Releases | 六条：`v3.7.0`（Latest，资产 26,190,336 字节，`digest` 与本地 SHA256 逐字一致）、`v3.6.0`（26,173,440 字节）、`v3.5.0`（26,171,392 字节）、`v3.4.1`（26,161,152 字节）、`v3.3.4`（26,156,032 字节）、`v3.2.4`（26,133,504 字节） |
-| Release 正文 | `v3.7.0` 只写本版（Word 版面/中文版式/编号/页码/目录/图注/图片对齐、拖放、`#>` 输出、启动与卸载修复），无自检清单；`v3.6.0` 及更早同理 |
-| tag | `v3.2.4`、`v3.3.0`–`v3.3.4`、`v3.4.1`、`v3.5.0`、`v3.6.0`、`v3.7.0` 均为 `v*` 形式 |
-| 下载回来的包 | `v3.7.0` 资产 26,190,336 字节；下载后本地 SHA256 `0a106986c7f80794a053762ceda8026a087c3924ee5de405b4f7eec777b69c59` 与 `digest` 逐字一致；「关于」3.7.0 待安装确认（与本地构建包同 SHA） |
+| Releases | 七条：`v3.7.1`（Latest，资产 26,190,848 字节，`digest` 与本地 SHA256 逐字一致）、`v3.7.0`（26,190,336 字节）、`v3.6.0`（26,173,440 字节）、`v3.5.0`（26,171,392 字节）、`v3.4.1`（26,161,152 字节）、`v3.3.4`（26,156,032 字节）、`v3.2.4`（26,133,504 字节） |
+| Release 正文 | `v3.7.1` 只写本版（R 定义函数被误调用、分屏预览选不中、实时渲染拖选被当点击）与安装段 + SHA256，无自检清单；`v3.7.0` 及更早同理 |
+| tag | `v3.2.4`、`v3.3.0`–`v3.3.4`、`v3.4.1`、`v3.5.0`、`v3.6.0`、`v3.7.0`、`v3.7.1` 均为 `v*` 形式 |
+| 下载回来的包 | `v3.7.1` 资产 26,190,848 字节；下载后本地 SHA256 `38747ed936e5a2fdbf2501617b9beacc12d6f1bdb49288612d0df6f34b1e223f` 与 `digest` 逐字一致；下载回来的 exe `--smoke` 退出码 0（582 文件、版本 3.7.1、ARP 用独立 `MDWrightArpSmoke` 键且跑完即删）；「关于」3.7.1 待安装确认（与本地构建包同 SHA） |
