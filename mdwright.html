@@ -3688,11 +3688,15 @@ function parseMarkdown(src, fx){
     }catch(e){ token='d0'; }
     return {doc:doc, token:token};
   }
+  /* 运行结果行加 `#> ` 引导：与代码块区分（预览 / HTML / PDF 共用）。空行保持空 */
+  function outPrompt(s){
+    return String(s||'').replace(/\r\n?/g,'\n').replace(/^(?=.)/gm,'#> ');
+  }
   /* 输出渲染的唯一入口：实时运行、刷票恢复、会话重置后都走这里，样式只此一份。 */
   function renderRunOut(out,j,lang){
     var html='';
     if(j&&j.ok){
-      if(j.stdout) html+='<pre class="r-out-txt">'+escapeHtml(j.stdout)+'</pre>';
+      if(j.stdout) html+='<pre class="r-out-txt">'+escapeHtml(outPrompt(j.stdout))+'</pre>';
       if(j.image) html+='<img class="r-out-img" src="/img?path='+encodeURIComponent(j.image)+'">';
       if(!j.stdout&&!j.image) html+='<div class="r-out-line">（执行完成，无输出）</div>';
       /* Python 有两套运行时（随包内置 / 本机解释器），跑完标明是谁跑的，别让人猜 */
@@ -3701,8 +3705,8 @@ function parseMarkdown(src, fx){
               ' · '+escapeHtml(j.python||'Python')+'</div>';
       }
     }else{
-      html+='<pre class="r-out-err">'+escapeHtml((j&&j.error)||'执行失败')+'</pre>';
-      if(j&&j.stdout) html+='<pre class="r-out-txt">'+escapeHtml(j.stdout)+'</pre>';
+      html+='<pre class="r-out-err">'+escapeHtml(outPrompt((j&&j.error)||'执行失败'))+'</pre>';
+      if(j&&j.stdout) html+='<pre class="r-out-txt">'+escapeHtml(outPrompt(j.stdout))+'</pre>';
       /* 内置运行时缺第三方库时后端会给一句 hint（指回设置面板），别让人去重装库 */
       if(j&&j.hint) html+='<div class="r-out-line">'+escapeHtml(j.hint)+'</div>';
     }
@@ -3791,17 +3795,17 @@ function parseMarkdown(src, fx){
       .then(function(j){
         var html='';
         if(j&&j.ok){
-          if(j.stdout) html+='<pre class="r-out-txt">'+escapeHtml(j.stdout)+'</pre>';
+          if(j.stdout) html+='<pre class="r-out-txt">'+escapeHtml(outPrompt(j.stdout))+'</pre>';
           if(j.image) html+='<img class="r-out-img" src="/img?path='+
                             encodeURIComponent(j.image)+'">';
           if(!j.stdout&&!j.image) html='<div class="r-out-line">（执行完成，无输出）</div>';
         }else{
-          html='<pre class="r-out-err">'+escapeHtml((j&&j.error)||'执行失败')+'</pre>';
+          html='<pre class="r-out-err">'+escapeHtml(outPrompt((j&&j.error)||'执行失败'))+'</pre>';
         }
         body.innerHTML=html;
       })
       .catch(function(e){
-        body.innerHTML='<pre class="r-out-err">执行失败：'+escapeHtml(e.message)+'</pre>';
+        body.innerHTML='<pre class="r-out-err">'+escapeHtml(outPrompt('执行失败：'+e.message))+'</pre>';
       });
   }
   document.getElementById('selRun').addEventListener('click',function(){

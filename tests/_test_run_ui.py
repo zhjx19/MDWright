@@ -99,6 +99,8 @@ def main():
     check("第一块跑出结果（无输出也算完成）", r.get("out1") is not None, str(r.get("out1"))[:80])
     check("第二块能用到第一块的变量", "42" in (r.get("out2") or ""),
           str(r.get("out2"))[:120])
+    check("输出行带 #> 引导", "#> [1] 42" in (r.get("out2") or ""),
+          str(r.get("out2"))[:120])
     check("工具栏有会话重置按钮", r.get("resetBtn") is True, str(r.get("resetBtn")))
 
     r2 = run_expr(RESTORE, url=url)

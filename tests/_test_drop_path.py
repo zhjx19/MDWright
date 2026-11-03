@@ -38,5 +38,21 @@ check("http 拒绝", mod._drop_path_from_uri("https://example.com/a.md"), "")
 check("UNC 共享", mod._drop_path_from_uri("file://server/share/x.smd"),
       r"\\server\share\x.smd")
 
+
+class FakeBrowser:
+    def __init__(self):
+        self.calls = []
+
+    def open(self, url, *a, **k):
+        self.calls.append(url)
+        return True
+
+
+real = FakeBrowser()
+proxy = mod._NoFileBrowser(real)
+check("file:// 不交给系统浏览器", proxy.open("file:///C:/x.md"), False)
+check("http 仍然交给系统浏览器", proxy.open("https://example.com"), True)
+check("只拦 file://", real.calls, ["https://example.com"])
+
 print("\n%s" % ("ALL PASS" if not fails else "FAILED: %s" % fails))
 sys.exit(1 if fails else 0)

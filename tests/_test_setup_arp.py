@@ -277,7 +277,7 @@ def main():
             drop_test_key()
             run_batch(tmp, crlf_text, "arp_ok.cmd")
             got = read_test_key()
-            want_ico = os.path.join(tmp, "mdwright.ico")
+            want_ico = '"%s",0' % os.path.join(tmp, "mdwright.ico")
             want_unins = '"%s"' % os.path.join(tmp, "UninstallMDWright.exe")
             check("CRLF：写出了 DisplayName",
                   got.get("DisplayName") == "墨匠 MDWright", repr(got.get("DisplayName")))

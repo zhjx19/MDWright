@@ -54,6 +54,8 @@ BLOCKS = [
 def main():
     out = md_pandoc.inject_run_outputs(MD, BLOCKS)
     check("命中块注入 output 围栏", "```output" in out and "[1] 5.5" in out, out[:200])
+    check("输出行带 #> 引导", "#> [1] 5.5" in out, out[:200])
+    check("错误行也带 #> 引导", "#> [错误] boom 中文错误" in out, out[:300])
     check("命中两个块各注入一个", out.count("```output") == 2, str(out.count("```output")))
     check("出错块注入错误行", "[错误] boom 中文错误" in out, out[:300])
     check("没有存档的块不加东西",
@@ -135,6 +137,9 @@ def main():
             xml2 = z.read("word/document.xml").decode("utf-8")
             media = [n for n in z.namelist() if n.startswith("word/media/")]
         check("端到端：文字输出进了 Word", "5.5" in xml2, "")
+        check("端到端：输出带 #> 引导",
+              "#> [1] 5.5" in xml2 or "#&gt; [1] 5.5" in xml2,
+              xml2[max(0, xml2.find("5.5") - 80):xml2.find("5.5") + 40])
         check("端到端：运行图真的嵌进去了（<w:drawing> + media）",
               "<w:drawing>" in xml2 and len(media) >= 1, "media=%r" % (media[:3],))
         check("端到端：三线表生效", "<w:tblBorders>" in xml2, "")

@@ -28,6 +28,7 @@
 - **Word 页码**：默认关闭（沿用「分页 → 页码」的开关与设置）。开启后生成 `header`/`footer` 部件：模板里的 `{p}` 落成 `PAGE` 域、`{P}` 落成 `NUMPAGES` 域；位置支持外侧（奇右偶左，自动开 `w:evenAndOddHeaders`）/ 底部左中右 / 顶部中右；字号与灰度（`595959`）同面板。`settings.xml` 写 `w:updateFields`，Word 打开或打印时刷新域。`sectPr` 里补 `headerReference` / `footerReference`，关系表与内容类型同步登记；缺 `settings.xml` 不成立时直接报错，不落半成品。
 - **Word 独行图对齐**：以前 Word 里所有独行图一律左对齐（预览却按面板居中）。`prepare_markdown` 现在把独行图包进带 `custom-style` 的 Div：默认与 `{c}` → `Figure`（居中），`{l}` → `FigureLeft`（左），`{r}` → `FigureRight`（右）；面板「排版 → 图片」的默认对齐在没写参数时生效。三个段落样式由 `set_docx_figure_styles()` 补齐，左右两档基于 `Figure`（不带正文首行缩进）。带题注的图仍走 `CaptionedFigure`（居中）。
 - **Word 目录**：默认关闭（「设置 → 排版 → Word 目录」）。开启后 pandoc 在文首插入 1~3 级 TOC 域，标题取 `toc-title=目录`；`settings.xml` 打开 `updateFields`，Word 打开时自动生成条目与页码。与「分页 → 目录」是两套：后者仍只作用于打印 / PDF。
+- **运行结果引导符**：R / Python 的文字输出在预览、独立 HTML、分页 PDF、Word 里**每行前统一加 `#> `**（空行保持空），与代码块区分开；Word 侧由 `inject_run_outputs()` 写入，预览/PDF 侧由 `outPrompt()` 写入，同一套规则。
 - **表头底色**：三线表后处理新增 `header_fill`，把面板的「表头底色」（默认开、`#dbe5ff`）写进首行 `tcPr/shd`；关掉或色值不合法就不写。预览里默认开的表头底色，Word 里不再缺失。两个开关互相独立：关掉三线表仍可单独开表头底色（此时只写 `shd`，不注入边框）。
 - **测试**：`_test_docx_page.py`（A4 / 自定义 / 脏值 / 不传 page / 表头底色 / API 落位与回显）、`_test_docx_page_ui.py`（导出请求体真的带 `page`、表头底色与页码四项）、`_test_docx_cn.py`（正文/标题/代码/引用/表格/图注样式与关闭档）、`_test_docx_cn_ui.py`（开关默认、持久化与请求体）、`_test_docx_heading_numbering.py`（六级编号、numPr、关闭档、与中文版式同开）、`_test_docx_heading_numbering_ui.py`（开关默认、持久化与请求体）、`_test_docx_page_numbers.py`（底部居中 / 外侧奇偶 / 顶部 / 关闭档 / 模板字段）、`_test_docx_toc.py`（TOC 域、中文标题、关闭档、与页码同开）、`_test_docx_toc_ui.py`（开关默认、持久化与请求体）、`_test_docx_img_align.py`（默认/`{l}`/`{r}`/`{c}`/题注/行内/并排与三个样式）、`_test_docx_img_align_ui.py`（面板默认对齐进请求体）、`_test_figure_caption_docx.py`（Word 只出一处题注、题注取 title）、`_test_img_layout.py` 的图注解析用例、`_test_pandoc_prep.py` 的题注与 Div 改写用例、`_test_drop_open.py`（页面 `mdwDropOpen` 真的载入目标文档）、`_test_drop_path.py`（file:// URI → 本机路径）。
 
@@ -35,6 +36,8 @@
 
 - `export_docx(..., page=None, cn=None, num=None, pn=None, img_align="center", toc=None)`、`three_line_tables(..., header_fill="", borders=True, center=True)`：不传就不动版面/样式/编号/页码/目录，图片默认居中、表格默认居中；截图等旁路调用保持原样。`/api/export-docx` 响应新增 `page`、`docxCn`、`docxNumbering`、`pageNumbers` 与 `docxToc` 回显；`docxCn` 缺省为 `true`，`docxNumbering` / `docxToc` 缺省为 `false`，页码由 `page.pn.on` 决定，图片默认对齐取 `imgAlign`（缺省 center）。
 - **拖放入口**：`md_app.pyw` 新增 `_enable_native_file_drop()`，在 `loaded` 回调里经 `form.Invoke` 到 UI 线程，订阅 `CoreWebView2.NewWindowRequested` / `NavigationStarting`，用 `_drop_path_from_uri()` 把 `file://` URI 还原成本机路径后调用页面 `window.mdwDropOpen`；**不关 `AllowExternalDrop`**（关掉会显示禁止图标、宿主也收不到拖放）。页面新增 `openPath()`，与「打开」菜单共用。`MD_SERVER_VERSION 81 → 83`。
+- **拖放不再弹浏览器**：pywebview 的 `EdgeChrome.on_new_window_request` 默认把任何 URI 都丢给系统浏览器。新增 `_NoFileBrowser` 代理，只拦 `file://`；http(s) 外部链接保持原行为。代理在 `loaded`（edgechromium 已加载）之后安装，避免提前 import 拖慢启动。
+- **启动耗时**：去掉了 `webview.platforms.edgechromium` 的提前 import（`-X importtime` 实测 0.56s）。`md_app.log` 增加 `+x.xxs` 计时；本机 warm 实测：`service ready +0.29s` / `window created +0.29s` / `native file drop enabled +1.43–1.50s`（最后一项含 WebView2 初始化与页面加载）。
 - `prepare_markdown()` 新增图注改写：`![alt](src "title")` → `![title](src)`、无 title 的 `![alt](src)` → `![](src)`。**旧文档若靠 alt 出题注，需要把说明移到 title**。
 - 字体改写里重复的「写 `.part` + pandoc 回读」收成 `_verify_docx()`，字体 / 版面 / 中文版式共用一套校验与清理。
 - 「分页」页签的说明改为同时作用于「打印」「导出 PDF」「导出 Word」。
@@ -48,6 +51,8 @@
 - 页码核对：底部居中生成一个 `footerN.xml`，含 `PAGE`/`NUMPAGES`、`jc=center`、`sz=18`、`color=595959`；外侧生成两个 footer（右 / 左）且 settings 有 `evenAndOddHeaders`；顶部生成 header 并由 `sectPr` 引用；关闭档不生成部件、不写引用；只写 `{p}` 时不含 `NUMPAGES`。
 - 目录核对：开启后 `document.xml` 有 `TOC \o "1-3"` 域与「目录」标题（`docPartGallery` 里的英文名不算正文）；settings 有 `updateFields`；关闭档两者都不出现；与页码同开时 `updateFields` 只写一次。
 - 图对齐核对：默认 / `{c}` → `Figure`，`{l}` → `FigureLeft`，`{r}` → `FigureRight`；三个样式的 `jc` 分别为 center / left / right，左右两档 `basedOn="Figure"` 且无 `firstLine`；题注图仍是 `CaptionedFigure`，行内图与并排图不套 Figure。
+- 运行结果核对：Word 端到端导出里出现 `#> [1] 5.5`；浏览器级运行 `x + 2` 的输出是 `#> [1] 42`（预览 / PDF 同源）。
+- 启动核对：`_test_startup_perf.py` 20/20（warm shim 0.27s）；`md_app.log` 本机 warm：service +0.29s、window created +0.29s、页面 +1.43–1.50s。
 - 表格居中核对：`tblPr` 有 `jc=center`；关掉三线表后仍居中（边框与居中互不影响）；无表格的文档直接跳过，不产生无意义的改写。
 - 拖放核对：页面侧 `mdwDropOpen` 调用后编辑器内容、文件名、标题都切到目标文档；`file://` URI 解析单测覆盖盘符 / 空格 / 中文 / UNC / 非 md 拒绝。宿主钩子在 `loaded` 经 `form.Invoke` 于 UI 线程订阅 `CoreWebView2.NewWindowRequested` 与 `NavigationStarting`（`runtime/md_app.log` 出现 `native file drop enabled (corewebview2)`）；真实拖放需真机拖一次。
 - 卸载器核对：`UninstallMDWright.cs` 用系统 csc 预编译通过（52,736 字节）；`install.cmd` / Setup 写入的 `DisplayIcon` 为带引号的 `"…\mdwright.ico",0`；卸载后 ARP 键由 C# 兜底删除并调用 `SHChangeNotify`。

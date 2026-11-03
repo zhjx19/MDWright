@@ -22,6 +22,7 @@ import webbrowser
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PORT = 18766
+_T0 = time.time()          # 启动耗时基准（日志里的 +x.xxs）
 sys.path.insert(0, HERE)
 
 BUNDLED_RUNTIME = os.path.join(HERE, "runtime", "WebView2")
@@ -310,6 +311,25 @@ def _drop_path_from_uri(uri):
         return ""
 
 
+class _NoFileBrowser:
+    """pywebview 的 external-link 代理：只拦 file://。
+
+    文件拖放已经由 CoreWebView2 钩子处理，pywebview 默认还会把同一个
+    file:/// 丢给系统浏览器。这里不替换全局 webbrowser，只替换 pywebview
+    edgechromium 模块引用的对象，http(s) 等外部链接行为不变。
+    """
+    def __init__(self, real):
+        self._real = real
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+    def open(self, url, *args, **kwargs):
+        if str(url).lower().startswith("file:"):
+            return False
+        return self._real.open(url, *args, **kwargs)
+
+
 def _enable_native_file_drop(win):
     """把 Windows 的「拖 .md 到窗口」接到页面。
 
@@ -331,6 +351,13 @@ def _enable_native_file_drop(win):
     def install(core):
         if state["installed"] or core is None:
             return
+        try:
+            from webview.platforms import edgechromium
+            if not isinstance(edgechromium.webbrowser, _NoFileBrowser):
+                edgechromium.webbrowser = _NoFileBrowser(edgechromium.webbrowser)
+                log("file:// external open suppressed")
+        except Exception as e:
+            log("file:// suppress failed: %s" % e)
 
         def on_new_window(sender, e):
             p = _drop_path_from_uri(e.Uri)
@@ -360,7 +387,7 @@ def _enable_native_file_drop(win):
         core.NavigationStarting += on_nav
         state["handlers"] = (on_new_window, on_nav)   # 防 GC
         state["installed"] = True
-        log("native file drop enabled (corewebview2)")
+        log("native file drop enabled (corewebview2) +%.2fs" % (time.time() - _T0))
 
     def poke(window):
         try:
@@ -387,35 +414,6 @@ def _enable_native_file_drop(win):
         log("drop hook register failed: %s" % e)
 
 
-def _patch_new_window_open():
-    """pywebview 默认把 NewWindowRequested 的 URI 全丢给系统浏览器。
-
-    文件拖放也会走这个回调：文档已经在应用里打开了，浏览器却又弹一个
-    file:/// 页。这里只对 file:// 静默；http(s) 等外部链接保持原行为。
-    """
-    try:
-        from webview.platforms import edgechromium
-        orig = edgechromium.EdgeChrome.on_new_window_request
-
-        def on_new_window_request(self, sender, args):
-            try:
-                uri = str(args.get_Uri())
-            except Exception:
-                uri = ""
-            if uri.lower().startswith("file:"):
-                try:
-                    args.set_Handled(True)
-                except Exception:
-                    pass
-                return
-            return orig(self, sender, args)
-
-        edgechromium.EdgeChrome.on_new_window_request = on_new_window_request
-        log("new-window file:// suppress patched")
-    except Exception as e:
-        log("new-window patch failed: %s" % e)
-
-
 def main():
     target = sys.argv[1] if len(sys.argv) > 1 else ""
     q = ("?file=" + urllib.parse.quote(target)) if target else ""
@@ -439,6 +437,7 @@ def main():
         try:
             import webview as _w
             _wv["m"] = _w
+            log("webview imported +%.2fs" % (time.time() - _T0))
         except Exception as e:
             _wv["err"] = e
 
@@ -450,20 +449,22 @@ def main():
     if not ensure_service(start=not launcher_spawned):
         log("service unavailable, abort")
         return 1
+    log("service ready +%.2fs" % (time.time() - _T0))
     _loader.join(timeout=20)
+    log("preload joined +%.2fs" % (time.time() - _T0))
 
     webview = _wv.get("m")
     if webview is None:
         log("pywebview import failed: %s" % _wv.get("err"))
         _open_browser(target)
         return 1
-    _patch_new_window_open()
     api = Api()
     w, h = load_window_size()
     try:
         win = webview.create_window("墨匠 MDWright", "http://127.0.0.1:%d/%s" % (PORT, q),
                                     width=w, height=h, min_size=(900, 600),
                                     js_api=api)
+        log("window created +%.2fs" % (time.time() - _T0))
         api.window = win
         win._serializable = False  # 打断 js_api 序列化循环引用（api.window ↔ win.js_api），否则 get_functions 无限递归卡死
         win.events.closing += on_closing

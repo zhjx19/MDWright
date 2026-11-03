@@ -322,12 +322,19 @@ def prepare_markdown(src, diagrams=None, img_align="center"):
     return "\n".join(out)
 
 
+def _prompted_output(text):
+    """运行结果行前加 `#> `（空行保持空），与代码块区分。"""
+    s = (text or "").replace("\r\n", "\n").replace("\r", "\n").rstrip("\n")
+    return [("#> " + ln) if ln.strip() else "" for ln in s.split("\n")]
+
+
 def inject_run_outputs(md_text, blocks):
     """按 (语言, 代码原文) 把已存档的运行结果插到对应围栏块之后；未命中不动。
 
     围栏扫描与 prepare_markdown 同一套规则（``` 与 ~~~ 各自配对、带参数的
     围栏整块跳过），不会把围栏内部当正文再判一次。
-    文字输出落成 ```output 代码块（等宽呈现），图片按 {80} 宽插成图片。
+    文字输出落成 ```output 代码块（等宽呈现，每行前加 `#>` 与代码区分），
+    图片按 {80} 宽插成图片。
     """
     want = {}
     for b in blocks or []:
@@ -358,13 +365,13 @@ def inject_run_outputs(md_text, blocks):
         if hit:
             if hit.get("error"):
                 out.append("```output")
-                out.append("[错误] " + hit["error"])
+                out.extend(_prompted_output("[错误] " + hit["error"]))
                 if hit.get("stdout"):
-                    out.extend(hit["stdout"].rstrip("\n").split("\n"))
+                    out.extend(_prompted_output(hit["stdout"]))
                 out.append("```")
             elif hit.get("stdout"):
                 out.append("```output")
-                out.extend(hit["stdout"].rstrip("\n").split("\n"))
+                out.extend(_prompted_output(hit["stdout"]))
                 out.append("```")
             img = hit.get("imageAbs") or hit.get("image")
             if img:

@@ -69,7 +69,7 @@
 | 代码高亮 | highlight.js 懒加载（仅按围栏语言着色，主题跟随明暗）+ 代码块复制按钮（导出时剥离，不进成品） |
 | Word 导出 | pandoc 转换、公式 LaTeX→OMML（Word 里可继续编辑）、导出后注入 `tblBorders` 做三线表（表头底色随面板）、按「分页」面板写 `pgSz` / `pgMar`（默认 A4）、中文版式（正文缩进 / 1.5 倍行距 / 标题黑体黑色 / 代码块边框 / 引用左边框）、标题自动编号（1 / 1.1 / …，可选）、页码（`PAGE` / `NUMPAGES` 域，可选）、目录（TOC 域，可选）、独行图对齐（默认居中，`{l}/{r}/{c}` 生效）、运行输出按「语言 + 代码原文」匹配带入；图表围栏在 pandoc 生成后补一份内联样式的 SVG（`svgBlip`，PNG 留作旧版回退；渲染失败的保持代码块），宽度取围栏 `{N}` 或预览显示比例；导出后可按标题中文 / 正文中文 / 西文三档设字体（默认黑体 / 宋体 / Times New Roman，代码块保持 Consolas 等宽） |
 | PDF 直出 | 本机 Edge / Chrome 无头打印，单会话 CDP 且等分页完成再 `printToPDF`，不留半截文件 |
-| 可执行代码块 | R（Rscript、控制台语义、ggplot 就地出图）、Python（随包内置 3.11.9 或指定本机解释器，matplotlib 图自动落 PNG）、同文档常驻会话变量跨块、结果落盘 `runs/` 并进 Word |
+| 可执行代码块 | R（Rscript、控制台语义、ggplot 就地出图）、Python（随包内置 3.11.9 或指定本机解释器，matplotlib 图自动落 PNG）、同文档常驻会话变量跨块、结果落盘 `runs/` 并进 Word；文字输出每行带 `#>` 引导 |
 | 外部工具 | pandoc / 浏览器 / Rscript / Python 的探测与手工指定路径，缺失即置灰并说明原因 |
 | AI | DeepSeek 升为一等后端（地址与模型预设、`reasoner` 不传采样参数） |
 | 写作交互 | 菜单栏 + 统一设置面板、编辑区右键菜单、**拖放 `.md` / `.smd` 到窗口直接打开**、中英混排补空格（只作用于渲染与导出）、视图四态显式下拉、`Ctrl+S` |
@@ -293,6 +293,7 @@ python\python.exe installer\_build_installer.py
 这个项目站在别人的肩膀上，该说明的地方写清楚：
 
 - **上游项目 MDEditor**（<https://github.com/Ldxs001/maby_tool>）：本项目的起点。编辑器内核、本地文件服务、`.smd` 自包含格式与安装/卸载脚本源自其 v2.0，原作者与贡献者做了最基础的那一半工作。本仓库的改动与新增见 [CHANGELOG.md](CHANGELOG.md)。
+- **Word 中文排版的参考**：[Achuan-2/pandoc_docx_template](https://github.com/Achuan-2/pandoc_docx_template)（及其配套 SKILL）。v3.7.0 的 Word 版面与中文版式参考了它公开的样式口径——正文首行缩进 2 字符、1.5 倍行距、黑体黑色标题、代码块边框与底纹、引用左边框、表格 `Compact`、图片 `title` 作题注；也借鉴了它记录的 pandoc→Word 坑（WPS / Mac 兼容、`*Tok` 高亮样式、`Compact` 被列表与单元格复用）。实现方式不是照搬它的 `.docx` 模板，而是把同一套口径写进本项目的 `styles.xml` / `numbering.xml` 后处理；该仓库未声明 LICENSE，因此没有把它的模板文件打进安装包。
 - **随包分发的第三方组件**：KaTeX、Paged.js、Mermaid、viz-js（内嵌 Graphviz）、WaveDrom、Vega / Vega-Lite / Vega-Embed、highlight.js、Pillow、Python 嵌入式运行时。逐项版本、许可证与本地位置见 [docs/版权与开源组件声明.md](docs/版权与开源组件声明.md)，许可全文见 `LICENSES/`。
 - **调用但不打包的外部工具**：pandoc（Word 导出）、Chromium 内核浏览器 Edge / Chrome（PDF 直出）、R 的 `Rscript`（R 代码块）。这些由使用者本机提供，程序只调用、不改动、不代装。
 - **AI 编码助手**：本项目相当一部分代码、文档与截图流程由 AI 编码代理参与完成，之后逐项在本机实跑验证。界面里保留「AI 辅助生成」标识，不为这件事遮掩。
