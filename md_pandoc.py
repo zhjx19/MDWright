@@ -133,20 +133,6 @@ def _fill_line(lines, start):
     return " ".join(cells), j + 1
 
 
-def _figure_caption(line):
-    """独占一行的图：title 作题注，alt 只是替代文本（与预览同一口径）。
-
-    pandoc 的 implicit_figures 拿 alt 当 caption，所以这里把 alt 换成 title；
-    title 为空就清空 alt——否则 Word 里会凭空多一行题注（预览并没有）。
-    行内图与并排块不走这里：它们不是独占一行的段落，pandoc 也不会当 figure。
-    """
-    m = _FIG_LINE_RE.match(line)
-    if not m:
-        return line
-    lead, alt, src, title, params = m.groups()
-    return "%s![%s](%s)%s" % (lead, (title or "").strip(), src, params or "")
-
-
 def _figure_block(line, img_align="center"):
     """独行图 → 包一层 Figure / FigureLeft / FigureRight Div。
 
@@ -331,7 +317,7 @@ def prepare_markdown(src, diagrams=None, img_align="center"):
             out.extend(fb)
             i += 1
             continue
-        out.append(_brace_scripts(_norm_img_params(_figure_caption(ln))))
+        out.append(_brace_scripts(_norm_img_params(ln)))
         i += 1
     return "\n".join(out)
 

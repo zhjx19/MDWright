@@ -34,7 +34,7 @@
 **变更**
 
 - `export_docx(..., page=None, cn=None, num=None, pn=None, img_align="center", toc=None)`、`three_line_tables(..., header_fill="", borders=True, center=True)`：不传就不动版面/样式/编号/页码/目录，图片默认居中、表格默认居中；截图等旁路调用保持原样。`/api/export-docx` 响应新增 `page`、`docxCn`、`docxNumbering`、`pageNumbers` 与 `docxToc` 回显；`docxCn` 缺省为 `true`，`docxNumbering` / `docxToc` 缺省为 `false`，页码由 `page.pn.on` 决定，图片默认对齐取 `imgAlign`（缺省 center）。
-- **拖放入口**：`md_app.pyw` 新增 `_enable_native_file_drop()`，在 `before_show` 里给 WinForms 窗体/WebView2 控件绑 `DragEnter` / `DragDrop`（WebView2 关掉 `AllowExternalDrop`，避免它自己吞掉拖放），过滤 `.md/.smd` 后调用页面 `window.mdwDropOpen`；页面新增 `openPath()`，与「打开」菜单共用。`MD_SERVER_VERSION 81 → 82`。
+- **拖放入口**：`md_app.pyw` 新增 `_enable_native_file_drop()`，在 `loaded` 回调里经 `form.Invoke` 到 UI 线程，订阅 `CoreWebView2.NewWindowRequested` / `NavigationStarting`，用 `_drop_path_from_uri()` 把 `file://` URI 还原成本机路径后调用页面 `window.mdwDropOpen`；**不关 `AllowExternalDrop`**（关掉会显示禁止图标、宿主也收不到拖放）。页面新增 `openPath()`，与「打开」菜单共用。`MD_SERVER_VERSION 81 → 83`。
 - `prepare_markdown()` 新增图注改写：`![alt](src "title")` → `![title](src)`、无 title 的 `![alt](src)` → `![](src)`。**旧文档若靠 alt 出题注，需要把说明移到 title**。
 - 字体改写里重复的「写 `.part` + pandoc 回读」收成 `_verify_docx()`，字体 / 版面 / 中文版式共用一套校验与清理。
 - 「分页」页签的说明改为同时作用于「打印」「导出 PDF」「导出 Word」。

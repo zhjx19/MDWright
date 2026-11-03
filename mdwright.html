@@ -4166,8 +4166,8 @@ function parseMarkdown(src, fx){
     document.getElementById('statFile').textContent=name;
     document.title=(name==='默认文档')?'墨匠 MDWright':'墨匠 MDWright - '+name;
   }
-  /* 统一「按完整路径打开」：原生打开框与拖放共用。拖放的路径来自 WinForms
-     宿主的 DragDrop（WebView2 的 File 对象拿不到本机路径），见 md_app.pyw。 */
+  /* 统一「按完整路径打开」：原生打开框与拖放共用。拖放的路径来自 md_app.pyw
+     的 CoreWebView2 钩子（拦截 file:// 新窗口/导航），见 md_app.pyw。 */
   function openPath(p){
     return fetchDocInto(p).then(function(d){
       applyDocWithDraft(p, d.txt, '已载入原文件');

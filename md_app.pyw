@@ -382,10 +382,38 @@ def _enable_native_file_drop(win):
             log("drop hook poke failed: %s" % e)
 
     try:
-        win.events.shown += poke
         win.events.loaded += poke
     except Exception as e:
         log("drop hook register failed: %s" % e)
+
+
+def _patch_new_window_open():
+    """pywebview 默认把 NewWindowRequested 的 URI 全丢给系统浏览器。
+
+    文件拖放也会走这个回调：文档已经在应用里打开了，浏览器却又弹一个
+    file:/// 页。这里只对 file:// 静默；http(s) 等外部链接保持原行为。
+    """
+    try:
+        from webview.platforms import edgechromium
+        orig = edgechromium.EdgeChrome.on_new_window_request
+
+        def on_new_window_request(self, sender, args):
+            try:
+                uri = str(args.get_Uri())
+            except Exception:
+                uri = ""
+            if uri.lower().startswith("file:"):
+                try:
+                    args.set_Handled(True)
+                except Exception:
+                    pass
+                return
+            return orig(self, sender, args)
+
+        edgechromium.EdgeChrome.on_new_window_request = on_new_window_request
+        log("new-window file:// suppress patched")
+    except Exception as e:
+        log("new-window patch failed: %s" % e)
 
 
 def main():
@@ -429,6 +457,7 @@ def main():
         log("pywebview import failed: %s" % _wv.get("err"))
         _open_browser(target)
         return 1
+    _patch_new_window_open()
     api = Api()
     w, h = load_window_size()
     try:
