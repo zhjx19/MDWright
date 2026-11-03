@@ -54,11 +54,10 @@ repeat {
       if (!is.null(err)) break
       r <- tryCatch(withVisible(eval(exprs[[i]], envir = globalenv())),
                     error = function(e) { err <<- conditionMessage(e); NULL })
-      if (is.null(err) && !is.null(r)) {
-        v <- r$value
-        if (is.function(v)) tryCatch(v(), error = function(e) err <<- conditionMessage(e))
-        else if (isTRUE(r$visible)) print(v)
-      }
+      # 函数也是普通值：只按可见性打印，**不自动调用**。调用函数值会让
+      # `f = function(n) ...`（赋值、invisible）与单独一行的 `f` 都去执行 f()，
+      # 报 argument "n" is missing；裸 function 字面量在控制台里也是打印定义。
+      if (is.null(err) && !is.null(r) && isTRUE(r$visible)) print(r$value)
     }
   }
   try(invisible(dev.off()), silent = TRUE)

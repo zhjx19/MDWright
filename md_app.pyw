@@ -463,7 +463,11 @@ def main():
     try:
         win = webview.create_window("墨匠 MDWright", "http://127.0.0.1:%d/%s" % (PORT, q),
                                     width=w, height=h, min_size=(900, 600),
-                                    js_api=api)
+                                    js_api=api,
+                                    # 预览区要能选中复制：pywebview 默认 text_select=False
+                                    # 会往页面注入 body{user-select:none; cursor:default}，
+                                    # 编辑器是 contenteditable 不受影响，预览就整块选不中。
+                                    text_select=True)
         log("window created +%.2fs" % (time.time() - _T0))
         api.window = win
         win._serializable = False  # 打断 js_api 序列化循环引用（api.window ↔ win.js_api），否则 get_functions 无限递归卡死

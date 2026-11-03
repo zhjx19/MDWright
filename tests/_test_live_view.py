@@ -80,25 +80,40 @@ PROBE = r"""
     }).then(function(){
       out.blockCount=pblks().length;
       if(out.blockCount<2){ resolve(out); return; }
-      var blk=pblks()[1];
-      (blk.querySelector('p')||blk).click();
-      return wait(150).then(function(){
-        var ta=blk.querySelector('textarea.pblk-src');
-        out.taShown=!!ta;
-        out.taValue=ta?ta.value:'';
-        out.editingClass=blk.classList.contains('editing');
-        if(!ta){ resolve(out); return; }
-        ta.value='## \u6807\u9898\u4e8c\n\u6539\u540e\u7684\u7b2c\u4e8c\u6bb5';
-        ta.dispatchEvent(new Event('blur'));
-        return wait(700);
-      }).then(function(){
-        out.editorText=document.getElementById('editor').textContent;
-        out.stillEditing=blk.classList.contains('editing');
-        var after=pblks();
-        out.blockCount2=after.length;
-        out.block1Text=after[1]?after[1].textContent:'';
-        out.block0Text=after[0]?after[0].textContent:'';
-        resolve(out);
+      /* 拖选文字时不能进编辑：拖选结束浏览器也会派发 click，此时把块换成
+         源码框会连选区一起吞掉，预览里的文字就没法复制了。 */
+      var bSel=pblks()[0];
+      var pSel=bSel.querySelector('p')||bSel;
+      var rng=document.createRange();
+      rng.selectNodeContents(pSel);
+      var gs=window.getSelection();
+      gs.removeAllRanges(); gs.addRange(rng);
+      out.selBefore=String(gs).length;
+      pSel.click();
+      return wait(120).then(function(){
+        out.selNoEdit=!document.querySelector('#preview textarea.pblk-src');
+        out.selKept=String(window.getSelection()).length>0;
+        window.getSelection().removeAllRanges();
+        var blk=pblks()[1];
+        (blk.querySelector('p')||blk).click();
+        return wait(150).then(function(){
+          var ta=blk.querySelector('textarea.pblk-src');
+          out.taShown=!!ta;
+          out.taValue=ta?ta.value:'';
+          out.editingClass=blk.classList.contains('editing');
+          if(!ta){ resolve(out); return; }
+          ta.value='## \u6807\u9898\u4e8c\n\u6539\u540e\u7684\u7b2c\u4e8c\u6bb5';
+          ta.dispatchEvent(new Event('blur'));
+          return wait(700);
+        }).then(function(){
+          out.editorText=document.getElementById('editor').textContent;
+          out.stillEditing=blk.classList.contains('editing');
+          var after=pblks();
+          out.blockCount2=after.length;
+          out.block1Text=after[1]?after[1].textContent:'';
+          out.block0Text=after[0]?after[0].textContent:'';
+          resolve(out);
+        });
       });
     });
   });
@@ -115,6 +130,9 @@ def main():
     check("即时视图下编辑栏隐藏", out.get("editorHidden") is True, str(out.get("editorHidden")))
     check("非 live 模式点块不进编辑", out.get("splitNoEdit") is True, str(out.get("splitNoEdit")))
     check("文档切成 2 块", out.get("blockCount") == 2, str(out.get("blockCount")))
+    check("有选区时点块不进编辑", out.get("selNoEdit") is True, str(out.get("selNoEdit")))
+    check("有选区时选区保留（可复制）", out.get("selKept") is True,
+          "%s / %s" % (out.get("selBefore"), out.get("selKept")))
     check("点块出现源码框", out.get("taShown") is True, str(out.get("taShown")))
     ta = out.get("taValue") or ""
     check("源码框内容是该块原文", ("## \u6807\u9898\u4e8c" in ta) and ("\u7b2c\u4e8c\u6bb5\u5185\u5bb9" in ta),

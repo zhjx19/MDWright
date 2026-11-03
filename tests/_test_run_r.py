@@ -107,6 +107,17 @@ def main():
         check("invisible 不打印", j.get("ok") is True
               and not (j.get("stdout") or "").strip(), repr(j.get("stdout")))
 
+        # 函数值也是普通值：定义不执行、裸函数名打印定义（控制台语义）。
+        # 自动调用函数值会让 `f = function(n) ...` 报 argument "n" is missing。
+        j = post("/api/run-r", {"code": "f = function(x) x + 1"})
+        check("定义函数不报错也不调用", j.get("ok") is True
+              and not (j.get("stdout") or "").strip(), str(j)[:200])
+
+        j = post("/api/run-r", {"code": "function(x) x + 1"})
+        check("裸函数字面量打印定义而非调用",
+              j.get("ok") is True and "function" in (j.get("stdout") or "")
+              and "x + 1" in (j.get("stdout") or ""), str(j)[:200])
+
         j = post("/api/run-r", {"code": 'stop("boom 中文错误")'})
         check("R 错误：ok=false", j.get("ok") is False, str(j)[:200])
         check("R 错误：带原文", "boom" in (j.get("error") or ""), str(j.get("error")))

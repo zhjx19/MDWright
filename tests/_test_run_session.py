@@ -70,6 +70,19 @@ def main():
     check("R 变量跨块存活", r.get("ok") is True and "42" in (r.get("stdout") or ""),
           str(r)[:200])
 
+    # ---- R：定义函数 ≠ 调用函数（定义块不报错、下一块能调）----
+    fd, _ = post("/api/run-r", {"code":
+                  "fib = function(n) if (n <= 2) 1 else fib(n - 1) + fib(n - 2)",
+                  "doc": DOC})
+    check("R 定义函数不出错", fd.get("ok") is True
+          and not (fd.get("stdout") or "").strip(), str(fd)[:200])
+    fc, _ = post("/api/run-r", {"code": "fib(10)", "doc": DOC})
+    check("R 跨块调用自定义函数",
+          fc.get("ok") is True and "55" in (fc.get("stdout") or ""), str(fc)[:200])
+    fi, _ = post("/api/run-r", {"code": "fib", "doc": DOC})
+    check("R 裸函数名打印定义而非调用", fi.get("ok") is True
+          and "function" in (fi.get("stdout") or ""), str(fi)[:200])
+
     # ---- Python：变量跨两次请求 ----
     post("/api/run-py", {"code": "y = 41", "doc": DOC})
     p, _ = post("/api/run-py", {"code": "print(y + 1)", "doc": DOC})

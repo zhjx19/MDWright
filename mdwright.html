@@ -2610,10 +2610,14 @@ function parseMarkdown(src, fx){
     ta.style.height='auto';
     ta.style.height=Math.max(ta.scrollHeight+4, 150)+'px';
   }
-  /* 委托点击：仅 live 模式、点中 .pblk、且不是链接/按钮/输入框时才进入编辑 */
+  /* 委托点击：仅 live 模式、点中 .pblk、且不是链接/按钮/输入框时才进入编辑。
+     拖选文字结束时浏览器同样派发 click；此时把块换成源码框，会把刚选中的
+     文字连选区一起吞掉——预览里的内容就没法复制了。有选区时一律不进编辑。 */
   preview.addEventListener('click', function(e){
     if(!document.body.classList.contains('view-live')) return;
     if(e.target.closest('a,button,input,textarea')) return;
+    var sel=window.getSelection();
+    if(sel&&!sel.isCollapsed) return;
     var blk=e.target.closest('.pblk');
     if(!blk||blk.classList.contains('editing')) return;
     e.preventDefault();

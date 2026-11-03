@@ -73,10 +73,10 @@ except Exception as _e:
 PORT = int(os.environ.get("MD_PORT") or 18766)
 HERE = os.path.dirname(os.path.abspath(__file__))
 EDITOR_HTML = os.path.join(HERE, "mdwright.html")
-MD_SERVER_VERSION = 83  # 每次服务端路由/能力变更时 +1；md_launch 依此自愈换代
+MD_SERVER_VERSION = 84  # 每次服务端路由/能力变更时 +1；md_launch 依此自愈换代
 # 应用版本号（「关于」窗口显示）：单一来源在这里，/api/version 带出 app 字段。
 # 发版时必须与 CHANGELOG 首段、MD_SERVER_VERSION 同步（见 AGENTS.md「发布必改三处」）。
-APP_VERSION = "3.7.0"
+APP_VERSION = "3.7.1"
 SETTINGS_PATH = os.path.join(HERE, "runtime", "settings.json")
 
 # .smd 自包含文档格式（v1.2.0）；导入失败落错误日志，相关路由返回明确错误而非静默
@@ -2865,15 +2865,8 @@ if (!is.null(exprs)) {
     if (!is.null(err)) break
     r <- tryCatch(withVisible(eval(exprs[[i]], envir = globalenv())),
                   error = function(e) { err <<- conditionMessage(e); NULL })
-    if (is.null(err) && !is.null(r)) {
-      v <- r$value
-      # 兼容历史写法：整块就是一个 function(){...} 时直接调用它
-      if (is.function(v)) {
-        tryCatch(v(), error = function(e) err <<- conditionMessage(e))
-      } else if (isTRUE(r$visible)) {
-        print(v)
-      }
-    }
+    # 函数值不自动调用：赋值与裸函数名都只是值，可见才打印（与 R 控制台一致）。
+    if (is.null(err) && !is.null(r) && isTRUE(r$visible)) print(r$value)
   }
 }
 invisible(dev.off())

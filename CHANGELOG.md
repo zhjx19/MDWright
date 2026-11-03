@@ -11,6 +11,30 @@
 
 ---
 
+## v3.7.1（2026-11-03）
+
+**本次改动：R 代码块里定义函数不再被驱动自动调用一次；分屏模式右侧预览可以选中复制**
+
+**修复**
+
+- **R 定义函数被判成调用**：`md_runs._R_DRIVER` 逐表达式 `withVisible(eval(...))` 后有一支 `if (is.function(v)) v()`——只要求值结果是函数就再调用一次。`f = function(n) ...` 的值正是那个函数（赋值不可见，但这一支不看可见性），驱动于是替用户执行 `f()`，报 `argument "n" is missing, with no default`；下一块 `f(10)` 走 `print`，正常出值，表现为「定义块报错、调用块正常」。改为函数按普通值处理：`visible` 才 `print`，与 R 控制台一致；单独一行写函数名也打印定义，不再触发调用。`md_server._R_WRAPPER` 里同一段历史写法一并改齐（该包装已无调用方）。
+- **分屏模式右侧预览选不中**：嵌入式窗口（`md_app.pyw` 的 pywebview）`text_select` 默认是 `False`，pywebview 会向页面注入 `body{-webkit-user-select:none;…;user-select:none;cursor:default}`。编辑器是 `contenteditable`，浏览器照旧允许选中，所以症状只落在预览区——分屏右侧文字整块选不中、无法复制；浏览器模式没有这层注入，测试里复现不出来。`create_window(...)` 显式传 `text_select=True` 后注入消失：真实窗口实测 `body` / `#preview` 的 `user-select` 由 `none` 变 `auto`，程序化选中该段拿到 26 字。
+- **实时渲染模式拖选被当成点击**：live 视图的点击委托（点块进就地编辑）在**拖选结束**时同样触发，`liveEditBlock()` 把块内容换成 `textarea.pblk-src`，刚选中的文字连选区一起消失。改为有选区时直接返回（`getSelection()` 非折叠即不进编辑），拖选后选区保留；普通单击（mousedown 已折叠选区）仍照旧进编辑。
+- **测试**：`_test_run_r.py` 补「定义函数不报错也不调用」「裸函数字面量打印定义而非调用」；`_test_run_session.py` 补「定义函数不出错」「跨块调用自定义函数」「裸函数名打印定义而非调用」；`_test_live_view.py` 补「有选区时点块不进编辑」「有选区时选区保留（可复制）」；新增 `_test_window_text_select.py`（`create_window` 传 `text_select=True`、随包 pywebview 默认仍为 `False`、参数仍在签名里）。
+
+**变更**
+
+- **裸函数字面量不再自动执行**：块内容就是一个 `function(){...}` 时，旧版会直接调用它；现按控制台语义打印定义。要立即执行写成 `(function(){ ... })()` 或直接写函数体。
+
+**验证**
+
+- `fib = function(n) if (n <= 2) 1 else fib(n - 1) + fib(n - 2)` 静默完成、无错误；下一块 `fib(10)` → `[1] 55`；`fib` 单独一行 → 打印函数定义。
+- 真实 pywebview 窗口 A/B（同一份 `mdwright.html`、同一台机）：默认 `text_select` → `body`/`#preview` 的 `user-select` 为 `none`、页面里多出 1 个 `user-select:none` 注入样式、程序化选中 0 字；`text_select=True` → `auto`、无注入、选中 26 字。
+- 真实鼠标拖选（CDP `Input.dispatchMouseEvent`）核对：分屏 / 预览模式选中 8 字；修复前 live 模式 `sel=""` 且块内出现 `textarea.pblk-src`，修复后同样选中 8 字、块未进编辑。
+- `tests/_test_run_r.py`、`tests/_test_run_session.py`、`tests/_test_run_ui.py`、`tests/_test_run_export.py`、`tests/_test_run_outputs.py`、`tests/_test_run_py.py`、`tests/_test_run_py_plot.py`、`tests/_test_run_reset_on_config.py`、`tests/_test_live_view.py`、`tests/_test_window_text_select.py` 全绿。
+
+---
+
 ## v3.7.0（2026-11-02）
 
 **本次改动：Word 的纸张/页边距与中文版式跟面板一致；图注口径统一；可选标题自动编号、页码与目录；独行图对齐；表格默认居中；拖放打开文档；三线表可写表头底色**
