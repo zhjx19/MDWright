@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 wUwproject. Licensed under GNU AGPL v3 or later.
 """方言 → pandoc markdown 预处理回归（R2）：
-只做 pandoc 不认的几件事（Callout / 图片宽度 {N} / 图表围栏的 {N} / 花括号上下标 ^{} _{}），
-其余原样透传——脚注、定义列表、front matter、行内高亮、^x^ 与 ~x~ 形式的上下标、
-公式都是 pandoc 原生能力。
+只做 pandoc 不认的几件事（Callout / 图片宽度 {N} / 图表围栏的 {N} / 花括号上下标 ^{} _{} /
+网页口径公式定界符 \\(..\\) \\[..\\]），其余原样透传——脚注、定义列表、front matter、
+行内高亮、^x^ 与 ~x~ 形式的上下标、$..$ 公式都是 pandoc 原生能力。
 """
 # --- 测试入口 shim：本文件在 tests/ 下。便携运行时（python311._pth）不会把 script dir
 # 加进 sys.path，所以 tests/ 与仓库根两个都显式挂上，跨用例 import 与根模块 import 才成立 ---
@@ -132,6 +132,32 @@ def main():
     # 11 幂等：转换结果再跑一遍不变
     once = prep("x^{2} H_{2}O 见注^{[1]}\n")
     check("花括号上下标转换幂等", prep(once) == once, prep(once))
+
+    # 12 \(..\) / \[..\] → pandoc 认的 $..$ / $$..$$（DeepSeek 网页复制口径）
+    out = prep("行内 \\(a+b\\) 结束\n")
+    check("\\(..\\) 转 $..$", "$a+b$" in out and "\\(" not in out, out)
+    out = prep("\\[\n\\sum_{k=1}^{n} k\n\\]\n")
+    check("\\[..\\] 转 $$ 块",
+          out.count("$$") >= 2 and "\\[" not in out and "\\]" not in out, out)
+    out = prep("\\[ x^{2} \\]\n")
+    check("单行 \\[..\\] 公式内部不被改写成上下标",
+          "x^{2}" in out and "$$" in out, out)
+    out = prep("```\n\\(x\\)\n\\[y\\]\n```\n")
+    check("围栏内 \\(..\\) 不动", "\\(" in out and "$x$" not in out, out)
+    out = prep("说明 `\\(x\\)` 原样\n")
+    check("行内代码 \\(..\\) 不动", "\\(" in out and "$x$" not in out, out)
+    out = prep("字面 \\\\(a\\\\) 不是公式\n")
+    check("转义反斜杠不误判", "\\\\(a\\\\)" in out, out)
+    out = prep("空组 \\(\\) 不吞\n")
+    check("空组 \\(\\) 不转换", "\\(" in out and "\\(" in out, out)
+    once = prep("行内 \\(a+b\\) 与\n\n\\[\nx\n\\]\n")
+    check("公式定界符转换幂等", prep(once) == once, prep(once))
+    out = prep("> \\[\n> x^{2}\n> \\]\n")
+    check("引用里的多行公式内部不被改写",
+          "x^{2}" in out and "x^2^" not in out, out)
+    out = prep("- \\[\n  x^{2}\n  \\]\n")
+    check("列表里的多行公式内部不被改写",
+          "x^{2}" in out and "x^2^" not in out, out)
 
     print("\n%s" % ("ALL PASS" if not fails else "FAILED: %s" % fails))
     sys.exit(1 if fails else 0)

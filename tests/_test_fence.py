@@ -10,6 +10,7 @@
 - fenceIsOpen：同字符且不短才闭合；异标记在围栏内是普通内容
 - splitFenced：分段后可无损拼回原文
 - extractMath：```/~~~ 围栏内（含嵌套）的 `$` 原样保留；围栏外的 `$..$` 仍被抽取
+- extractMath：网页复制口径 `\(..\)` / `\[..\]` 归一成 `$..$` / `$$..$$`（围栏内、转义、空组不误判）
 - parseMarkdown：```r 围栏里的 `$` 原样进代码块，且带 data-lang=r（可运行）
 """
 # --- 测试入口 shim：本文件在 tests/ 下。便携运行时（python311._pth）不会把 script dir
@@ -83,6 +84,30 @@ ck('$ kept in nested ~~~/```', m.indexOf('mtcars$wt')>=0 && !contains(m), JSON.s
 ck('mathStore empty for fenced $', mathStore.length===0, String(mathStore.length));
 m = extractMath('inline $x+1$ text');
 ck('$..$ outside fence extracted', contains(m) && mathStore.length===1, JSON.stringify(m));
+
+/* \(..\) / \[..\]：DeepSeek 网页复制口径，抽取时归一成 $..$ / $$..$$ */
+m = extractMath('行内 \\(a+b\\) 与 \\(c\\)');
+ck('\\(..\\) extracted', mathStore.length===2 && mathStore[0]==='$a+b$'
+   && mathStore[1]==='$c$', JSON.stringify(mathStore));
+m = extractMath('\\[\\sum_{k=1}^{n} k\\]');
+ck('\\[..\\] extracted', mathStore.length===1 && mathStore[0]==='$$\\sum_{k=1}^{n} k$$',
+   JSON.stringify(mathStore));
+m = extractMath('\\[\n\\sum_{k=1}^{n} k\n\\]');
+ck('multi-line \\[..\\] extracted', mathStore.length===1
+   && mathStore[0].indexOf('$$')===0 && mathStore[0].indexOf('$$',2)>0,
+   JSON.stringify(mathStore));
+m = extractMath('```\n\\(x\\)\n\\[y\\]\n```');
+ck('paren math kept in fence', !contains(m) && mathStore.length===0,
+   JSON.stringify(mathStore));
+m = extractMath('字面 \\\\(a\\\\) 不是公式');
+ck('escaped \\\\( not math', !contains(m) && mathStore.length===0,
+   JSON.stringify(mathStore));
+m = extractMath('空组 \\(\\) 不吞');
+ck('empty \\(\\) not math', !contains(m) && mathStore.length===0,
+   JSON.stringify(mathStore));
+m = extractMath('\\(a\\) 与 $b$ 混排');
+ck('mixed delimiters', mathStore.length===2 && mathStore[0]==='$a$'
+   && mathStore[1]==='$b$', JSON.stringify(mathStore));
 
 /* parseMarkdown: ```r 里的 $ 原样、且可运行 */
 const html = parseMarkdown('```r\nplot(mtcars$wt)\n```', {nums:{},order:[],defs:{}});

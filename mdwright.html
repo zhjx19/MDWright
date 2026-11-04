@@ -237,6 +237,36 @@
   #editor:empty::before{
     content:attr(data-placeholder); color:var(--muted); pointer-events:none;
   }
+  /* ── 查找 / 替换 ───────────────────────────────────────────── */
+  #findBar{
+    position:fixed; top:52px; right:18px; z-index:45;
+    width:344px; max-width:calc(100vw - 36px); padding:8px; border:1px solid var(--border);
+    border-radius:10px; background:var(--panel);
+    box-shadow:0 12px 32px rgba(0,0,0,.35);
+    display:flex; flex-direction:column; gap:6px;
+  }
+  #findBar[hidden]{display:none !important;}
+  .fb-row{display:flex; align-items:center; gap:5px;}
+  .fb-row input{
+    flex:1 1 auto; min-width:0; background:var(--editor-bg); color:var(--text);
+    border:1px solid var(--border); border-radius:6px; padding:5px 8px;
+    font-family:inherit; font-size:12.5px;
+  }
+  .fb-row input:focus{outline:none; border-color:var(--accent);}
+  #findBar button{
+    background:none; border:1px solid transparent; border-radius:6px;
+    color:var(--muted); cursor:pointer; min-width:26px; padding:3px 6px;
+    font-family:inherit; font-size:12.5px; line-height:1.4;
+  }
+  #findBar button:hover{background:var(--accent-soft); color:var(--text);}
+  #findBar button[disabled]{opacity:.4; cursor:default; background:none;}
+  #findCount{
+    color:var(--muted); min-width:46px; text-align:center;
+    font-variant-numeric:tabular-nums;
+  }
+  #findCase.on{background:var(--accent); border-color:var(--accent); color:#fff;}
+  ::highlight(md-find){background:rgba(255,208,0,.42); color:inherit;}
+  ::highlight(md-find-active){background:rgba(255,140,0,.72); color:inherit;}
   /* 批注标注：虚线下划线 + 淡底色，与选区高亮区分 */
   #editor span[data-aid]{
     border-bottom:2px dotted var(--accent);
@@ -392,7 +422,7 @@
   .markdown-body .code-wrap:hover .copy-btn{opacity:1;}
 
   @media print{
-    #toolbar,#status,#outline,#editorPane,#aiPane,#aiResizer{display:none !important;}
+    #toolbar,#status,#outline,#editorPane,#aiPane,#aiResizer,#findBar{display:none !important;}
     #main{display:block;}
     #previewPane{display:block !important; overflow:visible;}
     body,html{overflow:visible; background:#fff; color:#000;}
@@ -550,6 +580,21 @@
   </div>
 </header>
 <div id="ctxMenu" role="menu" aria-hidden="true"></div>
+<div id="findBar" hidden role="search" aria-label="查找与替换">
+  <div class="fb-row">
+    <input id="findInput" type="text" placeholder="查找" autocomplete="off" spellcheck="false">
+    <span id="findCount">0/0</span>
+    <button type="button" id="findPrev" title="上一个（Shift+Enter）">↑</button>
+    <button type="button" id="findNext" title="下一个（Enter）">↓</button>
+    <button type="button" id="findCase" title="区分大小写">Aa</button>
+    <button type="button" id="findClose" title="关闭（Esc）">×</button>
+  </div>
+  <div class="fb-row" id="findReplaceRow" hidden>
+    <input id="replaceInput" type="text" placeholder="替换为" autocomplete="off" spellcheck="false">
+    <button type="button" id="replaceOne">替换</button>
+    <button type="button" id="replaceAll">全部替换</button>
+  </div>
+</div>
 <input type="file" id="imgPicker" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
 <div id="offlineBar" hidden>
   <span id="offlineTxt">本地后端已断开</span>
@@ -1613,13 +1658,260 @@ function parseMarkdown(src, fx){
   });
 
 
+  /* ── 查找 / 替换（Ctrl+F / Ctrl+H）─────────────────────────────
+     两个上下文：
+     - 源码（分屏 / 仅编辑）：在 getText() 上查，可替换；
+     - 预览（仅预览 / 即时渲染）：遍历渲染后的文本节点查，只读（替换置灰）。
+     高亮优先用 CSS Custom Highlight API（只画不改 DOM，批注 span 不受影响）；
+     内核不支持时退化为「只选中当前命中」。 */
+  var findBar=document.getElementById('findBar');
+  var findInput=document.getElementById('findInput');
+  var findCountEl=document.getElementById('findCount');
+  var replaceInput=document.getElementById('replaceInput');
+  var findReplaceRow=document.getElementById('findReplaceRow');
+  var btnFindPrev=document.getElementById('findPrev');
+  var btnFindNext=document.getElementById('findNext');
+  var btnFindCase=document.getElementById('findCase');
+  var btnFindClose=document.getElementById('findClose');
+  var btnReplaceOne=document.getElementById('replaceOne');
+  var btnReplaceAll=document.getElementById('replaceAll');
+  var findState={open:false, mode:'source', matches:[], idx:-1, caseSensitive:false};
+
+  function findInPreviewMode(){
+    return document.body.classList.contains('view-preview')||
+           document.body.classList.contains('view-live');
+  }
+  function findSourceMatches(q, cs){
+    var txt=getText();
+    if(!q) return [];
+    var hay=cs?txt:txt.toLowerCase(), needle=cs?q:q.toLowerCase();
+    var res=[], from=0;
+    for(;;){
+      var at=hay.indexOf(needle,from);
+      if(at<0) break;
+      res.push({s:at,e:at+q.length});
+      from=at+Math.max(1,q.length);
+    }
+    return res;
+  }
+  function findPreviewNodes(){
+    var walker=document.createTreeWalker(document.getElementById('preview'),
+      NodeFilter.SHOW_TEXT,{acceptNode:function(n){
+        var p=n.parentNode, tag=p&&p.nodeName?p.nodeName.toLowerCase():'';
+        if(tag==='script'||tag==='style'||tag==='button'||tag==='textarea'||
+           tag==='input'||tag==='select') return NodeFilter.FILTER_REJECT;
+        return n.nodeValue?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_REJECT;
+      }});
+    var out=[], n;
+    while((n=walker.nextNode())) out.push(n);
+    return out;
+  }
+  function findPreviewMatches(q, cs){
+    if(!q) return [];
+    var nodes=findPreviewNodes(), res=[];
+    var needle=cs?q:q.toLowerCase();
+    /* 逐文本节点查（与主流编辑器一致）：被 <strong> 等标签切断的短语不跨节点拼，
+       避免把渲染结构当成命中；预览模式本来也不提供替换。 */
+    for(var i=0;i<nodes.length;i++){
+      var t=nodes[i].nodeValue||'', hay=cs?t:t.toLowerCase(), from=0;
+      for(;;){
+        var at=hay.indexOf(needle,from);
+        if(at<0) break;
+        res.push({node:nodes[i],s:at,e:at+q.length});
+        from=at+Math.max(1,q.length);
+      }
+    }
+    return res;
+  }
+  function findMatchRange(m){
+    var r=document.createRange();
+    if(findState.mode==='source'){
+      var a=_posToNode(m.s), b=_posToNode(m.e);
+      r.setStart(a.node,a.off); r.setEnd(b.node,b.off);
+    }else{
+      r.setStart(m.node,m.s); r.setEnd(m.node,m.e);
+    }
+    return r;
+  }
+  function findApplyHighlight(){
+    try{
+      if(window.CSS&&CSS.highlights&&typeof Highlight!=='undefined'){
+        var h=new Highlight();
+        for(var i=0;i<findState.matches.length;i++) h.add(findMatchRange(findState.matches[i]));
+        CSS.highlights.set('md-find',h);
+        if(findState.idx>=0){
+          var a=new Highlight(); a.add(findMatchRange(findState.matches[findState.idx]));
+          CSS.highlights.set('md-find-active',a);
+        }else{
+          CSS.highlights.delete('md-find-active');
+        }
+        return;
+      }
+    }catch(e){}
+    /* 退化：内核没有 Highlight API 时只选中当前命中 */
+    try{
+      if(findState.idx<0) return;
+      var sel=window.getSelection();
+      sel.removeAllRanges(); sel.addRange(findMatchRange(findState.matches[findState.idx]));
+    }catch(e){}
+  }
+  function findScrollToActive(){
+    if(findState.idx<0) return;
+    try{
+      var r=findMatchRange(findState.matches[findState.idx]);
+      var box=findState.mode==='source'?editor:document.getElementById('previewPane');
+      var rr=r.getBoundingClientRect(), br=box.getBoundingClientRect();
+      if(rr.top<br.top+40||rr.bottom>br.bottom-40){
+        box.scrollTop+=(rr.top-br.top)-box.clientHeight/2+rr.height/2;
+      }
+    }catch(e){}
+  }
+  function findUpdateCount(){
+    findCountEl.textContent=findState.matches.length
+      ?(findState.idx+1)+'/'+findState.matches.length:'0/0';
+  }
+  function findRefresh(resetIndex, noScroll){
+    var q=findInput.value;
+    findState.mode=findInPreviewMode()?'preview':'source';
+    findState.matches=findState.mode==='source'
+      ?findSourceMatches(q,findState.caseSensitive)
+      :findPreviewMatches(q,findState.caseSensitive);
+    if(!findState.matches.length) findState.idx=-1;
+    else if(resetIndex||findState.idx<0||findState.idx>=findState.matches.length) findState.idx=0;
+    /* 预览模式只读：替换入口置灰（不是隐藏——让用户知道切到编辑视图就能改） */
+    btnReplaceOne.disabled=btnReplaceAll.disabled=(findState.mode!=='source');
+    findApplyHighlight(); findUpdateCount();
+    if(!noScroll) findScrollToActive();
+  }
+  function findStep(d){
+    if(findInPreviewMode()){
+      findRefresh(false);          /* 预览会随编辑重渲染：每次移动前重收一遍命中 */
+    }else if(findState.mode!=='source'){
+      findRefresh(true);
+    }
+    if(!findState.matches.length){ findRefresh(true); return; }
+    var n=findState.matches.length;
+    findState.idx=(findState.idx+d+n)%n;
+    findApplyHighlight(); findUpdateCount(); findScrollToActive();
+  }
+  function findOpen(withReplace){
+    if(typeof closeMenus==='function') closeMenus();
+    findState.open=true;
+    findBar.hidden=false;
+    findReplaceRow.hidden=!withReplace;
+    /* 有选区就把选区填进查找框（只收单行，避免把整段正文塞进去） */
+    if(!findInput.value){
+      var t='';
+      if(findInPreviewMode()){ t=String(window.getSelection()||''); }
+      else{ var s=getSel(); t=getText().slice(s.s,s.e); }
+      if(t&&t.length<=200&&t.indexOf('\n')<0) findInput.value=t;
+    }
+    findInput.focus(); findInput.select();
+    if(withReplace && findInput.value){ replaceInput.focus(); replaceInput.select(); }
+    findRefresh(true);
+  }
+  function findClose(){
+    findState.open=false;
+    findBar.hidden=true;
+    findState.matches=[]; findState.idx=-1;
+    try{
+      if(window.CSS&&CSS.highlights){
+        CSS.highlights.delete('md-find'); CSS.highlights.delete('md-find-active');
+      }
+    }catch(e){}
+    if(!findInPreviewMode()) editor.focus();
+  }
+  function findReplaceOne(){
+    if(findState.mode!=='source') return;
+    if(!findState.matches.length){ findRefresh(true); if(!findState.matches.length) return; }
+    var m=findState.matches[findState.idx];
+    if(!m) return;
+    var rep=replaceInput.value;
+    setSel(m.s,m.e);
+    if(!insertPlainText(rep)){ showToast('替换失败'); return; }
+    /* 从替换文本之后继续找：替换词里含查找词时也不会原地打转 */
+    findState.matches=findSourceMatches(findInput.value,findState.caseSensitive);
+    var nextAt=m.s+rep.length;
+    findState.idx=-1;
+    for(var i=0;i<findState.matches.length;i++){
+      if(findState.matches[i].s>=nextAt){ findState.idx=i; break; }
+    }
+    if(findState.idx<0&&findState.matches.length) findState.idx=0;
+    findApplyHighlight(); findUpdateCount(); findScrollToActive();
+    try{ replaceInput.focus(); }catch(e){}
+  }
+  function findReplaceAll(){
+    if(findState.mode!=='source') return;
+    var q=findInput.value;
+    if(!q){ findRefresh(true); return; }
+    var ms=findSourceMatches(q,findState.caseSensitive);
+    if(!ms.length){ findUpdateCount(); return; }
+    var txt=getText(), rep=replaceInput.value, out='', last=0;
+    for(var i=0;i<ms.length;i++){ out+=txt.slice(last,ms[i].s)+rep; last=ms[i].e; }
+    out+=txt.slice(last);
+    /* setText 会清掉批注 span：先写文本，再按内存快照重锚（仍在的批注无感保留），
+       最后广播一次 input，让 dirty / 自动保存 / 重渲染都走既有链路。 */
+    setText(out);
+    annReanchorLocal();
+    editor.dispatchEvent(new Event('input',{bubbles:true}));
+    findState.matches=findSourceMatches(q,findState.caseSensitive);
+    findState.idx=findState.matches.length?0:-1;
+    findApplyHighlight(); findUpdateCount(); findScrollToActive();
+    showToast('已替换 '+ms.length+' 处');
+  }
+  findInput.addEventListener('input',function(){ findRefresh(true); });
+  findInput.addEventListener('focus',function(){ if(findState.open) findRefresh(false); });
+  /* 正文被改（输入 / 替换 / 运行结果回写）后命中位置会漂移：查找条开着就重收一遍。
+     这里不滚动——否则在编辑区每敲一个字都会被拽回当前命中处。 */
+  editor.addEventListener('input',function(){ if(findState.open) findRefresh(false,true); });
+  findInput.addEventListener('keydown',function(e){
+    if(e.isComposing) return;
+    if(e.key==='Enter'){ e.preventDefault(); findStep(e.shiftKey?-1:1); }
+  });
+  replaceInput.addEventListener('keydown',function(e){
+    if(e.isComposing) return;
+    if(e.key==='Enter'){ e.preventDefault(); findReplaceOne(); }
+  });
+  btnFindPrev.addEventListener('click',function(){ findStep(-1); });
+  btnFindNext.addEventListener('click',function(){ findStep(1); });
+  btnFindCase.addEventListener('click',function(){
+    findState.caseSensitive=!findState.caseSensitive;
+    btnFindCase.classList.toggle('on',findState.caseSensitive);
+    findRefresh(true);
+  });
+  btnFindClose.addEventListener('click',findClose);
+  btnReplaceOne.addEventListener('click',findReplaceOne);
+  btnReplaceAll.addEventListener('click',findReplaceAll);
+  /* 捕获阶段拦截：WebView2 / 浏览器自带的查找栏一律不让它出来 */
+  document.addEventListener('keydown',function(e){
+    var mod=e.ctrlKey||e.metaKey;
+    if(mod&&!e.altKey&&(e.key==='f'||e.key==='F'||e.key==='h'||e.key==='H')){
+      e.preventDefault(); e.stopPropagation();
+      findOpen(e.key==='h'||e.key==='H');
+      return;
+    }
+    if(e.key==='Escape'&&!findBar.hidden){
+      e.preventDefault(); e.stopPropagation();
+      findClose();
+    }
+  },true);
+
+
   var mathStore=[];
   function extractMath(src){
     mathStore=[];
     var segs=splitFenced(src), out=[];
+    /* 四种定界符，统一归一成 $..$ / $$..$$ 存进 mathStore（restoreMath 只认 $ 口径）：
+       - \[..\]：行间公式，允许跨行但**不跨空行**（防止正文里落单的 \[ 吞掉半篇）；
+       - \(..\)：行内公式，必须同一行闭合、内容非空；
+       - $$..$$ / $..$：原有 Markdown 口径。
+       前置 (?<!\\) 让 \\( 这种「转义反斜杠 + 括号」保持字面；围栏代码块内原样保留。 */
+    var re=/(?<!\\)\\\[((?:(?!\n[ \t]*\n)[\s\S])+?)(?<!\\)\\\]|(?<!\\)\\\(([^\n]+?)(?<!\\)\\\)|\$\$[\s\S]+?\$\$|\$[^$\n]+?\$/g;
     for(var i=0;i<segs.length;i++){
       if(segs[i].fenced){ out.push(segs[i].text); continue; }   /* 围栏内原样保留 */
-      out.push(segs[i].text.replace(/\$\$[\s\S]+?\$\$|\$[^$\n]+?\$/g,function(m){
+      out.push(segs[i].text.replace(re,function(m,d,b){
+        if(d!==undefined) m='$$'+d+'$$';
+        else if(b!==undefined) m='$'+b+'$';
         mathStore.push(m);
         return '\uE000M'+(mathStore.length-1)+'\uE001';
       }));
@@ -2170,6 +2462,18 @@ function parseMarkdown(src, fx){
     {label:'表格',text:'表格',title:'插入表格',wrap:false,pre:'| 列1 | 列2 |\n| --- | --- |\n| 单元格 | 单元格 |\n',post:'',ph:''}
   ];
   var fmtBtns=document.getElementById('fmtBtns');
+  /* 顶部：查找 / 替换（与 Ctrl+F / Ctrl+H 同源） */
+  (function(){
+    [['btnFind','查找',false],['btnReplace','替换',true]].forEach(function(d){
+      var b=document.createElement('button');
+      b.className='menu-item'; b.setAttribute('role','menuitem');
+      b.id=d[0]; b.textContent=d[1];
+      b.addEventListener('click',function(){ findOpen(d[2]); });
+      fmtBtns.appendChild(b);
+    });
+    var sp=document.createElement('div'); sp.className='menu-sep';
+    fmtBtns.appendChild(sp);
+  })();
   fmtDefs.forEach(function(d,idx){
     /* 分组分隔：标题 | 行内强调 | 块级 | 插入 */
     if(idx===2||idx===6||idx===10){
@@ -2234,19 +2538,22 @@ function parseMarkdown(src, fx){
     document.getElementById('selRagPolish').click();
   });
 
-  /* 编辑菜单尾部：插入类（公式 / 图片 / 代码块 / 脚注 / 运行）——与格式项同源，避免菜单结构分两处维护 */
+  /* 编辑菜单尾部：图片紧跟表格（同属插入媒体），其余插入项另起一组。
+     行内公式从下拉移除（右键「插入 → 行内公式」仍可写），
+     「运行选中代码」也从下拉移除（预览里点代码块运行按钮；选区浮动工具条
+     与右键菜单仍保留该能力）。 */
   (function(){
-    var sp=document.createElement('div'); sp.className='menu-sep'; fmtBtns.appendChild(sp);
-    var defs=[['btnInsMathIn','插入行内公式'],['btnInsMathBlock','插入行间公式'],
-              ['btnInsImage','插入图片'],
-              ['btnInsCode','插入代码块'],['btnInsFootnote','插入脚注'],
-              ['btnRunSel','运行选中代码']];
-    defs.forEach(function(d){
+    function mk(id,label){
       var b=document.createElement('button');
       b.className='menu-item'; b.setAttribute('role','menuitem');
-      b.id=d[0]; b.textContent=d[1];
+      b.id=id; b.textContent=label;
       fmtBtns.appendChild(b);
-    });
+    }
+    mk('btnInsImage','图片');
+    var sp=document.createElement('div'); sp.className='menu-sep'; fmtBtns.appendChild(sp);
+    mk('btnInsMathBlock','行间公式');
+    mk('btnInsCode','代码块');
+    mk('btnInsFootnote','脚注');
   })();
 
   /* ── 编辑区右键菜单：基础编辑 + 「编辑」菜单的全部能力 ─────────
@@ -2367,7 +2674,7 @@ function parseMarkdown(src, fx){
     if(kind==='insCode'){ insertBlockCode(); return; }
     if(kind==='insImage'){ insertImage(); return; }
     if(kind==='insFootnote'){ insertFootnote(); return; }
-    if(kind==='runSel'){ document.getElementById('btnRunSel').click(); return; }
+    if(kind==='runSel'){ runSelection(); return; }
     if(kind==='paste'){
       /* 127.0.0.1 是安全上下文，可以读剪贴板；readText 需要用户手势，这里就在点击里调用 */
       if(!(navigator.clipboard&&navigator.clipboard.readText)){
@@ -2493,7 +2800,6 @@ function parseMarkdown(src, fx){
   }
   document.getElementById('btnInsCode').addEventListener('click',insertBlockCode);
   document.getElementById('btnInsFootnote').addEventListener('click',insertFootnote);
-  document.getElementById('btnInsMathIn').addEventListener('click',function(){ insertFormula(false); });
   document.getElementById('btnInsMathBlock').addEventListener('click',function(){ insertFormula(true); });
   document.getElementById('btnInsImage').addEventListener('click',insertImage);
   function applyFormat(d){
@@ -3815,7 +4121,6 @@ function parseMarkdown(src, fx){
   document.getElementById('selRun').addEventListener('click',function(){
     selTools.hidden=true; runSelection();
   });
-  document.getElementById('btnRunSel').addEventListener('click',runSelection);
   document.getElementById('runClose').addEventListener('click',function(){
     document.getElementById('runOverlay').hidden=true;
   });

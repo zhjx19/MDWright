@@ -11,6 +11,38 @@
 
 ---
 
+## v3.8.0（2026-11-05）
+
+**本次改动：新增查找 / 替换（Ctrl+F / Ctrl+H）；预览与 Word 导出识别 `\(...\)` / `\[...\]` 公式**
+
+**新增**
+
+- **查找 / 替换**：`mdwright.html` 增加浮动查找条。`Ctrl+F` 打开查找、`Ctrl+H` 展开替换；`Enter` / `Shift+Enter` 前后定位，`Esc` 关闭，`Aa` 切换区分大小写。源码（分屏 / 仅编辑）在 `getText()` 上查找：替换当前走 `insertPlainText()`（保留原生 undo），全部替换经 `setText()` + `annReanchorLocal()` 重锚批注后广播 `input`，dirty / 自动保存 / 重渲染沿用既有链路。仅预览 / 即时渲染改为遍历预览文本节点查找并滚动定位，替换按钮置灰。命中高亮用 CSS Custom Highlight API（`::highlight`），只画不改 DOM、不碰批注 span；内核不支持时退化为只选中当前命中。
+
+**修复**
+
+- **网页复制的 `\(..\)` / `\[..\]` 不是公式**：`extractMath()` 只认 `$..$` / `$$..$$`，DeepSeek 等网页复制出的 LaTeX 定界符被当普通文本，反斜杠还会在 `parseInline()` 里被还原成字面括号。现于围栏感知的抽取阶段增加两条规则：`\[..\]` 行间（允许跨行、不跨空行），`\(..\)` 行内（同行闭合），统一归一成 `$..$` / `$$..$$` 后交 KaTeX；前置 `(?<!\\)` 排除 `\\(` 字面写法，空组不吞。
+- **Word 导出同样不认上述定界符**：`md_pandoc.prepare_markdown()` 新增 `_normalize_tex_delims()`，按围栏分段、跳过行内代码，把两种定界符转成 pandoc 认的 `$` / `$$`，公式在 Word 里落为 OMML。HTML / 打印 / PDF 复用预览 DOM，自动跟随。
+
+**变更**
+
+- **编辑菜单重排**：顶部新增「查找」「替换」（与 `Ctrl+F` / `Ctrl+H` 同源）；「插入图片」改为「图片」并紧跟「表格」；移除「插入行内公式」（右键「插入 → 行内公式」仍可写）与「运行选中代码」（预览代码块运行按钮、选区浮动条与右键菜单仍保留）。其余插入项标签简化为「行间公式 / 代码块 / 脚注」。
+
+**测试**
+
+- 新增 `tests/_test_find.py`（CDP）：Ctrl+F / Ctrl+H、计数、前后定位、替换当前 / 全部、Esc、仅预览可查且替换置灰。
+- `tests/_test_fence.py` 补 `\(..\)` / `\[..\]` 抽取、跨行、围栏内保留、转义与空组、与 `$..$` 混排。
+- `tests/_test_pandoc_prep.py` 补定界符归一化（围栏 / 行内代码 / 转义 / 空组 / 幂等）。
+- `tests/_test_syntax_ui.py` 补预览端 KaTeX 实际挂载与围栏内字面保留；`tests/_test_docx.py` 补端到端 OMML 与定界符无残留。
+- `tests/_test_menu_ui.py` 按新菜单更新：查找/替换置顶、图片紧跟表格、行内公式与运行入口从下拉移除、右键行内公式仍可用。
+
+**验证**
+
+- `python\python.exe tests\run_all.py`：72 PASS / 5 SKIP / 3 FAIL。3 个失败均为本机环境依赖，与本次改动无关：`_test_window_text_select.py` 缺 `webview` 模块、`_test_rag_e2e.py` 未安装外部 RAG 助手、`_test_run_reset_on_config.py` 的内置运行时已装 pandas（与用例假设相反）。
+- 查找 / 替换与公式相关的 24 个用例单独跑：24 PASS / 0 FAIL。
+
+---
+
 ## v3.7.1（2026-11-03）
 
 **本次改动：R 代码块里定义函数不再被驱动自动调用一次；分屏模式右侧预览可以选中复制**

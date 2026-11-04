@@ -155,12 +155,17 @@ PROBE_DEEPSEEK = r"""
 PROBE_EDIT = r"""
 (function(){
   var out={};
+  out.findBtn=!!document.getElementById('btnFind');
+  out.replaceBtn=!!document.getElementById('btnReplace');
   out.insCode=!!document.getElementById('btnInsCode');
   out.insFoot=!!document.getElementById('btnInsFootnote');
   out.runSel=!!document.getElementById('btnRunSel');
   out.mathIn=!!document.getElementById('btnInsMathIn');
   out.mathBlock=!!document.getElementById('btnInsMathBlock');
   out.insImage=!!document.getElementById('btnInsImage');
+  var items=[].slice.call(document.getElementById('fmtBtns').children)
+      .filter(function(el){ return el.classList.contains('menu-item'); });
+  out.order=items.map(function(b){ return b.textContent.trim(); });
   out.light=document.body.classList.contains('light');
   out.baseFont=getComputedStyle(document.documentElement)
       .getPropertyValue('--base-font').trim();
@@ -177,8 +182,10 @@ PROBE_EDIT = r"""
   ed.textContent='正文'; selectAll();
   document.getElementById('btnInsFootnote').click();
   out.afterFoot=ed.textContent;
+  /* 行内公式已从下拉菜单移除；能力仍在右键菜单「插入 → 行内公式」 */
   ed.textContent='E'; selectAll();
-  document.getElementById('btnInsMathIn').click();
+  var ctxMathIn=[].slice.call(document.querySelectorAll('#ctxMenu [data-ctx="math:in"]'))[0];
+  if(ctxMathIn) ctxMathIn.click();
   out.afterMathIn=ed.textContent;
   ed.textContent='abc'; selectAll();
   document.getElementById('btnInsMathBlock').click();
@@ -262,16 +269,27 @@ def main():
     check("R 块运行回显 stdout", "r 输出" in (r4.get("rOut") or ""), r4.get("rOut"))
     check("运行结束按钮恢复可用", r4.get("disabled") is False, str(r4))
 
-    # ---- 编辑菜单：插入代码块 / 脚注 / 运行选中；默认亮色与字号 ----
+    # ---- 编辑菜单：查找/替换置顶；图片紧跟表格；行内公式与运行入口收进右键 ----
     re_ = run_expr(PROBE_EDIT)
+    check("编辑菜单含查找与替换",
+          re_.get("findBtn") is True and re_.get("replaceBtn") is True, str(re_))
     check("编辑菜单含插入代码块", re_.get("insCode") is True, str(re_))
     check("编辑菜单含插入脚注", re_.get("insFoot") is True, str(re_))
-    check("编辑菜单含运行选中代码", re_.get("runSel") is True, str(re_))
-    check("编辑菜单含行内/行间公式",
-          re_.get("mathIn") is True and re_.get("mathBlock") is True, str(re_))
-    check("编辑菜单含插入图片", re_.get("insImage") is True, str(re_))
-    check("行内公式写入 $…$", (re_.get("afterMathIn") or "") == "$E$",
+    check("编辑菜单不再含运行选中代码", re_.get("runSel") is False, str(re_))
+    check("编辑菜单不再含行内公式", re_.get("mathIn") is False, str(re_))
+    check("编辑菜单含行间公式", re_.get("mathBlock") is True, str(re_))
+    check("编辑菜单含图片", re_.get("insImage") is True, str(re_))
+    order = re_.get("order") or []
+    check("菜单首两项是查找/替换", order[:2] == ["查找", "替换"], str(order))
+    if "表格" in order and "图片" in order:
+        check("图片紧跟表格", order.index("图片") == order.index("表格") + 1, str(order))
+    else:
+        check("图片紧跟表格", False, str(order))
+    check("菜单不再出现行内公式/运行选中代码",
+          "插入行内公式" not in order and "运行选中代码" not in order, str(order))
+    check("行内公式仍可从右键菜单写入 $…$", (re_.get("afterMathIn") or "") == "$E$",
           repr(re_.get("afterMathIn")))
+    check("编辑菜单共 18 项", len(order) == 18, str(len(order)))
     check("行间公式写入 $$ 块",
           "$$\n" in (re_.get("afterMathBlock") or "")
           and (re_.get("afterMathBlock") or "").count("$$") >= 2,

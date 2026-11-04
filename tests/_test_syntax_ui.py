@@ -72,7 +72,10 @@ PROBE = r"""
         hlClass: (function(){ var c = pv.querySelector('pre code'); return c ? c.className : ''; })(),
         hlLang: (function(){ var c = pv.querySelector('pre code'); return c ? c.getAttribute('data-lang') : ''; })(),
         preCodeCount: codes.length,
-        plainHl: plain
+        plainHl: plain,
+        mathInline: pv.querySelectorAll('.md-math-inline').length,
+        mathBlock: pv.querySelectorAll('.md-math-block').length,
+        katex: pv.querySelectorAll('.katex').length
       });
     }, 1600);
   });
@@ -197,11 +200,38 @@ def test_footnote_incremental():
     check("脚注增量：脚注区只有一个", res.get("fnCount") == 1, str(res.get("fnCount")))
 
 
+def test_math_delims():
+    """DeepSeek 网页复制口径：\\(..\\) 行内、\\[..\\] 行间，都要落成 KaTeX。"""
+    res = probe("""行内公式 \\(a^2+b^2\\) 结束。
+
+\\[
+\\sum_{k=1}^{n} k
+\\]
+
+围栏里的公式不算：
+
+```
+\\(x\\)
+```
+""")
+    txt = res.get("text") or ""
+    html = res.get("html") or ""
+    check("公式：\\(..\\) 渲染为行内 KaTeX", res.get("mathInline") == 1,
+          "inline=%r" % (res.get("mathInline"),))
+    check("公式：\\[..\\] 渲染为行间 KaTeX", res.get("mathBlock") == 1,
+          "block=%r" % (res.get("mathBlock"),))
+    check("公式：KaTeX 实际挂载", (res.get("katex") or 0) >= 2, "katex=%r" % (res.get("katex"),))
+    check("公式：正文里的定界符不残留",
+          "\\(a" not in html and "\\[" not in html, html[:160])
+    check("公式：围栏内保持字面", "\\(x\\)" in txt, txt[:160])
+
+
 if __name__ == "__main__":
     test_footnote()
     test_frontmatter()
     test_callout()
     test_highlight()
     test_footnote_incremental()
+    test_math_delims()
     print("\n%s" % ("ALL PASS" if not fails else "FAILED: %s" % fails))
     sys.exit(1 if fails else 0)

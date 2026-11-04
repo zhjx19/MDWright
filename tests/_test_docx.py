@@ -82,6 +82,12 @@ $$
 
 花括号上下标：x^{2} 与 H_{2}O
 
+网页复制口径的行内公式 \\(a^2+b^2\\)，以及行间公式：
+
+\\[
+y = \\int_0^1 x\\,dx
+\\]
+
 ![图](assets/pic.png)
 
 [^a]: 脚注说明
@@ -135,6 +141,9 @@ def main():
                   'w:val="superscript"' in x and 'w:val="subscript"' in x,
                   "sup=%s sub=%s" % ('superscript' in x, 'subscript' in x))
             check("花括号写法不残留字面", "^{2}" not in x and "_{2}" not in x)
+            check("网页口径公式落为 OMML 且无反斜杠残留",
+                  "<m:oMath" in x and "\\\\(" not in x and "\\\\[" not in x,
+                  "paren=%s bracket=%s" % ("\\\\(" in x, "\\\\[" in x))
 
         # 未保存文档 → 明确报错且不产文件
         j2 = post("/api/export-docx", {"path": "", "markdown": "# x\n"})

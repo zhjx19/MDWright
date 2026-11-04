@@ -46,6 +46,13 @@ _SCRIPT_RE = re.compile(r"([\^_])\{([^{}\n]+)\}")
 # 改写前要原样保留的两类片段：行内代码与行内公式（LaTeX 的 ^{2} / _{k=1} 不能被改）
 _CODE_SPAN_RE = re.compile(r"`[^`\n]*`")
 _MATH_INLINE_RE = re.compile(r"\$[^$\n]+\$")
+# \(..\) / \[..\]：DeepSeek 等网页复制出来的公式写法，pandoc 的 markdown 默认不认。
+# 归一成 $..$ / $$..$$；前置 (?<!\\) 排除「转义反斜杠 + 括号」的字面写法。
+_TEX_INLINE_RE = re.compile(r"(?<!\\)\\\(([^\n]+?)(?<!\\)\\\)")
+_TEX_BLOCK_RE = re.compile(r"(?<!\\)\\\[((?:(?!\n[ \t]*\n)[\s\S])+?)(?<!\\)\\\]")
+# 块级公式起始行：`$$` 允许带引用 / 列表前缀（网页复制进引用或列表时常见）。
+# 归一化后 `\[` 会变成带同样前缀的 `$$`，这里必须认得，否则内部 LaTeX 会被上下标改写。
+_MATH_BLOCK_OPEN_RE = re.compile(r"^[ \t]*(?:>[ \t]*)*(?:(?:[-+*]|\d+\.)[ \t]+)?\$\$")
 
 
 def _clamp(pct):
@@ -238,6 +245,49 @@ def _fence_block(lines, start, mark):
     return body, None
 
 
+def _convert_tex_chunk(s):
+    """在非围栏正文里把 \\(..\\) / \\[..\\] 归一成 $..$ / $$..$$（行内代码不动）。"""
+    parts = re.split(r"(`+[^`\n]*`+)", s)
+    for i in range(0, len(parts), 2):          # 奇数段是行内代码，原样跳过
+        t = _TEX_BLOCK_RE.sub(lambda m: "$$" + m.group(1) + "$$", parts[i])
+        t = _TEX_INLINE_RE.sub(lambda m: "$" + m.group(1) + "$", t)
+        parts[i] = t
+    return "".join(parts)
+
+
+def _normalize_tex_delims(src):
+    """按围栏分段做公式定界符归一（围栏内原样，行内代码原样）。
+
+    分段口径与前端 splitFenced 一致：``` 与 ~~~ 各自配对，异种标记是内容。
+    幂等——转换后不再有 \\( / \\[，再跑一遍不变。
+    """
+    lines = src.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    out, cur, fence = [], [], ""
+
+    def flush():
+        if not cur:
+            return
+        text = "\n".join(cur)
+        out.append(text if fence else _convert_tex_chunk(text))
+        del cur[:]
+
+    for ln in lines:
+        m = _FENCE_RE.match(ln)
+        nf = fence
+        if m:
+            mark = m.group(2)
+            if not fence:
+                nf = mark
+            elif mark == fence:
+                nf = ""
+        if nf != fence:
+            flush()
+            fence = nf
+        cur.append(ln)
+    flush()
+    return "\n".join(out)
+
+
 def prepare_markdown(src, diagrams=None, img_align="center"):
     """把本文方言改写成 pandoc 认得的 markdown（幂等，纯函数）。
 
@@ -249,6 +299,9 @@ def prepare_markdown(src, diagrams=None, img_align="center"):
     out = []
     fence_mark = ""          # 当前所在围栏的标记（``` 或 ~~~），空=不在围栏内
     math_block = False       # 是否在 $$ 块级公式内（跨行，整段不参与改写）
+    # 先把网页复制口径的 \(..\) / \[..\] 归一成 $..$ / $$..$$，
+    # 后面的 math_block 跳过与 _brace_scripts 屏蔽才认得它们。
+    src = _normalize_tex_delims(src)
     lines = src.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     i = 0
     while i < len(lines):
@@ -296,7 +349,7 @@ def prepare_markdown(src, diagrams=None, img_align="center"):
                 math_block = False
             i += 1
             continue
-        if ln.lstrip().startswith("$$") and ln.count("$$") % 2 == 1:
+        if _MATH_BLOCK_OPEN_RE.match(ln) and ln.count("$$") % 2 == 1:
             math_block = True            # 块级公式开：整段原样透传，内部的 ^{} 是 LaTeX
             out.append(ln)
             i += 1
